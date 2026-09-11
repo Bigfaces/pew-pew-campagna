@@ -118,6 +118,12 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
             {snap.availableSkillPoints} PUNTO{snap.availableSkillPoints > 1 ? 'I' : ''} · ESC
           </div>
         )}
+        {snap.shieldActive && (
+          <div className="hud-row" style={{ marginTop: 8, color: '#44ccff' }}>
+            <span className="dot" style={{ background: '#44ccff' }} />
+            SCUDO ATTIVO
+          </div>
+        )}
       </div>
 
       {!snap.pointerLocked && (

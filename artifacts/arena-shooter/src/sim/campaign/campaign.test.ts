@@ -15,6 +15,8 @@ import {
   DRONE_REACTION_MS,
   LEVEL_XP_THRESHOLDS,
   NODE_OTTURATORE_COOLDOWN_MS,
+  SHIELD_X,
+  SHIELD_Y,
   XP_BOSS_DEFEAT,
   XP_BOSS_HIT_SOLID,
   XP_CORE,
@@ -170,6 +172,69 @@ describe('CampaignWorld — drone del Magazzino', () => {
     expect(world.state.player.x).toBe(13.5 * TILE);
     expect(world.state.player.y).toBe(7 * TILE);
     expect(world.state.drone.alive).toBe(true);
+  });
+});
+
+describe('CampaignWorld — scudo tattico', () => {
+  it('absorbs a drone hit instead of killing the player, then is spent', () => {
+    const world = new CampaignWorld();
+    world.state.checkpoint = {
+      room: 'magazzino',
+      x: 13.5 * TILE,
+      y: 7 * TILE,
+      angle: -Math.PI / 2,
+    };
+    world.state.player.x = SHIELD_X;
+    world.state.player.y = SHIELD_Y;
+
+    // Walk over the pickup first.
+    const pickupEvents = world.step();
+    expect(world.state.shield.collected).toBe(true);
+    expect(world.state.player.shieldActive).toBe(true);
+    expect(pickupEvents.some((e) => e.type === 'shieldPickup')).toBe(true);
+
+    // Now stand where the drone can see us and let it fire.
+    world.state.player.x = 13.5 * TILE;
+    world.state.player.y = 7 * TILE;
+    const ticksToFire = Math.ceil(DRONE_REACTION_MS / TICK_MS) + 2;
+    let sawBreak = false;
+    let sawDeath = false;
+    for (let i = 0; i < ticksToFire; i++) {
+      const events = world.step();
+      if (events.some((e) => e.type === 'shieldBreak')) sawBreak = true;
+      if (events.some((e) => e.type === 'playerDied')) sawDeath = true;
+    }
+
+    expect(sawBreak).toBe(true);
+    expect(sawDeath).toBe(false);
+    expect(world.state.player.shieldActive).toBe(false);
+    // The player never actually died, so they should still be standing
+    // in front of the drone, not back at the checkpoint.
+    expect(world.state.player.x).toBe(13.5 * TILE);
+
+    // A second sustained volley, with no shield left, does kill.
+    for (let i = 0; i < ticksToFire; i++) world.step();
+    expect(world.state.player.x).toBe(13.5 * TILE);
+    expect(world.state.player.y).toBe(7 * TILE);
+  });
+
+  it('is collectable again after a death resets its room', () => {
+    const world = new CampaignWorld();
+    world.state.checkpoint = {
+      room: 'magazzino',
+      x: 13.5 * TILE,
+      y: 7 * TILE,
+      angle: -Math.PI / 2,
+    };
+    // Already spent (or never picked up) before this attempt.
+    world.state.shield.collected = true;
+    world.state.player.x = 13.5 * TILE;
+    world.state.player.y = 7 * TILE;
+
+    const ticksToFire = Math.ceil(DRONE_REACTION_MS / TICK_MS) + 2;
+    for (let i = 0; i < ticksToFire; i++) world.step();
+
+    expect(world.state.shield.collected).toBe(false);
   });
 });
 

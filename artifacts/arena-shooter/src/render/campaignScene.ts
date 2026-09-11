@@ -122,6 +122,28 @@ function drawCore(
   drawDiamond(ctx, screenX, cy, size, '#5eead4', nowMs * 0.0018);
 }
 
+function drawShield(
+  ctx: CanvasRenderingContext2D,
+  screenX: number,
+  cy: number,
+  size: number,
+  nowMs: number,
+): void {
+  // Blue, like the Arena's own shield pickup (render/palette.ts
+  // PU_COLOR.shield) — a deliberate visual echo: same promise, one
+  // hit of protection, even though the campaign's is a separate
+  // pickup rather than that shared PowerUp type.
+  ctx.save();
+  ctx.globalAlpha = 0.3 + Math.sin(nowMs * 0.004) * 0.12;
+  ctx.fillStyle = '#44ccff';
+  ctx.beginPath();
+  ctx.arc(screenX, cy, size * 1.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  drawDiamond(ctx, screenX, cy, size, '#44ccff', nowMs * 0.0018);
+}
+
 function drawDrone(
   ctx: CanvasRenderingContext2D,
   screenX: number,
@@ -250,6 +272,9 @@ export function renderCampaignBillboards(
   cam: CameraView,
   depth: Float32Array,
   cores: readonly CoreState[],
+  shieldAvailable: boolean,
+  shieldX: number,
+  shieldY: number,
   drone: DroneState,
   droneX: number,
   droneY: number,
@@ -274,6 +299,16 @@ export function renderCampaignBillboards(
     const cy = heightToScreenY(vp, fx, p.perp, bobZ);
     const size = p.tileH * 0.36;
     list.push({ dist: p.perp, draw: () => drawCore(ctx, p.screenX, cy, size, nowMs) });
+  }
+
+  if (shieldAvailable) {
+    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, shieldX, shieldY);
+    if (p.visible && !occluded(p.screenX, p.perp)) {
+      const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + shieldX) * TILE * 0.08;
+      const cy = heightToScreenY(vp, fx, p.perp, bobZ);
+      const size = p.tileH * 0.36;
+      list.push({ dist: p.perp, draw: () => drawShield(ctx, p.screenX, cy, size, nowMs) });
+    }
   }
 
   if (drone.alive) {

@@ -28,6 +28,8 @@ import {
   BOSS_HITS_TO_DEFEAT,
   DRONE_X,
   DRONE_Y,
+  SHIELD_X,
+  SHIELD_Y,
   xpForNextLevel,
 } from '../sim/campaign/constants';
 import { CAMP_MAP_H, CAMP_MAP_W } from '../sim/campaign/map';
@@ -49,6 +51,7 @@ export interface CampaignHudSnapshot {
    *  bar to fill, not a bug. */
   xpForNextLevel: number | null;
   availableSkillPoints: number;
+  shieldActive: boolean;
   unlockedNodes: string[];
   door: { armed: boolean; closeTimerMs: number };
   bossActive: boolean;
@@ -89,6 +92,12 @@ export class CampaignGame {
   private mouseDX = 0;
   private mouseDY = 0;
   private sensMult = 1;
+
+  /** -1..1 each axis, driven by the on-screen joystick — added to
+   *  keyboard input rather than replacing it, so a touch device with
+   *  a keyboard attached still works either way. */
+  private touchMoveX = 0;
+  private touchMoveY = 0;
 
   private accumulator = 0;
   private lastFrame = 0;
@@ -167,6 +176,30 @@ export class CampaignGame {
 
   setSensitivity(mult: number): void {
     this.sensMult = clampSensitivity(mult);
+  }
+
+  /** On-screen joystick, driven by a DOM overlay (ui/TouchControls.tsx)
+   *  rather than raw touch listeners on the canvas — the drag itself
+   *  is easier to get right with pointer-capture on a dedicated
+   *  element than by hand-picking which touch belongs to which half
+   *  of the canvas. `x`/`y` are -1..1, y positive = forward. */
+  setTouchMove(x: number, y: number): void {
+    this.touchMoveX = Math.max(-1, Math.min(1, x));
+    this.touchMoveY = Math.max(-1, Math.min(1, y));
+  }
+
+  /** On-screen look drag. Feeds the same accumulator the mouse does,
+   *  so sensitivity and the scope math never need to know which
+   *  device produced the delta. */
+  addTouchLook(dx: number, dy: number): void {
+    this.mouseDX += dx;
+    this.mouseDY += dy;
+  }
+
+  /** The on-screen fire button. Unlike the mouse path this never waits
+   *  on pointer lock — a touch device never acquires it. */
+  queueFire(): void {
+    if (this.phase === 'playing') this.fireQueued = true;
   }
 
   /** Spend an available core on a Precisione node — called from the
@@ -349,6 +382,12 @@ export class CampaignGame {
         case 'doorSealed':
           this.audio.impact(this.world.state.player.x, this.world.state.player.y);
           break;
+        case 'shieldPickup':
+          this.audio.pickup(this.world.state.player.x, this.world.state.player.y);
+          break;
+        case 'shieldBreak':
+          this.audio.shieldBreak(this.world.state.player.x, this.world.state.player.y);
+          break;
         case 'droneDown':
           this.audio.kill(DRONE_X, DRONE_Y);
           break;
@@ -457,6 +496,9 @@ export class CampaignGame {
       cam,
       this.depth,
       world.state.cores,
+      !world.state.shield.collected,
+      SHIELD_X,
+      SHIELD_Y,
       world.state.drone,
       DRONE_X,
       DRONE_Y,
@@ -516,6 +558,7 @@ export class CampaignGame {
       level: s.level,
       xpForNextLevel: xpForNextLevel(s.level),
       availableSkillPoints: this.world.availableSkillPoints,
+      shieldActive: s.player.shieldActive,
       unlockedNodes: s.unlockedNodes,
       door: { armed: s.door.armed, closeTimerMs: s.door.closeTimer },
       bossActive: s.checkpoint.room === 'molo',
