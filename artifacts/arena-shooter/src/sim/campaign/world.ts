@@ -24,7 +24,6 @@ import {
 import {
   BOSS_CHARGE_MS,
   BOSS_CHARGE_SPEED,
-  BOSS_DEFEAT_BONUS_CORES,
   BOSS_GRAZE_ARC_HALF,
   BOSS_GUARD_MS,
   BOSS_HITS_TO_DEFEAT,
@@ -47,14 +46,24 @@ import {
   DRONE_Y,
   RESPAWN_INVULN_MS,
   ROOM_ORDER,
+  SHIELD_PICKUP_RADIUS,
+  SHIELD_X,
+  SHIELD_Y,
   START_X,
   START_Y,
+  XP_BOSS_DEFEAT,
+  XP_BOSS_HIT_GRAZE,
+  XP_BOSS_HIT_SOLID,
+  XP_CORE,
+  XP_DRONE_DOWN,
+  XP_ROOM_ENTER,
+  levelForXp,
   roomForTx,
 } from './constants';
 import { CAMP_MAP_H, CAMP_MAP_W, campGetTile } from './map';
 import { campMoveEntity, distanceAlongRayToCircle, type IsSolidFn } from './physics';
 import { campCastRay, campHasLOS } from './raycast';
-import { coresSpent, hasGrazeDamage, isValidNode, nodeCost, weaponStatsFor } from './skills';
+import { hasGrazeDamage, isValidNode, nodeCost, pointsSpent, weaponStatsFor } from './skills';
 import {
   emptyCampaignInput,
   type CampaignEvent,
@@ -125,8 +134,10 @@ export class CampaignWorld {
         pitch: 0,
         weaponCooldown: 0,
         respawnInvulnerableMs: 0,
+        shieldActive: false,
       },
       door: { armed: false, closeTimer: 0, closed: false },
+      shield: { collected: false },
       drone: { alive: true, reactionTimer: DRONE_REACTION_MS, fireCooldown: 0 },
       cores: CORE_DEFS.map((d) => ({
         id: d.id,
@@ -135,6 +146,9 @@ export class CampaignWorld {
         collected: false,
       })),
       coresCollected: 0,
+      xp: 0,
+      level: 1,
+      skillPoints: 0,
       unlockedNodes: [],
       boss: {
         x: BOSS_START_X,
@@ -154,9 +168,9 @@ export class CampaignWorld {
     return this.state.outcome === 'victory';
   }
 
-  /** Cores collected but not yet spent on a node. */
-  get availableCores(): number {
-    return this.state.coresCollected - coresSpent(this.state.unlockedNodes);
+  /** Skill points earned by leveling up but not yet spent on a node. */
+  get availableSkillPoints(): number {
+    return this.state.skillPoints - pointsSpent(this.state.unlockedNodes);
   }
 
   /** Advance one fixed tick. Returns the events generated. */
@@ -176,6 +190,7 @@ export class CampaignWorld {
     this.updateCheckpoint();
     this.updateDoor();
     this.updateCores();
+    this.updateShieldPickup();
     this.updateDrone();
     this.updateBoss();
 
@@ -184,19 +199,35 @@ export class CampaignWorld {
     return this.events;
   }
 
-  /** Spend one available core to unlock a Precisione node. Returns
-   *  whether it succeeded — false if the id is unknown, already
-   *  unlocked, or unaffordable. */
+  /** Spend one available skill point to unlock a Precisione node.
+   *  Returns whether it succeeded — false if the id is unknown,
+   *  already unlocked, or unaffordable. */
   tryUnlockNode(id: string): boolean {
     if (!isValidNode(id)) return false;
     if (this.state.unlockedNodes.includes(id)) return false;
-    if (this.availableCores < nodeCost(id)) return false;
+    if (this.availableSkillPoints < nodeCost(id)) return false;
     this.state.unlockedNodes.push(id);
     this.events.push({ type: 'nodeUnlocked', id });
     return true;
   }
 
   // --------------------------------------------------------------------
+
+  /** Add XP and raise the level (and skill points) for every threshold
+   *  it now clears. A single big award — the boss-defeat bonus — can
+   *  cross more than one threshold at once, so this loops rather than
+   *  checking once. */
+  private grantXp(amount: number): void {
+    this.state.xp += amount;
+    this.events.push({ type: 'xpGained', amount });
+
+    const newLevel = levelForXp(this.state.xp);
+    while (this.state.level < newLevel) {
+      this.state.level++;
+      this.state.skillPoints++;
+      this.events.push({ type: 'levelUp', level: this.state.level });
+    }
+  }
 
   private applyMovement(input: CampaignInput): void {
     const p = this.state.player;
@@ -235,6 +266,7 @@ export class CampaignWorld {
     if (ROOM_ORDER[room] > ROOM_ORDER[this.state.checkpoint.room]) {
       this.state.checkpoint = { room, x: p.x, y: p.y, angle: p.angle };
       this.events.push({ type: 'roomEntered', room });
+      this.grantXp(XP_ROOM_ENTER);
     }
   }
 
@@ -267,8 +299,33 @@ export class CampaignWorld {
         c.collected = true;
         this.state.coresCollected++;
         this.events.push({ type: 'coreCollected', id: c.id });
+        this.grantXp(XP_CORE);
       }
     }
+  }
+
+  private updateShieldPickup(): void {
+    const shield = this.state.shield;
+    if (shield.collected) return;
+    const p = this.state.player;
+    if (Math.hypot(p.x - SHIELD_X, p.y - SHIELD_Y) <= SHIELD_PICKUP_RADIUS) {
+      shield.collected = true;
+      p.shieldActive = true;
+      this.events.push({ type: 'shieldPickup' });
+    }
+  }
+
+  /** A hit that would otherwise kill the player — spends the shield
+   *  instead, if one is up. Tactical and disposable, unlike the
+   *  skill tree: see GDD.md, "Potenziamenti vs progressione
+   *  permanente". */
+  private damagePlayer(cause: 'drone' | 'boss'): void {
+    if (this.state.player.shieldActive) {
+      this.state.player.shieldActive = false;
+      this.events.push({ type: 'shieldBreak' });
+      return;
+    }
+    this.killPlayer(cause);
   }
 
   private updateDrone(): void {
@@ -302,7 +359,7 @@ export class CampaignWorld {
       p.respawnInvulnerableMs <= 0
     ) {
       drone.fireCooldown = DRONE_FIRE_COOLDOWN_MS;
-      this.killPlayer('drone');
+      this.damagePlayer('drone');
     }
   }
 
@@ -351,7 +408,7 @@ export class CampaignWorld {
         if (p.respawnInvulnerableMs <= 0) {
           const dist = Math.hypot(p.x - boss.x, p.y - boss.y);
           if (dist <= BOSS_RADIUS + ENTITY_RADIUS) {
-            this.killPlayer('boss');
+            this.damagePlayer('boss');
             break;
           }
         }
@@ -414,6 +471,7 @@ export class CampaignWorld {
       if (dist !== null && dist <= wall.dist) {
         this.state.drone.alive = false;
         this.events.push({ type: 'droneDown' });
+        this.grantXp(XP_DRONE_DOWN);
         return;
       }
     }
@@ -441,11 +499,12 @@ export class CampaignWorld {
         if (dmg > 0) {
           boss.damageTaken += dmg;
           this.events.push({ type: 'bossHit', damage: dmg, phase: boss.phase });
+          this.grantXp(dmg >= 1 ? XP_BOSS_HIT_SOLID : XP_BOSS_HIT_GRAZE);
           if (boss.damageTaken >= BOSS_HITS_TO_DEFEAT) {
             boss.phase = 'defeated';
-            this.state.coresCollected += BOSS_DEFEAT_BONUS_CORES;
             this.state.outcome = 'victory';
             this.events.push({ type: 'bossDefeated' });
+            this.grantXp(XP_BOSS_DEFEAT);
           }
         }
       }
@@ -474,6 +533,7 @@ export class CampaignWorld {
       this.state.drone.alive = true;
       this.state.drone.reactionTimer = DRONE_REACTION_MS;
       this.state.drone.fireCooldown = 0;
+      this.state.shield.collected = false;
     }
     if (cp.room === 'molo') {
       const boss = this.state.boss;
@@ -483,6 +543,10 @@ export class CampaignWorld {
       boss.x = BOSS_START_X;
       boss.y = BOSS_START_Y;
       boss.angle = Math.PI;
+      // The shield sits in the room before this one, but a boss
+      // attempt is exactly when a spent shield is worth backtracking
+      // for — leave it collectable again rather than gone for good.
+      this.state.shield.collected = false;
     }
 
     this.events.push({ type: 'playerDied', cause });

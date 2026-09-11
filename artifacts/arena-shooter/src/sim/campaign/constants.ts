@@ -79,10 +79,57 @@ export const CORE_DEFS: readonly CoreDef[] = [
   { id: 'corridoio-nicchia', tx: 8, ty: 3 },
   { id: 'magazzino', tx: 14, ty: 7 },
 ];
-/** Cores granted directly on defeating the boss, on top of CORE_DEFS. */
-export const BOSS_DEFEAT_BONUS_CORES = 1;
+
+// ---- Potenziamento tattico: scudo (Magazzino, prima del Molo) ----
+// Distinto di proposito dai core: non dà esperienza, non è una scelta
+// permanente — assorbe un solo colpo e si consuma. Vedi GDD.md,
+// sezione "Potenziamenti vs progressione permanente".
+export const SHIELD_TX = 15;
+export const SHIELD_TY = 7;
+export const SHIELD_X = (SHIELD_TX + 0.5) * TILE;
+export const SHIELD_Y = (SHIELD_TY + 0.5) * TILE;
+export const SHIELD_PICKUP_RADIUS = CORE_PICKUP_RADIUS;
+
+// ---- Esperienza e livelli ----
+// I core restano collezionabili nel livello, ma non sono più la
+// valuta spesa direttamente sull'albero: alimentano l'esperienza,
+// insieme a ogni altra cosa che il giocatore fa — esplorare, colpire
+// il drone, colpire il boss, abbatterlo. Salire di livello è ciò che
+// paga i nodi, cosi' un run puramente esplorativo e uno aggressivo
+// progrediscono entrambi, invece di premiare solo la raccolta.
+export const XP_ROOM_ENTER = 15;
+export const XP_CORE = 20;
+export const XP_DRONE_DOWN = 30;
+export const XP_BOSS_HIT_SOLID = 25;
+export const XP_BOSS_HIT_GRAZE = 12;
+export const XP_BOSS_DEFEAT = 150;
+
+/** XP cumulativa richiesta per raggiungere il livello (indice + 1).
+ *  Calibrata sulla verticale slice: completarla del tutto (4 stanze,
+ *  core, drone, boss abbattuto con qualche striscio) rende circa
+ *  350-380 XP — abbastanza per arrivare a livello 4-5 e spendere ogni
+ *  punto sul ramo Precisione, senza che restino punti in eccesso. */
+export const LEVEL_XP_THRESHOLDS: readonly number[] = [0, 50, 130, 240, 380, 550];
+
+export function levelForXp(xp: number): number {
+  let level = 1;
+  for (let i = 1; i < LEVEL_XP_THRESHOLDS.length; i++) {
+    if (xp >= LEVEL_XP_THRESHOLDS[i]!) level = i + 1;
+    else break;
+  }
+  return level;
+}
+
+/** XP cumulativa per il prossimo livello, o null al livello massimo
+ *  della tabella — la UI la mostra come "prossimo livello", non come
+ *  un tetto duro: null significa solo "nessuna soglia oltre questa". */
+export function xpForNextLevel(level: number): number | null {
+  return LEVEL_XP_THRESHOLDS[level] ?? null;
+}
 
 // ---- Skill tree: ramo Precisione ----
+/** Costo in punti abilità (uno per livello guadagnato), non più in
+ *  core raccolti — vedi "Esperienza e livelli" sopra. */
 export const NODE_COST = 1;
 
 export const BASE_WEAPON_STATS = {

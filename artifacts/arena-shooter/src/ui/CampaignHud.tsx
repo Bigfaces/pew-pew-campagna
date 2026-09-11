@@ -1,4 +1,4 @@
-import { PRECISION_NODES } from '../sim/campaign/constants';
+import { LEVEL_XP_THRESHOLDS, PRECISION_NODES } from '../sim/campaign/constants';
 import type { CampaignHudSnapshot } from '../game/campaignGame';
 
 const ROOM_LABEL: Record<CampaignHudSnapshot['room'], string> = {
@@ -16,16 +16,83 @@ const BOSS_PHASE_LABEL: Record<string, string> = {
   defeated: 'ABBATTUTA',
 };
 
-/** In-match overlay: room, cores, the Precisione skill tree, and a
- *  countdown warning while the timed door is armed. DOM rather than
- *  canvas, same reasoning as the Arena's Hud. */
-export function CampaignHud({
-  snap,
+/** A locked branch's nodes, shown for context in the skill menu even
+ *  though nothing here does anything yet — GDD.md section 6 names
+ *  them as the plan, not a promise of this sprint. */
+const PLANNED_BRANCHES: { name: string; nodes: string[] }[] = [
+  { name: 'MOBILITÀ', nodes: ['Scatto breve', 'Passo silenzioso', 'Velocità base +'] },
+  { name: 'SOPRAVVIVENZA', nodes: ['Scudo aggiuntivo', 'Rigenerazione tra le stanze'] },
+  { name: 'PERCEZIONE', nodes: ['Minimappa estesa', 'Direzione dei passi più precisa'] },
+];
+
+/** 0..1 progress through the current level's XP band. `null` next
+ *  threshold means the top of the table — shown as a full bar rather
+ *  than a hard level cap. */
+function levelProgress(xp: number, level: number, next: number | null): number {
+  const floor = LEVEL_XP_THRESHOLDS[level - 1] ?? 0;
+  if (next === null) return 1;
+  return Math.max(0, Math.min(1, (xp - floor) / (next - floor)));
+}
+
+function XpBar({ snap }: { snap: CampaignHudSnapshot }): React.ReactElement {
+  const progress = levelProgress(snap.xp, snap.level, snap.xpForNextLevel);
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+        <span>LIVELLO {snap.level}</span>
+        <span className="hint" style={{ margin: 0 }}>
+          {snap.xp} XP
+          {snap.xpForNextLevel !== null && ` / ${snap.xpForNextLevel}`}
+        </span>
+      </div>
+      <span className="power-bar" style={{ display: 'block', marginTop: 4 }}>
+        <i style={{ width: `${progress * 100}%`, background: '#7dfc9a' }} />
+      </span>
+    </div>
+  );
+}
+
+function NodeButton({
+  id,
+  name,
+  cost,
+  unlocked,
+  affordable,
   onUnlock,
 }: {
-  snap: CampaignHudSnapshot;
+  id: string;
+  name: string;
+  cost: number;
+  unlocked: boolean;
+  affordable: boolean;
   onUnlock: (id: string) => void;
 }): React.ReactElement {
+  return (
+    <button
+      type="button"
+      className="btn secondary"
+      disabled={unlocked || !affordable}
+      onClick={() => onUnlock(id)}
+      style={{
+        marginTop: 6,
+        padding: '6px 10px',
+        fontSize: 11,
+        opacity: unlocked ? 0.6 : 1,
+        width: '100%',
+      }}
+    >
+      {unlocked ? '✓ ' : `${cost} · `}
+      {name}
+    </button>
+  );
+}
+
+/** Compact in-game overlay: room, the timed-door warning, boss status,
+ *  and a small level/XP readout. Everything you can act on (spending
+ *  skill points) lives in the pause menu instead — see
+ *  CampaignPauseScreen — so the live view stays uncluttered on a
+ *  small screen. */
+export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.ReactElement {
   return (
     <div className="hud">
       <div className="hud-top">
@@ -44,39 +111,13 @@ export function CampaignHud({
         {snap.muted && <div className="hud-muted">AUDIO MUTO · M</div>}
       </div>
 
-      <div
-        className="hud-scores"
-        style={{ left: 'auto', right: 14, pointerEvents: 'auto' }}
-      >
-        <div className="hud-row">
-          <span className="dot" style={{ background: '#5eead4' }} />
-          <span className="name">CORE</span>
-          <span className="kills">
-            {snap.availableCores} / {snap.coresCollected}
-          </span>
-        </div>
-        {PRECISION_NODES.map((n) => {
-          const unlocked = snap.unlockedNodes.includes(n.id);
-          const affordable = snap.availableCores >= n.cost;
-          return (
-            <button
-              key={n.id}
-              type="button"
-              className="btn secondary"
-              disabled={unlocked || !affordable}
-              onClick={() => onUnlock(n.id)}
-              style={{
-                marginTop: 6,
-                padding: '6px 10px',
-                fontSize: 11,
-                opacity: unlocked ? 0.6 : 1,
-              }}
-            >
-              {unlocked ? '✓ ' : `${n.cost} core · `}
-              {n.name}
-            </button>
-          );
-        })}
+      <div className="hud-scores" style={{ left: 'auto', right: 14, minWidth: 150 }}>
+        <XpBar snap={snap} />
+        {snap.availableSkillPoints > 0 && (
+          <div className="hud-streak" style={{ marginTop: 8 }}>
+            {snap.availableSkillPoints} PUNTO{snap.availableSkillPoints > 1 ? 'I' : ''} · ESC
+          </div>
+        )}
       </div>
 
       {!snap.pointerLocked && (
@@ -88,20 +129,70 @@ export function CampaignHud({
   );
 }
 
+/** Pause + progression menu. Doubles as the "crea il menu" ask: this
+ *  is where the skill tree actually lives, not crammed into the live
+ *  HUD. Mobilità/Sopravvivenza/Percezione are shown locked, matching
+ *  the plan in GDD.md section 6 rather than pretending they exist. */
 export function CampaignPauseScreen({
+  snap,
+  onUnlock,
   onResume,
   onQuit,
 }: {
+  snap: CampaignHudSnapshot;
+  onUnlock: (id: string) => void;
   onResume: () => void;
   onQuit: () => void;
 }): React.ReactElement {
   return (
     <div className="overlay">
-      <div className="panel">
+      <div className="panel" style={{ maxWidth: 560 }}>
         <h1 className="title" style={{ fontSize: 32 }}>
           IN PAUSA
         </h1>
         <p className="subtitle">KESSLER-9 ASPETTA</p>
+
+        <div className="field">
+          <label>PROGRESSIONE</label>
+          <XpBar snap={snap} />
+          <p className="hint">
+            Core raccolti: {snap.coresCollected} · Punti disponibili:{' '}
+            {snap.availableSkillPoints}
+          </p>
+        </div>
+
+        <div className="field">
+          <label>PRECISIONE</label>
+          {PRECISION_NODES.map((n) => (
+            <NodeButton
+              key={n.id}
+              id={n.id}
+              name={n.name}
+              cost={n.cost}
+              unlocked={snap.unlockedNodes.includes(n.id)}
+              affordable={snap.availableSkillPoints >= n.cost}
+              onUnlock={onUnlock}
+            />
+          ))}
+        </div>
+
+        {PLANNED_BRANCHES.map((branch) => (
+          <div className="field" key={branch.name} style={{ opacity: 0.5 }}>
+            <label>{branch.name} — PROSSIMAMENTE</label>
+            {branch.nodes.map((n) => (
+              <button
+                key={n}
+                type="button"
+                className="btn secondary"
+                disabled
+                style={{ marginTop: 6, padding: '6px 10px', fontSize: 11, width: '100%' }}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        ))}
+
         <button className="btn" type="button" onClick={onResume}>
           RIPRENDI
         </button>
@@ -128,8 +219,8 @@ export function CampaignEndScreen({
         </h1>
         <p className="subtitle">IL MOLO È LIBERO — FINE DELLA VERTICAL SLICE</p>
         <p className="hint">
-          Core raccolti: {snap.coresCollected} · Nodi Precisione sbloccati:{' '}
-          {snap.unlockedNodes.length} / {PRECISION_NODES.length}
+          Livello {snap.level} · {snap.xp} XP · Core raccolti: {snap.coresCollected} · Nodi
+          Precisione sbloccati: {snap.unlockedNodes.length} / {PRECISION_NODES.length}
         </p>
         <button className="btn" type="button" onClick={onMenu}>
           TORNA AL MENU

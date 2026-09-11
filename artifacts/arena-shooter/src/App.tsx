@@ -315,13 +315,12 @@ export default function App(): React.ReactElement {
       {phase === 'playing' && ui !== 'campaign' && snap && <Hud snap={snap} />}
 
       {ui === 'campaign' && campaignSnap?.phase === 'playing' && (
-        <CampaignHud
-          snap={campaignSnap}
-          onUnlock={(id) => campaignRef.current?.tryUnlockNode(id)}
-        />
+        <CampaignHud snap={campaignSnap} />
       )}
       {ui === 'campaign' && campaignSnap?.phase === 'paused' && (
         <CampaignPauseScreen
+          snap={campaignSnap}
+          onUnlock={(id) => campaignRef.current?.tryUnlockNode(id)}
           onResume={() => campaignRef.current?.resume()}
           onQuit={exitCampaign}
         />

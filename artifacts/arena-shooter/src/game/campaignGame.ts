@@ -30,6 +30,7 @@ import {
   BOSS_HITS_TO_DEFEAT,
   DRONE_X,
   DRONE_Y,
+  xpForNextLevel,
 } from '../sim/campaign/constants';
 import { CAMP_MAP_H, CAMP_MAP_W } from '../sim/campaign/map';
 import { weaponStatsFor } from '../sim/campaign/skills';
@@ -44,7 +45,12 @@ export interface CampaignHudSnapshot {
   muted: boolean;
   room: RoomId;
   coresCollected: number;
-  availableCores: number;
+  xp: number;
+  level: number;
+  /** null once past the top of LEVEL_XP_THRESHOLDS — there is no next
+   *  bar to fill, not a bug. */
+  xpForNextLevel: number | null;
+  availableSkillPoints: number;
   unlockedNodes: string[];
   door: { armed: boolean; closeTimerMs: number };
   bossActive: boolean;
@@ -336,6 +342,12 @@ export class CampaignGame {
         case 'nodeUnlocked':
           this.audio.pickup(this.world.state.player.x, this.world.state.player.y);
           break;
+        case 'xpGained':
+          break;
+        case 'levelUp':
+          this.raise(`LIVELLO ${ev.level}`, 'nuovo punto abilità disponibile', '#7dfc9a');
+          this.audio.callout(1);
+          break;
         case 'doorSealed':
           this.audio.impact(this.world.state.player.x, this.world.state.player.y);
           break;
@@ -487,7 +499,10 @@ export class CampaignGame {
       muted: this.mutedFlag,
       room: s.checkpoint.room,
       coresCollected: s.coresCollected,
-      availableCores: this.world.availableCores,
+      xp: s.xp,
+      level: s.level,
+      xpForNextLevel: xpForNextLevel(s.level),
+      availableSkillPoints: this.world.availableSkillPoints,
       unlockedNodes: s.unlockedNodes,
       door: { armed: s.door.armed, closeTimerMs: s.door.closeTimer },
       bossActive: s.checkpoint.room === 'molo',

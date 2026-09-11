@@ -39,6 +39,10 @@ export interface CampaignPlayer {
    *  already-in-flight drone shot or boss charge cannot kill the
    *  player a second time before they have even moved. */
   respawnInvulnerableMs: number;
+  /** Tactical power-up, not permanent progression: absorbs exactly
+   *  one hit (drone or boss contact) and is gone. See GDD.md,
+   *  "Potenziamenti vs progressione permanente". */
+  shieldActive: boolean;
 }
 
 export interface DoorTrapState {
@@ -61,6 +65,10 @@ export interface CoreState {
   id: string;
   x: number;
   y: number;
+  collected: boolean;
+}
+
+export interface ShieldPickupState {
   collected: boolean;
 }
 
@@ -96,6 +104,16 @@ export interface CampaignState {
   drone: DroneState;
   cores: CoreState[];
   coresCollected: number;
+  shield: ShieldPickupState;
+  /** Esperienza totale accumulata nel run — non scende mai, nemmeno
+   *  alla morte: solo la posizione e i nemici della stanza si
+   *  resettano, il progresso no (vedi GDD.md, modalità Tutorial). */
+  xp: number;
+  level: number;
+  /** Punti guadagnati salendo di livello, non ancora spesi
+   *  sull'albero. `unlockedNodes` è la fonte di verità per quanto è
+   *  già speso — vedi skills.ts `pointsSpent`. */
+  skillPoints: number;
   unlockedNodes: string[];
   boss: BossState;
   outcome: CampaignOutcome;
@@ -105,6 +123,10 @@ export type CampaignEvent =
   | { type: 'roomEntered'; room: RoomId }
   | { type: 'doorSealed' }
   | { type: 'coreCollected'; id: string }
+  | { type: 'shieldPickup' }
+  | { type: 'shieldBreak' }
+  | { type: 'xpGained'; amount: number }
+  | { type: 'levelUp'; level: number }
   | { type: 'nodeUnlocked'; id: string }
   | { type: 'droneDown' }
   | { type: 'bossHit'; damage: number; phase: BossPhase }

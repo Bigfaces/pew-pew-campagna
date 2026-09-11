@@ -10,16 +10,20 @@ import { describe, expect, it } from 'vitest';
 
 import { TICK_MS, TILE } from '../constants';
 import {
-  BOSS_DEFEAT_BONUS_CORES,
   BOSS_HITS_TO_DEFEAT,
   DOOR_CLOSE_DELAY_MS,
   DRONE_REACTION_MS,
+  LEVEL_XP_THRESHOLDS,
   NODE_OTTURATORE_COOLDOWN_MS,
+  XP_BOSS_DEFEAT,
+  XP_BOSS_HIT_SOLID,
+  XP_CORE,
+  levelForXp,
 } from './constants';
 import { emptyCampaignInput, type CampaignInput } from './types';
 import {
-  coresSpent,
   hasGrazeDamage,
+  pointsSpent,
   weaponStatsFor,
 } from './skills';
 import { CampaignWorld } from './world';
@@ -50,8 +54,35 @@ describe('skills — ramo Precisione', () => {
     expect(hasGrazeDamage(['danno-di-striscio'])).toBe(true);
   });
 
-  it('coresSpent sums the cost of every unlocked node', () => {
-    expect(coresSpent(['otturatore-rapido', 'aggancio-ottico'])).toBe(2);
+  it('pointsSpent sums the cost of every unlocked node', () => {
+    expect(pointsSpent(['otturatore-rapido', 'aggancio-ottico'])).toBe(2);
+  });
+});
+
+describe('esperienza e livelli', () => {
+  it('levelForXp follows the threshold table', () => {
+    expect(levelForXp(0)).toBe(1);
+    expect(levelForXp(LEVEL_XP_THRESHOLDS[1]! - 1)).toBe(1);
+    expect(levelForXp(LEVEL_XP_THRESHOLDS[1]!)).toBe(2);
+    expect(levelForXp(LEVEL_XP_THRESHOLDS[2]!)).toBe(3);
+  });
+
+  it('gaining XP past a threshold raises the level and grants a skill point', () => {
+    const world = new CampaignWorld();
+    expect(world.state.level).toBe(1);
+    expect(world.state.skillPoints).toBe(0);
+
+    // Force xp to just below the level-2 threshold, then push it over
+    // with a single core pickup — the level-up must land on this tick.
+    world.state.xp = LEVEL_XP_THRESHOLDS[1]! - XP_CORE;
+    const core = world.state.cores.find((c) => c.id === 'magazzino')!;
+    world.state.player.x = core.x;
+    world.state.player.y = core.y;
+
+    const events = world.step();
+    expect(world.state.level).toBe(2);
+    expect(world.state.skillPoints).toBe(1);
+    expect(events.some((e) => e.type === 'levelUp' && e.level === 2)).toBe(true);
   });
 });
 
@@ -87,17 +118,17 @@ describe('CampaignWorld — porta stagna a tempo', () => {
 });
 
 describe('CampaignWorld — core e skill tree', () => {
-  it('unlocks a node only when enough cores are available', () => {
+  it('unlocks a node only when enough skill points are available', () => {
     const world = new CampaignWorld();
     expect(world.tryUnlockNode('otturatore-rapido')).toBe(false);
 
-    world.state.coresCollected = 1;
+    world.state.skillPoints = 1;
     expect(world.tryUnlockNode('otturatore-rapido')).toBe(true);
-    expect(world.availableCores).toBe(0);
+    expect(world.availableSkillPoints).toBe(0);
 
-    // A second node needs a second core.
+    // A second node needs a second point.
     expect(world.tryUnlockNode('aggancio-ottico')).toBe(false);
-    world.state.coresCollected = 2;
+    world.state.skillPoints = 2;
     expect(world.tryUnlockNode('aggancio-ottico')).toBe(true);
 
     // Cannot unlock the same node twice.
@@ -159,7 +190,7 @@ describe('CampaignWorld — Sentinella del Molo', () => {
     expect(world.state.boss.damageTaken).toBe(0);
   });
 
-  it('takes three rear hits during a charge to defeat, granting the bonus core', () => {
+  it('takes three rear hits during a charge to defeat, granting the XP bonus', () => {
     const world = new CampaignWorld();
     world.state.checkpoint = { room: 'molo', x: 17.5 * TILE, y: 5.5 * TILE, angle: 0 };
 
@@ -193,7 +224,9 @@ describe('CampaignWorld — Sentinella del Molo', () => {
 
     expect(world.state.boss.phase).toBe('defeated');
     expect(world.state.outcome).toBe('victory');
-    expect(world.state.coresCollected).toBe(BOSS_DEFEAT_BONUS_CORES);
+    // Three solid rear hits plus the defeat bonus, no other XP source
+    // touched since the checkpoint was set directly rather than walked.
+    expect(world.state.xp).toBe(BOSS_HITS_TO_DEFEAT * XP_BOSS_HIT_SOLID + XP_BOSS_DEFEAT);
   });
 
   it('scores only a graze from the wider arc, and only with Danno di Striscio', () => {

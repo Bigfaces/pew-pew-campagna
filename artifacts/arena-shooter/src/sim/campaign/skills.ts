@@ -45,8 +45,8 @@ export function nodeCost(id: string): number {
   return PRECISION_NODES.find((n) => n.id === id)?.cost ?? Infinity;
 }
 
-/** Cores spent so far, derived from the unlocked list rather than
- *  tracked separately — one source of truth, per CampaignState. */
-export function coresSpent(unlocked: readonly string[]): number {
+/** Skill points spent so far, derived from the unlocked list rather
+ *  than tracked separately — one source of truth, per CampaignState. */
+export function pointsSpent(unlocked: readonly string[]): number {
   return unlocked.reduce((sum, id) => sum + nodeCost(id), 0);
 }
