@@ -1,0 +1,67 @@
+PROMPT
+
+Crea un prototipo giocabile di un gioco arena shooter in pixel art, contenuto in un singolo file HTML (HTML+CSS+JS vanilla, senza framework, senza dipendenze esterne se non eventualmente librerie caricate via CDN se strettamente necessario). Deve girare interamente lato client in un browser desktop, avviabile aprendo semplicemente il file.
+
+Concept del gioco
+
+Arena shooter in stile "tutti contro tutti" (Free-For-All), visuale in terza persona con camera leggermente rialzata alle spalle/sopra il personaggio (stile top-down a 3/4, tipico dei pixel-art arena shooter arcade). Il giocatore controlla un personaggio in una piccola arena chiusa e affronta 3 bot controllati dall'IA.
+
+Regole di gioco
+
+
+Giocatori: 1 umano + 3 bot, totale 4 in arena.
+Modalità: Free-For-All, ogni entità è nemica di tutte le altre.
+Vittoria: il primo che raggiunge 10 uccisioni vince la partita. Mostra un messaggio di fine partita con classifica kill di tutti i partecipanti e un pulsante "Rigioca".
+Arma: un solo tipo di arma, fucile da cecchino, munizioni infinite (nessun reload da gestire come risorsa, ma vedi cadenza sotto).
+Danno: one-shot kill — qualsiasi colpo a segno uccide istantaneamente il bersaglio.
+Cadenza di fuoco: lenta, stile bolt-action. Dopo ogni sparo il giocatore/bot non può sparare di nuovo per circa 1.2–1.5 secondi (mostra un piccolo indicatore visivo di "arma pronta/non pronta", es. mirino che cambia colore o icona).
+Salute: nessuna barra salute a scalare — dato che è one-shot kill, basta uno stato vivo/morto. Non ci sono scudi né rigenerazione.
+Respawn: alla morte, il personaggio rinasce dopo 1-2 secondi in una posizione casuale tra alcuni punti di spawn predefiniti, lontano da chi lo ha ucciso.
+
+
+Mappa
+
+
+Un'unica arena piccola e simmetrica (es. quadrata o a croce), abbastanza contenuta da favorire scontri frequenti ma con coperture (muretti, casse, colonne) disposte in modo simmetrico per permettere gioco tattico da cecchino (nascondersi, sbucare, ri-nascondersi).
+Collisioni: il personaggio non deve poter attraversare i muri/coperture; i proiettili invece devono poter essere bloccati dalle coperture (per dare senso strategico al nascondersi).
+
+
+Controlli
+
+
+WASD: movimento (con collisioni contro i muri della mappa).
+Mouse: mira — il personaggio ruota per guardare verso il puntatore del mouse.
+Click sinistro: sparo (rispettando il cooldown bolt-action).
+Il proiettile deve essere semplice: un raycast istantaneo (hitscan) dalla posizione del giocatore lungo la direzione di mira, non un proiettile fisico lento, coerente con un fucile da cecchino.
+
+
+Intelligenza artificiale dei bot
+
+
+Comportamento semplice ma credibile: i bot pattugliano la mappa, individuano bersagli tramite line-of-sight (raycast bloccato dalle coperture), e quando un bersaglio è visibile e nel range di mira, si fermano, mirano e sparano rispettando lo stesso cooldown del giocatore.
+Se non vedono nessuno, si muovono verso punti della mappa o pattugliano vicino alle coperture.
+Evita che i bot sparino "attraverso i muri" o abbiano mira perfetta istantanea: aggiungi un piccolo tempo di reazione/aggiustamento mira per renderli battibili.
+
+
+Stile grafico
+
+
+Pixel art disegnata via codice (canvas 2D, sprite disegnati con fillRect/pixel-by-pixel o piccole sprite sheet generate via codice), palette colori limitata e coerente (es. 8-16 colori).
+Personaggi con almeno 2-4 frame di animazione per la camminata, orientamento visivo che segue la direzione di mira (es. sprite che ruota o cambia in base a 4-8 direzioni).
+Piccoli effetti: muzzle flash allo sparo, effetto/particella all'impatto del proiettile, indicatore visivo quando un personaggio muore (es. sprite "a terra" per un istante prima del respawn).
+HUD minimale in stile pixel art: contatore kill personale, classifica live dei 4 partecipanti, indicatore stato arma (pronta/in ricarica).
+
+
+Architettura del codice (importante per estendibilità futura)
+
+Il gioco dovrà in futuro supportare multiplayer reale (altri giocatori umani al posto dei bot, via rete). Scrivi quindi il codice in modo modulare e disaccoppiato, anche restando in un unico file HTML:
+
+
+Separazione chiara tra: game loop, gestione input, stato delle entità (player/bot), fisica/collisioni, rendering, HUD/UI.
+Le entità "bot" e "player" devono condividere la stessa interfaccia/stato dati (posizione, direzione, stato vivo/morto, cooldown arma, kill count) in modo che in futuro un bot possa essere sostituito da un giocatore remoto senza riscrivere la logica di gioco, semplicemente sostituendo la fonte degli input (IA locale → messaggi di rete).
+Commenta il codice nei punti chiave dell'architettura per rendere chiaro dove in futuro andrà agganciato un layer di networking (es. WebSocket/WebRTC) per il multiplayer reale.
+
+
+Output atteso
+
+Un singolo file index.html autosufficiente, funzionante subito su Replit (anteprima web), con il gioco giocabile: click per iniziare, WASD per muoversi, mouse per mirare, click sinistro per sparare, partita che termina a 10 kill con schermata finale e possibilità di rigiocare.

@@ -1,0 +1,12 @@
+# Normalizza tutto a LF nel repository, così un checkout su Windows, macOS o
+# Linux non produce diff che toccano ogni riga di ogni file.
+* text=auto eol=lf
+
+# Eccezione: gli script batch di Windows vanno consegnati con CRLF. Con
+# terminatori LF cmd.exe può interpretare male i blocchi su più righe.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Il file giocabile è un artefatto di build: va confrontato come testo ma non
+# ha senso leggerne il diff (è minificato su una riga sola).
+giocabile/*.html -diff

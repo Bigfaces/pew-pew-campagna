@@ -1,0 +1,1 @@
+- [Canvas game view conversions (top-down → FPS raycaster)](canvas-fps-raycaster-conversion.md) — physics/AI/shooting stay position-based and unchanged; only the renderer and input mapping need rewriting.
