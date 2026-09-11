@@ -561,6 +561,23 @@
   }
 }
 
+/* ---- Campaign HUD: room label / countdown stack ---- */
+
+/* .hud-top has no explicit width, so an absolutely-positioned box
+   with only `left: 50%` set gets its shrink-to-fit width computed
+   against just the space to the right of that point — half the
+   viewport — rather than the full width available for a centred box.
+   Arena's clock text ("9:59") never gets close to that limit, but the
+   Campaign badges here (room name, door countdown, boss phase) do on
+   phone-width screens, and were wrapping into three lines and
+   colliding with the skill-tree panel above the room. Sizing the box
+   to its content, capped by the real viewport width, fixes centring
+   for both. */
+.campaign-hud-top {
+  width: max-content;
+  max-width: calc(100vw - 24px);
+}
+
 .badge {
   display: inline-block;
   padding: 2px 7px;

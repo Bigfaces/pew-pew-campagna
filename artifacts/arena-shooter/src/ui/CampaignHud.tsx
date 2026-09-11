@@ -95,7 +95,7 @@ function NodeButton({
 export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.ReactElement {
   return (
     <div className="hud">
-      <div className="hud-top">
+      <div className="hud-top campaign-hud-top">
         <div className="hud-clock">{ROOM_LABEL[snap.room]}</div>
         {snap.door.armed && (
           <div className="hud-clock" data-urgent>
