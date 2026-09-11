@@ -114,6 +114,7 @@ export interface MenuConfig {
 
 export function Menu({
   onStart,
+  onCampaign,
   onHost,
   onJoin,
   onStats,
@@ -123,6 +124,7 @@ export function Menu({
   error,
 }: {
   onStart: (cfg: MenuConfig) => void;
+  onCampaign: () => void;
   onHost: (cfg: MenuConfig) => void;
   onJoin: (cfg: MenuConfig, room: string) => void;
   onStats: (cfg: MenuConfig) => void;
@@ -253,6 +255,9 @@ export function Menu({
           <>
             <button className="btn" type="button" onClick={() => onStart(cfg())}>
               ▶ {standalone ? 'ENTRA NELL’ARENA' : 'GIOCATORE SINGOLO'}
+            </button>
+            <button className="btn secondary" type="button" onClick={onCampaign}>
+              CAMPAGNA (BETA) — KESSLER-9
             </button>
             {/* Hidden entirely in the standalone build: an online
                 button there could only ever fail. */}

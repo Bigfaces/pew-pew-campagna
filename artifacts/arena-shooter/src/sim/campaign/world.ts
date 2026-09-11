@@ -51,7 +51,7 @@ import {
   START_Y,
   roomForTx,
 } from './constants';
-import { CAMP_MAP_H, CAMP_MAP_W, campIsSolidBase } from './map';
+import { CAMP_MAP_H, CAMP_MAP_W, campGetTile } from './map';
 import { campMoveEntity, distanceAlongRayToCircle, type IsSolidFn } from './physics';
 import { campCastRay, campHasLOS } from './raycast';
 import { coresSpent, hasGrazeDamage, isValidNode, nodeCost, weaponStatsFor } from './skills';
@@ -100,15 +100,19 @@ export class CampaignWorld {
    *  presentation layer; the sim never reads it back. */
   events: CampaignEvent[] = [];
 
-  /** Solidity as seen by movement, LOS and hitscan: the static map
-   *  plus the door's tiles, once sealed. */
-  private isSolid: IsSolidFn = (tx, ty) => {
-    if (campIsSolidBase(tx, ty)) return true;
+  /** Tile value as seen by movement, LOS, hitscan and the renderer:
+   *  the static map plus the door's tiles, once sealed. Public — the
+   *  renderer needs it too, to draw the very door it can walk into. */
+  getTile = (tx: number, ty: number): number => {
     if (this.state.door.closed) {
-      for (const d of DOOR_TILES) if (d.tx === tx && d.ty === ty) return true;
+      for (const d of DOOR_TILES) {
+        if (d.tx === tx && d.ty === ty) return 1;
+      }
     }
-    return false;
+    return campGetTile(tx, ty);
   };
+
+  private isSolid: IsSolidFn = (tx, ty) => this.getTile(tx, ty) !== 0;
 
   constructor() {
     this.state = {
@@ -273,7 +277,7 @@ export class CampaignWorld {
 
     const p = this.state.player;
     const los = campHasLOS(
-      this.isSolid,
+      this.getTile,
       DRONE_X,
       DRONE_Y,
       p.x,
@@ -388,7 +392,7 @@ export class CampaignWorld {
     p.weaponCooldown = stats.cooldownMs;
 
     const wall = campCastRay(
-      this.isSolid,
+      this.getTile,
       p.x,
       p.y,
       input.aimAngle,

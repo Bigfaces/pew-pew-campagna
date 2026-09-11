@@ -34,10 +34,3 @@ export function campGetTile(tx: number, ty: number): number {
   if (tx < 0 || tx >= CAMP_MAP_W || ty < 0 || ty >= CAMP_MAP_H) return 1;
   return CAMP_MAP_DATA[ty]![tx]!;
 }
-
-/** Static solidity — the door's dynamic tiles are layered on top of
- *  this by the world, not baked into the grid, since they change at
- *  runtime. */
-export function campIsSolidBase(tx: number, ty: number): boolean {
-  return campGetTile(tx, ty) === 1;
-}

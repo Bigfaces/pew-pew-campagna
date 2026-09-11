@@ -1,26 +1,37 @@
 // ================================================================
 // CAMPAIGN RAYCAST — DDA against the campaign tile grid
 // ================================================================
-// Same algorithm as the Arena's sim/raycast.ts, parametrized over an
-// isSolid function and map bounds instead of importing the Arena map
+// Same algorithm as the Arena's sim/raycast.ts, parametrized over a
+// getTile function and map bounds instead of importing the Arena map
 // directly. See physics.ts for why this is a separate copy rather
 // than a shared, parametrized original.
+//
+// Returns the same side/tile/wallX fields the Arena's castRay does,
+// even though the sim itself only ever reads hit/dist/x/y — the
+// renderer needs them to texture a wall column, and one DDA walk
+// serving both call sites is the whole point of this function.
 // ================================================================
 
 import { TILE } from '../constants';
-import type { IsSolidFn } from './physics';
+
+/** Tile value at (tx,ty). 0 = floor, matching the campaign map's own
+ *  encoding (see map.ts) — anything else counts as solid. */
+export type GetTileFn = (tx: number, ty: number) => number;
 
 export interface CampRayHit {
   hit: boolean;
   dist: number;
   x: number;
   y: number;
+  side: 'x' | 'y';
+  tile: number;
+  wallX: number;
 }
 
 const MAX_STEPS = 80;
 
 export function campCastRay(
-  isSolid: IsSolidFn,
+  getTile: GetTileFn,
   ox: number,
   oy: number,
   angle: number,
@@ -54,23 +65,33 @@ export function campCastRay(
         : (oy - ty * TILE) / -dy;
 
   let dist = 0;
+  let side: 'x' | 'y' = 'x';
 
   for (let i = 0; i < MAX_STEPS; i++) {
     if (sideX < sideY) {
       tx += stepX;
       dist = sideX;
       sideX += deltaX;
+      side = 'x';
     } else {
       ty += stepY;
       dist = sideY;
       sideY += deltaY;
+      side = 'y';
     }
 
     if (dist > maxDist) break;
     if (tx < 0 || tx >= mapW || ty < 0 || ty >= mapH) break;
 
-    if (isSolid(tx, ty)) {
-      return { hit: true, dist, x: ox + dx * dist, y: oy + dy * dist };
+    const tile = getTile(tx, ty);
+    if (tile !== 0) {
+      const hx = ox + dx * dist;
+      const hy = oy + dy * dist;
+      const raw = side === 'x' ? hy / TILE : hx / TILE;
+      let wallX = raw - Math.floor(raw);
+      if (side === 'x' && dx < 0) wallX = 1 - wallX;
+      if (side === 'y' && dy > 0) wallX = 1 - wallX;
+      return { hit: true, dist, x: hx, y: hy, side, tile, wallX };
     }
   }
 
@@ -79,12 +100,15 @@ export function campCastRay(
     dist: maxDist,
     x: ox + dx * maxDist,
     y: oy + dy * maxDist,
+    side,
+    tile: 1,
+    wallX: 0,
   };
 }
 
 /** True when nothing solid blocks the segment between two points. */
 export function campHasLOS(
-  isSolid: IsSolidFn,
+  getTile: GetTileFn,
   x0: number,
   y0: number,
   x1: number,
@@ -94,6 +118,6 @@ export function campHasLOS(
 ): boolean {
   const d = Math.hypot(x1 - x0, y1 - y0);
   if (d < 1) return true;
-  return !campCastRay(isSolid, x0, y0, Math.atan2(y1 - y0, x1 - x0), d, mapW, mapH)
+  return !campCastRay(getTile, x0, y0, Math.atan2(y1 - y0, x1 - x0), d, mapW, mapH)
     .hit;
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { CampaignGame, type CampaignHudSnapshot } from './game/campaignGame';
 import { Game, type HudSnapshot, type MatchSummary } from './game/game';
 import { webrtcSupported } from './net/peer';
 import type { LobbySlot } from './net/protocol';
@@ -12,6 +13,7 @@ import {
   type Difficulty,
 } from './sim/constants';
 import type { SlotConfig } from './sim/world';
+import { CampaignEndScreen, CampaignHud, CampaignPauseScreen } from './ui/CampaignHud';
 import { Hud } from './ui/Hud';
 import {
   EndScreen,
@@ -32,7 +34,7 @@ const SENS_KEY = 'arena-sniper.sensitivity';
  *  hidden rather than offered and left to fail. */
 const STANDALONE = import.meta.env['VITE_STANDALONE'] === '1';
 
-type UiMode = 'menu' | 'lobby' | 'stats';
+type UiMode = 'menu' | 'lobby' | 'stats' | 'campaign';
 
 function isDifficulty(v: string | null): v is Difficulty {
   return v !== null && (DIFFICULTIES as readonly string[]).includes(v);
@@ -70,10 +72,12 @@ function soloSlots(cfg: MenuConfig): SlotConfig[] {
 
 export default function App(): React.ReactElement {
   const gameRef = useRef<Game | null>(null);
+  const campaignRef = useRef<CampaignGame | null>(null);
   const hostRef = useRef<HostSession | null>(null);
   const guestRef = useRef<GuestSession | null>(null);
 
   const [snap, setSnap] = useState<HudSnapshot | null>(null);
+  const [campaignSnap, setCampaignSnap] = useState<CampaignHudSnapshot | null>(null);
   const [summary, setSummary] = useState<MatchSummary | null>(null);
   const [config, setConfig] = useState<MenuConfig>(loadConfig);
 
@@ -116,11 +120,39 @@ export default function App(): React.ReactElement {
     gameRef.current?.setNetwork(null);
   }, []);
 
+  const attachCampaign = useCallback((canvas: HTMLCanvasElement | null) => {
+    campaignRef.current?.destroy();
+    campaignRef.current = null;
+    if (!canvas) return;
+
+    const initial = loadConfig();
+    campaignRef.current = new CampaignGame(canvas, {
+      sensitivity: initial.sensitivity,
+      onHud: setCampaignSnap,
+    });
+    campaignRef.current.start();
+  }, []);
+
+  const enterCampaign = useCallback(() => {
+    teardownNet();
+    setSummary(null);
+    setError(null);
+    setCampaignSnap(null);
+    setUi('campaign');
+  }, [teardownNet]);
+
+  const exitCampaign = useCallback(() => {
+    setUi('menu');
+    setCampaignSnap(null);
+  }, []);
+
   useEffect(() => {
     return () => {
       teardownNet();
       gameRef.current?.destroy();
       gameRef.current = null;
+      campaignRef.current?.destroy();
+      campaignRef.current = null;
     };
   }, [teardownNet]);
 
@@ -271,12 +303,32 @@ export default function App(): React.ReactElement {
 
   return (
     <div className="app">
-      <canvas
-        ref={attach}
-        className={`stage${phase === 'playing' ? '' : ' idle'}`}
-      />
+      {ui === 'campaign' ? (
+        <canvas ref={attachCampaign} className="stage" />
+      ) : (
+        <canvas
+          ref={attach}
+          className={`stage${phase === 'playing' ? '' : ' idle'}`}
+        />
+      )}
 
-      {phase === 'playing' && snap && <Hud snap={snap} />}
+      {phase === 'playing' && ui !== 'campaign' && snap && <Hud snap={snap} />}
+
+      {ui === 'campaign' && campaignSnap?.phase === 'playing' && (
+        <CampaignHud
+          snap={campaignSnap}
+          onUnlock={(id) => campaignRef.current?.tryUnlockNode(id)}
+        />
+      )}
+      {ui === 'campaign' && campaignSnap?.phase === 'paused' && (
+        <CampaignPauseScreen
+          onResume={() => campaignRef.current?.resume()}
+          onQuit={exitCampaign}
+        />
+      )}
+      {ui === 'campaign' && campaignSnap?.phase === 'over' && (
+        <CampaignEndScreen snap={campaignSnap} onMenu={exitCampaign} />
+      )}
 
       {ui === 'lobby' && (
         <Lobby
@@ -304,6 +356,7 @@ export default function App(): React.ReactElement {
           standalone={STANDALONE}
           error={error}
           onStart={startSolo}
+          onCampaign={enterCampaign}
           onHost={(cfg) => void host(cfg)}
           onJoin={(cfg, room) => void join(cfg, room)}
           onStats={(cfg) => {

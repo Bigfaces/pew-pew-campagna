@@ -1,0 +1,506 @@
+// ================================================================
+// CAMPAIGN GAME CONTROLLER — Sprint 1 vertical slice
+// ================================================================
+// Same fixed-timestep accumulator loop as the Arena's Game (game.ts),
+// pared down to what a single-player level needs: one camera, no
+// net, no roster. See CampaignWorld (sim/campaign/world.ts) for the
+// rules this drives.
+// ================================================================
+
+import { AudioEngine } from '../audio/engine';
+import {
+  renderCampaignBoss,
+  renderCampaignCores,
+  renderCampaignDrone,
+  renderCampaignWalls,
+} from '../render/campaignScene';
+import { CameraFx, computeViewport, type Viewport } from '../render/camera';
+import { renderBanner, renderDamageOverlay, type Banner } from '../render/overlay';
+import { renderBackdrop } from '../render/scene';
+import { buildBackdrops, getTextures } from '../render/textures';
+import {
+  MAX_PITCH,
+  MAX_TICKS_PER_FRAME,
+  MOUSE_SENSITIVITY,
+  TICK_MS,
+  TURN_SPEED,
+  clampSensitivity,
+} from '../sim/constants';
+import {
+  BOSS_HITS_TO_DEFEAT,
+  DRONE_X,
+  DRONE_Y,
+} from '../sim/campaign/constants';
+import { CAMP_MAP_H, CAMP_MAP_W } from '../sim/campaign/map';
+import { weaponStatsFor } from '../sim/campaign/skills';
+import type { CampaignEvent, CampaignInput, RoomId } from '../sim/campaign/types';
+import { CampaignWorld } from '../sim/campaign/world';
+
+export type CampaignPhase = 'playing' | 'paused' | 'over';
+
+export interface CampaignHudSnapshot {
+  phase: CampaignPhase;
+  pointerLocked: boolean;
+  muted: boolean;
+  room: RoomId;
+  coresCollected: number;
+  availableCores: number;
+  unlockedNodes: string[];
+  door: { armed: boolean; closeTimerMs: number };
+  bossActive: boolean;
+  bossPhase: string;
+  bossDamageTaken: number;
+  bossHitsToDefeat: number;
+  victory: boolean;
+}
+
+export interface CampaignGameOptions {
+  onHud: (snap: CampaignHudSnapshot) => void;
+  sensitivity?: number;
+}
+
+const HUD_INTERVAL = 120;
+
+export class CampaignGame {
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+  private opts: CampaignGameOptions;
+
+  private world = new CampaignWorld();
+  private fx = new CameraFx();
+  audio = new AudioEngine();
+
+  private vp: Viewport;
+  private depth: Float32Array;
+  private cssW = 1;
+  private cssH = 1;
+  private dpr = 1;
+
+  private phase: CampaignPhase = 'playing';
+  private yaw = 0;
+  private keys = new Set<string>();
+  private fireQueued = false;
+
+  private pointerLocked = false;
+  private mouseDX = 0;
+  private mouseDY = 0;
+  private sensMult = 1;
+
+  private accumulator = 0;
+  private lastFrame = 0;
+  private rafId = 0;
+  private running = false;
+
+  private prevX = 0;
+  private prevY = 0;
+  private lastHudPush = 0;
+  private mutedFlag = false;
+  private banner: Banner | null = null;
+  private wasReady = true;
+
+  private ro: ResizeObserver | null = null;
+
+  constructor(canvas: HTMLCanvasElement, opts: CampaignGameOptions) {
+    this.canvas = canvas;
+    this.opts = opts;
+    this.sensMult = clampSensitivity(opts.sensitivity ?? 1);
+    const ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) throw new Error('2D canvas context unavailable');
+    this.ctx = ctx;
+
+    this.yaw = this.world.state.player.angle;
+    this.prevX = this.world.state.player.x;
+    this.prevY = this.world.state.player.y;
+
+    getTextures();
+    this.vp = computeViewport(1, 1, 1);
+    this.depth = new Float32Array(1);
+    this.resize();
+    this.bindEvents();
+  }
+
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    this.lastFrame = performance.now();
+    this.accumulator = 0;
+    this.audio.init();
+    this.requestPointerLock();
+    this.rafId = requestAnimationFrame(this.loop);
+    this.pushHud(true);
+  }
+
+  destroy(): void {
+    this.running = false;
+    cancelAnimationFrame(this.rafId);
+    this.unbindEvents();
+    this.ro?.disconnect();
+    this.audio.dispose();
+    if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+  }
+
+  pause(): void {
+    if (this.phase !== 'playing') return;
+    this.phase = 'paused';
+    if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+    this.pushHud(true);
+  }
+
+  resume(): void {
+    if (this.phase !== 'paused') return;
+    this.phase = 'playing';
+    this.accumulator = 0;
+    this.lastFrame = performance.now();
+    this.requestPointerLock();
+    this.pushHud(true);
+  }
+
+  toggleMute(): void {
+    this.audio.setMuted(!this.mutedFlag);
+    this.mutedFlag = !this.mutedFlag;
+    this.pushHud(true);
+  }
+
+  setSensitivity(mult: number): void {
+    this.sensMult = clampSensitivity(mult);
+  }
+
+  /** Spend an available core on a Precisione node — called from the
+   *  HUD, not the fixed-tick loop, since it is a menu action rather
+   *  than something that needs to be simulated. */
+  tryUnlockNode(id: string): boolean {
+    const ok = this.world.tryUnlockNode(id);
+    if (ok) this.pushHud(true);
+    return ok;
+  }
+
+  requestPointerLock(): void {
+    try {
+      const p = this.canvas.requestPointerLock() as unknown as
+        | Promise<void>
+        | undefined;
+      void p?.catch?.(() => {
+        // Blocked (sandboxed iframe); Q/E keyboard turning still works.
+      });
+    } catch {
+      /* same fallback */
+    }
+  }
+
+  // ---- sizing ----------------------------------------------------
+
+  private resize(): void {
+    const rect = this.canvas.getBoundingClientRect();
+    const cssW = Math.max(320, Math.floor(rect.width || window.innerWidth));
+    const cssH = Math.max(240, Math.floor(rect.height || window.innerHeight));
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    this.canvas.width = Math.floor(cssW * dpr);
+    this.canvas.height = Math.floor(cssH * dpr);
+    this.cssW = cssW;
+    this.cssH = cssH;
+    this.dpr = dpr;
+    this.vp = computeViewport(cssW, cssH, dpr, 1);
+    this.depth = new Float32Array(this.vp.numRays);
+    buildBackdrops(getTextures(), cssW, cssH);
+
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.ctx.imageSmoothingEnabled = false;
+  }
+
+  // ---- input -------------------------------------------------------
+
+  private onKeyDown = (e: KeyboardEvent): void => {
+    const k = e.key.toLowerCase();
+    this.keys.add(k);
+    if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) {
+      e.preventDefault();
+    }
+    if (k === 'escape') {
+      if (this.phase === 'playing') this.pause();
+      else if (this.phase === 'paused') this.resume();
+    }
+    if (k === 'm') this.toggleMute();
+  };
+
+  private onKeyUp = (e: KeyboardEvent): void => {
+    this.keys.delete(e.key.toLowerCase());
+  };
+
+  private onMouseMove = (e: MouseEvent): void => {
+    if (!this.pointerLocked) return;
+    this.mouseDX += e.movementX;
+    this.mouseDY += e.movementY;
+  };
+
+  private onMouseDown = (e: MouseEvent): void => {
+    if (this.phase !== 'playing') return;
+    if (e.button !== 0) return;
+    if (!this.pointerLocked) {
+      this.requestPointerLock();
+      return;
+    }
+    this.fireQueued = true;
+  };
+
+  private onPointerLockChange = (): void => {
+    const locked = document.pointerLockElement === this.canvas;
+    this.pointerLocked = locked;
+    if (!locked && this.phase === 'playing') this.pause();
+    this.pushHud(true);
+  };
+
+  private onContextMenu = (e: Event): void => e.preventDefault();
+
+  private onVisibility = (): void => {
+    if (document.hidden && this.phase === 'playing') this.pause();
+  };
+
+  private onResize = (): void => this.resize();
+
+  private bindEvents(): void {
+    window.addEventListener('keydown', this.onKeyDown);
+    window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('mousemove', this.onMouseMove);
+    window.addEventListener('resize', this.onResize);
+    document.addEventListener('pointerlockchange', this.onPointerLockChange);
+    document.addEventListener('visibilitychange', this.onVisibility);
+    this.canvas.addEventListener('mousedown', this.onMouseDown);
+    this.canvas.addEventListener('contextmenu', this.onContextMenu);
+
+    if (typeof ResizeObserver !== 'undefined') {
+      this.ro = new ResizeObserver(() => this.resize());
+      this.ro.observe(this.canvas);
+    }
+  }
+
+  private unbindEvents(): void {
+    window.removeEventListener('keydown', this.onKeyDown);
+    window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('mousemove', this.onMouseMove);
+    window.removeEventListener('resize', this.onResize);
+    document.removeEventListener('pointerlockchange', this.onPointerLockChange);
+    document.removeEventListener('visibilitychange', this.onVisibility);
+    this.canvas.removeEventListener('mousedown', this.onMouseDown);
+    this.canvas.removeEventListener('contextmenu', this.onContextMenu);
+  }
+
+  private applyLook(frameDt: number): void {
+    const k = this.keys;
+    const sens = MOUSE_SENSITIVITY * this.sensMult;
+    this.yaw += this.mouseDX * sens;
+    this.fx.addPitch((-this.mouseDY * sens) / MAX_PITCH / 2);
+    this.mouseDX = 0;
+    this.mouseDY = 0;
+
+    const turn = (TURN_SPEED * frameDt) / 1000;
+    if (k.has('q') || k.has('arrowleft')) this.yaw -= turn;
+    if (k.has('e') || k.has('arrowright')) this.yaw += turn;
+  }
+
+  private buildInput(frameDt: number): CampaignInput {
+    const k = this.keys;
+    this.applyLook(frameDt);
+
+    let forward = 0;
+    let strafe = 0;
+    if (k.has('w') || k.has('arrowup')) forward += 1;
+    if (k.has('s') || k.has('arrowdown')) forward -= 1;
+    if (k.has('d')) strafe += 1;
+    if (k.has('a')) strafe -= 1;
+
+    const input: CampaignInput = {
+      forward,
+      strafe,
+      aimAngle: this.yaw,
+      fire: this.fireQueued,
+      // Scoped aiming is not wired up yet in the campaign — see
+      // GDD.md section 10 task list. The Aggancio Ottico node's stats
+      // exist and are tested, but nothing in this controller sets
+      // this true yet.
+      ads: false,
+    };
+    this.fireQueued = false;
+    return input;
+  }
+
+  // ---- events --------------------------------------------------------
+
+  private handleEvents(events: readonly CampaignEvent[]): void {
+    for (const ev of events) {
+      switch (ev.type) {
+        case 'roomEntered':
+          this.raise(ev.room.toUpperCase(), '', '#9adfff');
+          break;
+        case 'coreCollected':
+        case 'nodeUnlocked':
+          this.audio.pickup(this.world.state.player.x, this.world.state.player.y);
+          break;
+        case 'doorSealed':
+          this.audio.impact(this.world.state.player.x, this.world.state.player.y);
+          break;
+        case 'droneDown':
+          this.audio.kill(DRONE_X, DRONE_Y);
+          break;
+        case 'bossHit':
+          this.audio.hitMarker();
+          this.fx.shake(10);
+          break;
+        case 'bossDefeated':
+          this.audio.matchEnd(true);
+          this.raise('SENTINELLA ABBATTUTA', '', '#7dfc9a');
+          this.phase = 'over';
+          if (document.pointerLockElement === this.canvas) {
+            document.exitPointerLock();
+          }
+          break;
+        case 'playerDied':
+          this.audio.death();
+          this.fx.flashDamage();
+          this.fx.shake(20);
+          break;
+      }
+    }
+  }
+
+  private raise(text: string, sub: string, color: string): void {
+    this.banner = { text, sub, at: performance.now(), color };
+  }
+
+  // ---- loop ------------------------------------------------------------
+
+  private loop = (ts: number): void => {
+    if (!this.running) return;
+    this.rafId = requestAnimationFrame(this.loop);
+
+    const frameDt = Math.min(ts - this.lastFrame, 250);
+    this.lastFrame = ts;
+
+    if (this.phase === 'playing') {
+      this.accumulator += frameDt;
+      let ticks = 0;
+      while (
+        this.accumulator >= TICK_MS &&
+        ticks < MAX_TICKS_PER_FRAME &&
+        this.phase === 'playing'
+      ) {
+        this.tick();
+        this.accumulator -= TICK_MS;
+        ticks++;
+      }
+      if (ticks >= MAX_TICKS_PER_FRAME) this.accumulator = 0;
+    }
+
+    this.updateFeel(frameDt);
+    this.render(this.accumulator / TICK_MS);
+    this.pushHud(false);
+  };
+
+  private tick(): void {
+    this.prevX = this.world.state.player.x;
+    this.prevY = this.world.state.player.y;
+
+    const input = this.buildInput(TICK_MS);
+    const events = this.world.step(input);
+    this.handleEvents(events);
+  }
+
+  private updateFeel(frameDt: number): void {
+    const moving =
+      this.phase === 'playing' &&
+      (this.keys.has('w') ||
+        this.keys.has('a') ||
+        this.keys.has('s') ||
+        this.keys.has('d') ||
+        this.keys.has('arrowup') ||
+        this.keys.has('arrowdown'));
+    this.fx.update(frameDt, moving, 0.72);
+
+    const ready = this.world.state.player.weaponCooldown <= 0;
+    if (ready && !this.wasReady) this.audio.boltCycle();
+    this.wasReady = ready;
+  }
+
+  private render(alpha: number): void {
+    const { ctx, vp, fx, world } = this;
+    const p = world.state.player;
+
+    const x = this.prevX + (p.x - this.prevX) * alpha;
+    const y = this.prevY + (p.y - this.prevY) * alpha;
+    const cam = { x, y, angle: this.yaw };
+
+    this.audio.updateListener(cam.x, cam.y, cam.angle);
+
+    renderBackdrop(ctx, vp, fx);
+    renderCampaignWalls(ctx, vp, fx, cam, this.depth, world.getTile, CAMP_MAP_W, CAMP_MAP_H);
+    renderCampaignCores(ctx, vp, fx, cam, this.depth, world.state.cores, performance.now());
+    renderCampaignDrone(
+      ctx, vp, fx, cam, this.depth, world.state.drone, DRONE_X, DRONE_Y, performance.now(),
+    );
+    renderCampaignBoss(ctx, vp, fx, cam, this.depth, world.state.boss, performance.now());
+
+    this.renderCrosshair();
+    renderDamageOverlay(ctx, vp, fx);
+    const now = performance.now();
+    if (this.banner) renderBanner(ctx, vp, this.banner, now);
+
+    if (this.phase === 'paused') {
+      ctx.fillStyle = 'rgba(6,7,12,0.72)';
+      ctx.fillRect(0, 0, vp.width, vp.height);
+    }
+  }
+
+  private renderCrosshair(): void {
+    const { ctx, vp } = this;
+    const ready = this.world.state.player.weaponCooldown <= 0;
+    const cx = vp.width / 2;
+    const cy = vp.height / 2;
+    const size = ready ? 7 : 4;
+
+    ctx.save();
+    ctx.strokeStyle = ready ? '#e8f4ff' : 'rgba(232,244,255,0.4)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - size, cy);
+    ctx.lineTo(cx - 2, cy);
+    ctx.moveTo(cx + 2, cy);
+    ctx.lineTo(cx + size, cy);
+    ctx.moveTo(cx, cy - size);
+    ctx.lineTo(cx, cy - 2);
+    ctx.moveTo(cx, cy + 2);
+    ctx.lineTo(cx, cy + size);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- HUD bridge --------------------------------------------------
+
+  private pushHud(force: boolean): void {
+    const now = performance.now();
+    if (!force && now - this.lastHudPush < HUD_INTERVAL) return;
+    this.lastHudPush = now;
+
+    const s = this.world.state;
+    this.opts.onHud({
+      phase: this.phase,
+      pointerLocked: this.pointerLocked,
+      muted: this.mutedFlag,
+      room: s.checkpoint.room,
+      coresCollected: s.coresCollected,
+      availableCores: this.world.availableCores,
+      unlockedNodes: s.unlockedNodes,
+      door: { armed: s.door.armed, closeTimerMs: s.door.closeTimer },
+      bossActive: s.checkpoint.room === 'molo',
+      bossPhase: s.boss.phase,
+      bossDamageTaken: s.boss.damageTaken,
+      bossHitsToDefeat: BOSS_HITS_TO_DEFEAT,
+      victory: this.world.finished,
+    });
+  }
+
+  /** Weapon cooldown as configured by unlocked nodes — read by the HUD
+   *  to label the Otturatore Rapido node with its actual effect. */
+  weaponStats() {
+    return weaponStatsFor(this.world.state.unlockedNodes);
+  }
+}
