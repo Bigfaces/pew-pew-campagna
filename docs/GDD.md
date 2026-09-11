@@ -181,9 +181,9 @@ scrivere tutto l'Atto I. Scope fissato dal briefing:
 - **Boss:** Sentinella del Molo — scudo frontale sempre attivo, vulnerabile
   solo al core sul retro quando carica l'attacco ravvicinato.
 - **Morte:** checkpoint di stanza (regola "Tutorial" sopra).
-- **Skill tree:** un solo ramo, **Precisione**, con 2-3 nodi (es. otturatore
-  più rapido, oscillazione dell'ottica ridotta), sbloccabili con i core
-  raccolti nel livello. Gli altri rami restano solo su carta per ora.
+- **Skill tree:** un solo ramo, **Precisione**, sbloccabile con i core
+  raccolti nel livello (1 core per nodo). Gli altri rami restano solo su
+  carta per ora.
 - **Narrazione:** nessuna per questa iterazione — ci si concentra su
   meccaniche e level design; il tono sci-fi/ARBITER arriva quando il loop è
   già divertente.
@@ -203,10 +203,41 @@ scrivere tutto l'Atto I. Scope fissato dal briefing:
 5. Estendere `tools/balance.mts` (o un tool gemello) con metriche della
    slice: tempo medio per stanza, tentativi al boss.
 
-### Domande ancora aperte
+### Layout delle stanze
 
-- Layout esatto delle 2-3 stanze (geometria, dove mettere la porta a tempo).
-- Valori esatti dei 2-3 nodi Precisione (quanto più rapido l'otturatore,
-  quanto si riduce l'oscillazione).
-- Quanti core servono per sbloccare ogni nodo, e quanti core ci sono nella
-  slice.
+Percorso lineare, senza bivi:
+
+1. **Stanza A — Attracco.** Sicura, nessuna minaccia: spazio per imparare i
+   comandi (movimento, mira, ottica) prima che inizi il pericolo.
+2. **Corridoio con la porta stagna a tempo.** Un sensore all'ingresso avvia
+   un timer; se il giocatore non raggiunge l'uscita del corridoio prima
+   dello scadere, la porta si chiude e blocca il passaggio (si torna al
+   checkpoint della Stanza A per riprovare).
+3. **Stanza B — Magazzino.** Un drone/turret stazionario (riuso dell'AI bot
+   esistente, immobile). Contiene il primo core; un secondo core è nascosto
+   vicino all'ingresso della porta a tempo, nel corridoio precedente.
+4. **Stanza C — Molo.** Arena del boss: più ampia delle altre, per lasciare
+   spazio a girare attorno alla Sentinella e raggiungerne il retro.
+
+### Nodi del ramo Precisione (valori)
+
+Partono dai valori reali di `sim/constants.ts` (`BULLET_COOLDOWN` 1400 ms,
+`ADS_TRANSITION_MS` 130 ms, `ADS_MOVE_MULT` 0.45):
+
+1. **Otturatore Rapido** — tempo tra un colpo e l'altro: `1400ms → 1150ms`.
+2. **Aggancio Ottico** — transizione di messa a fuoco dell'ottica:
+   `130ms → 70ms`; rallentamento mentre si è in mira: `0.45× → 0.55×`.
+3. **Danno di Striscio** — sul core della Sentinella (e dei boss futuri),
+   un colpo quasi a segno nella finestra di vulnerabilità conta come mezzo
+   danno invece di zero. Sostituisce l'idea iniziale di un nodo che riduce
+   l'oscillazione dell'ottica: quella meccanica non esiste nell'Arena, e
+   introdurla ora avrebbe richiesto un sistema nuovo invece di riusare
+   numeri già bilanciati.
+
+### Economia dei core
+
+3 core lungo il percorso: uno nascosto nel corridoio vicino alla porta a
+tempo, uno nella Stanza B (Magazzino), uno garantito alla sconfitta della
+Sentinella. Ogni nodo costa 1 core: chi esplora un minimo sblocca l'intero
+ramo Precisione in questa slice. La scarsità reale (dover scegliere cosa
+sbloccare) arriva quando ci saranno più rami tra cui distribuire i core.
