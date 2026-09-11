@@ -9,9 +9,7 @@
 
 import { AudioEngine } from '../audio/engine';
 import {
-  renderCampaignBoss,
-  renderCampaignCores,
-  renderCampaignDrone,
+  renderCampaignBillboards,
   renderCampaignWalls,
 } from '../render/campaignScene';
 import { CameraFx, computeViewport, type Viewport } from '../render/camera';
@@ -32,7 +30,7 @@ import {
   DRONE_Y,
 } from '../sim/campaign/constants';
 import { CAMP_MAP_H, CAMP_MAP_W } from '../sim/campaign/map';
-import { weaponStatsFor } from '../sim/campaign/skills';
+import { hasGrazeDamage, weaponStatsFor } from '../sim/campaign/skills';
 import type { CampaignEvent, CampaignInput, RoomId } from '../sim/campaign/types';
 import { CampaignWorld } from '../sim/campaign/world';
 
@@ -358,6 +356,12 @@ export class CampaignGame {
           this.audio.death();
           this.fx.flashDamage();
           this.fx.shake(20);
+          // The world already snapped the player back to the checkpoint
+          // (position and facing) by the time this event arrives; the
+          // camera's own yaw is driven independently by the mouse, so
+          // it must be re-synced or the view keeps facing whatever
+          // direction killed the player, ignoring the teleport.
+          this.yaw = this.world.state.player.angle;
           break;
       }
     }
@@ -431,17 +435,26 @@ export class CampaignGame {
 
     this.audio.updateListener(cam.x, cam.y, cam.angle);
 
+    const now = performance.now();
     renderBackdrop(ctx, vp, fx);
     renderCampaignWalls(ctx, vp, fx, cam, this.depth, world.getTile, CAMP_MAP_W, CAMP_MAP_H);
-    renderCampaignCores(ctx, vp, fx, cam, this.depth, world.state.cores, performance.now());
-    renderCampaignDrone(
-      ctx, vp, fx, cam, this.depth, world.state.drone, DRONE_X, DRONE_Y, performance.now(),
+    renderCampaignBillboards(
+      ctx,
+      vp,
+      fx,
+      cam,
+      this.depth,
+      world.state.cores,
+      world.state.drone,
+      DRONE_X,
+      DRONE_Y,
+      world.state.boss,
+      hasGrazeDamage(world.state.unlockedNodes),
+      now,
     );
-    renderCampaignBoss(ctx, vp, fx, cam, this.depth, world.state.boss, performance.now());
 
     this.renderCrosshair();
     renderDamageOverlay(ctx, vp, fx);
-    const now = performance.now();
     if (this.banner) renderBanner(ctx, vp, this.banner, now);
 
     if (this.phase === 'paused') {
