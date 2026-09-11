@@ -150,11 +150,63 @@ requisito di database).
 4. Narrativa: testi tra livelli, battute di ARBITER.
 5. Atti II e III, bilanciamento con il tool esteso.
 
-## 9. Domande aperte
+## 9. Decisioni dal briefing
 
-- Quanti livelli per atto puntiamo davvero (3-4 è solo un'ipotesi)?
-- Il respawn dopo la morte è "checkpoint di stanza" o "riparti dal livello"?
-- Gli sprite futuri sostituiranno la grafica wireframe attuale o si
-  aggiungeranno sopra (es. solo per boss e nemici, muri restano wireframe)?
-- Vogliamo salvataggi multipli (slot) o un solo profilo come le statistiche
-  attuali dell'Arena?
+- **Lunghezza:** 3 livelli + boss per atto (9 livelli + 3 boss totali). Si
+  allunga solo se, dopo la verticale slice, il ritmo lo giustifica.
+- **Sprite:** in futuro solo su nemici/boss. I muri restano wireframe/texture
+  procedurali come nell'Arena: è il tratto distintivo tecnico del gioco.
+- **Salvataggio:** profilo unico su `localStorage`, come le statistiche
+  dell'Arena. Niente slot multipli.
+- **Morte e difficoltà — tre modalità, costruite come fasi di sviluppo
+  successive (non tutte necessariamente nel gioco finale, si valuta dopo
+  aver provato la prima):**
+  1. **Tutorial** *(prima a essere costruita)* — respawn nell'ultima stanza
+     raggiunta, nemici della stanza resettati, progressione/skill conservati.
+  2. **Medio** *(seconda iterazione)* — respawn all'inizio del livello
+     corrente.
+  3. **Roguelike** *(terza iterazione)* — morire fa ripartire l'intero atto
+     corrente (3 livelli + boss): la posta si alza per chi cerca la sfida
+     vera.
+
+## 10. Sprint 1 — Verticale slice (modalità Tutorial)
+
+Obiettivo: un loop giocabile end-to-end, per validare le meccaniche prima di
+scrivere tutto l'Atto I. Scope fissato dal briefing:
+
+- **Livello:** 2-3 stanze collegate da corridoi (riuso del raycaster
+  esistente, nessuna mappa nuova enorme).
+- **Trabocchetto:** porta stagna a tempo (si chiude N secondi dopo
+  l'attivazione di un sensore).
+- **Boss:** Sentinella del Molo — scudo frontale sempre attivo, vulnerabile
+  solo al core sul retro quando carica l'attacco ravvicinato.
+- **Morte:** checkpoint di stanza (regola "Tutorial" sopra).
+- **Skill tree:** un solo ramo, **Precisione**, con 2-3 nodi (es. otturatore
+  più rapido, oscillazione dell'ottica ridotta), sbloccabili con i core
+  raccolti nel livello. Gli altri rami restano solo su carta per ora.
+- **Narrazione:** nessuna per questa iterazione — ci si concentra su
+  meccaniche e level design; il tono sci-fi/ARBITER arriva quando il loop è
+  già divertente.
+
+### Task tecnici (bozza)
+
+1. `sim/`: stato di progressione minimo (core raccolti, nodi Precisione
+   sbloccati), entità porta-a-tempo, macchina a stati per la Sentinella del
+   Molo — tutto a tick fissi e seedato come nell'Arena.
+2. `render/`: forme/colori per porta, core raccolgibile, boss (nessun asset
+   nuovo, stesso approccio wireframe).
+3. `ui/`: schermata minima di selezione "Prova la Campagna" e overlay dei
+   3 nodi Precisione (anche solo come lista testuale per l'MVP).
+4. Test headless per: attivazione/chiusura della porta a tempo, condizione
+   di vittoria/sconfitta contro la Sentinella, applicazione dei nodi
+   Precisione alle statistiche dell'arma.
+5. Estendere `tools/balance.mts` (o un tool gemello) con metriche della
+   slice: tempo medio per stanza, tentativi al boss.
+
+### Domande ancora aperte
+
+- Layout esatto delle 2-3 stanze (geometria, dove mettere la porta a tempo).
+- Valori esatti dei 2-3 nodi Precisione (quanto più rapido l'otturatore,
+  quanto si riduce l'oscillazione).
+- Quanti core servono per sbloccare ogni nodo, e quanti core ci sono nella
+  slice.
