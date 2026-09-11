@@ -28,7 +28,7 @@ export function CampaignHud({
 }): React.ReactElement {
   return (
     <div className="hud">
-      <div className="hud-top">
+      <div className="hud-top campaign-hud-top">
         <div className="hud-clock">{ROOM_LABEL[snap.room]}</div>
         {snap.door.armed && (
           <div className="hud-clock" data-urgent>
@@ -44,10 +44,7 @@ export function CampaignHud({
         {snap.muted && <div className="hud-muted">AUDIO MUTO · M</div>}
       </div>
 
-      <div
-        className="hud-scores"
-        style={{ left: 'auto', right: 14, pointerEvents: 'auto' }}
-      >
+      <div className="hud-scores campaign-node-panel">
         <div className="hud-row">
           <span className="dot" style={{ background: '#5eead4' }} />
           <span className="name">CORE</span>
@@ -62,13 +59,11 @@ export function CampaignHud({
             <button
               key={n.id}
               type="button"
-              className="btn secondary"
+              className="btn secondary campaign-node-btn"
               disabled={unlocked || !affordable}
               onClick={() => onUnlock(n.id)}
               style={{
                 marginTop: 6,
-                padding: '6px 10px',
-                fontSize: 11,
                 opacity: unlocked ? 0.6 : 1,
               }}
             >
