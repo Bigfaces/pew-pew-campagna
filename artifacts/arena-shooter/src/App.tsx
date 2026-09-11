@@ -15,6 +15,7 @@ import {
 import type { SlotConfig } from './sim/world';
 import { CampaignEndScreen, CampaignHud, CampaignPauseScreen } from './ui/CampaignHud';
 import { Hud } from './ui/Hud';
+import { TouchControls } from './ui/TouchControls';
 import {
   EndScreen,
   Lobby,
@@ -315,7 +316,10 @@ export default function App(): React.ReactElement {
       {phase === 'playing' && ui !== 'campaign' && snap && <Hud snap={snap} />}
 
       {ui === 'campaign' && campaignSnap?.phase === 'playing' && (
-        <CampaignHud snap={campaignSnap} />
+        <>
+          <CampaignHud snap={campaignSnap} />
+          <TouchControls game={campaignRef.current} />
+        </>
       )}
       {ui === 'campaign' && campaignSnap?.phase === 'paused' && (
         <CampaignPauseScreen

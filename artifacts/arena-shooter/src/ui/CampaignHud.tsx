@@ -95,6 +95,11 @@ function NodeButton({
 export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.ReactElement {
   return (
     <div className="hud">
+      {/* One centred column rather than a second corner panel: two
+          independently-positioned boxes at the same top offset is
+          exactly what used to collide on phone-width screens (see
+          ui.css .campaign-hud-top) — sharing one column is immune to
+          that by construction, whatever either box's content length. */}
       <div className="hud-top campaign-hud-top">
         <div className="hud-clock">{ROOM_LABEL[snap.room]}</div>
         {snap.door.armed && (
@@ -108,26 +113,22 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
             {snap.bossDamageTaken}/{snap.bossHitsToDefeat}
           </div>
         )}
-        {snap.muted && <div className="hud-muted">AUDIO MUTO · M</div>}
-      </div>
-
-      <div className="hud-scores" style={{ left: 'auto', right: 14, minWidth: 150 }}>
-        <XpBar snap={snap} />
-        {snap.availableSkillPoints > 0 && (
-          <div className="hud-streak" style={{ marginTop: 8 }}>
-            {snap.availableSkillPoints} PUNTO{snap.availableSkillPoints > 1 ? 'I' : ''} · ESC
-          </div>
-        )}
+        <div className="hud-clock">
+          LIVELLO {snap.level} · {snap.xp}
+          {snap.xpForNextLevel !== null && `/${snap.xpForNextLevel}`} XP
+          {snap.availableSkillPoints > 0 &&
+            ` · ${snap.availableSkillPoints} PUNTO${snap.availableSkillPoints > 1 ? 'I' : ''} (ESC)`}
+        </div>
         {snap.shieldActive && (
-          <div className="hud-row" style={{ marginTop: 8, color: '#44ccff' }}>
-            <span className="dot" style={{ background: '#44ccff' }} />
+          <div className="hud-clock" style={{ color: '#44ccff', borderColor: '#44ccff' }}>
             SCUDO ATTIVO
           </div>
         )}
+        {snap.muted && <div className="hud-muted">AUDIO MUTO · M</div>}
       </div>
 
       {!snap.pointerLocked && (
-        <div className="hud-hint">
+        <div className="hud-hint campaign-hud-hint">
           CLICCA PER CATTURARE IL MOUSE &nbsp;·&nbsp; Q / E PER GIRARE SENZA
         </div>
       )}

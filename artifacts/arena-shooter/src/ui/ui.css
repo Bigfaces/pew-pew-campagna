@@ -578,6 +578,86 @@
   max-width: calc(100vw - 24px);
 }
 
+/* ---- Campaign: touch controls ---- */
+/* Hidden by default — a mouse-driven desktop has no use for an
+   on-screen joystick. `pointer: coarse` is true for a touchscreen
+   even on a large tablet, and false for a touch-capable laptop being
+   driven with its trackpad, which is the distinction that actually
+   matters here (can this input comfortably click a small target?),
+   not screen size. */
+.touch-controls {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .touch-controls {
+    display: block;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  /* A touch device never acquires pointer lock, so the hint about
+     clicking to capture the mouse would otherwise show permanently. */
+  .campaign-hud-hint {
+    display: none;
+  }
+}
+
+.touch-look-zone {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.touch-joystick {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: rgba(20, 22, 32, 0.45);
+  border: 1px solid var(--line);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.touch-joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  border-radius: 50%;
+  background: rgba(230, 233, 242, 0.28);
+  border: 1px solid rgba(230, 233, 242, 0.5);
+  pointer-events: none;
+}
+
+.touch-fire {
+  position: absolute;
+  right: 24px;
+  bottom: 28px;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(255, 95, 86, 0.28);
+  border: 1px solid var(--danger);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+}
+
 .badge {
   display: inline-block;
   padding: 2px 7px;

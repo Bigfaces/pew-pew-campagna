@@ -339,12 +339,14 @@ export class CampaignGame {
     const k = this.keys;
     this.applyLook(frameDt);
 
-    let forward = 0;
-    let strafe = 0;
+    let forward = this.touchMoveY;
+    let strafe = this.touchMoveX;
     if (k.has('w') || k.has('arrowup')) forward += 1;
     if (k.has('s') || k.has('arrowdown')) forward -= 1;
     if (k.has('d')) strafe += 1;
     if (k.has('a')) strafe -= 1;
+    forward = Math.max(-1, Math.min(1, forward));
+    strafe = Math.max(-1, Math.min(1, strafe));
 
     const input: CampaignInput = {
       forward,

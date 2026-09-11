@@ -98,13 +98,21 @@ subirla passivamente), e **niente bullet-hell** — coerente col ritmo
 
 ## 6. Skill tree e potenziamenti armi
 
-**Valuta di progressione:** *core* raccolti nei livelli (sostituiscono in
-campagna i power-up "a terra" usati in Arena) + core garantiti a fine boss.
+**Valuta di progressione: esperienza, non più core spesi direttamente.**
+Il primo passaggio (Sprint 1) faceva sbloccare un nodo a 1 core raccolto —
+semplice, ma premiava solo l'esplorazione: un giocatore che uccide tutto e
+ignora i core non progrediva mai. Ora ogni azione genera esperienza —
+raccogliere un core, entrare in una stanza nuova, colpire il drone, colpire
+o abbattere il boss — e salire di **livello** (soglie crescenti di XP
+cumulativa) concede un **punto abilità**, che è ciò che sblocca un nodo. I
+core restano raccoglibili e restano la fonte di XP più affidabile da
+esplorazione pura, ma non sono più l'unica strada: un run aggressivo e uno
+esplorativo progrediscono entrambi, verso lo stesso tipo di ricompensa.
 
 **Rami dello skill tree** (indicativi, da bilanciare):
 
-- **Precisione** — otturatore più rapido, oscillazione dell'ottica ridotta,
-  danno di striscio ai boss.
+- **Precisione** *(implementato)* — otturatore più rapido, aggancio ottico
+  più rapido e meno penalizzante, danno di striscio ai boss.
 - **Mobilità** — velocità base, scatto breve (dash) con cooldown, rumore dei
   passi ridotto.
 - **Sopravvivenza** — vite/scudo aggiuntivo, rigenerazione parziale tra le
@@ -112,6 +120,10 @@ campagna i power-up "a terra" usati in Arena) + core garantiti a fine boss.
 - **Percezione** — minimappa estesa, indicazione più precisa della
   direzione dei passi/spari nemici (evoluzione naturale del sistema
   "informazione guadagnata" già presente in Arena).
+
+I tre rami non-Precisione sono mostrati nel menu (schermata di pausa) come
+"prossimamente", con i nodi previsti a titolo di intenzione — non fanno
+ancora nulla, per non promettere un effetto che il gioco non mantiene.
 
 **Armi:** si parte con il fucile di precisione. Nodi dello skill tree
 sbloccano varianti/potenziamenti (es. caricatore da 2 colpi prima di
@@ -121,7 +133,37 @@ vita" del gioco. I boss sono le uniche entità con più "hit" necessari,
 gestiti come barre di vulnerabilità a fasi, non come HP generici.
 
 Persistenza: come le statistiche attuali, su `localStorage` (nessun nuovo
-requisito di database).
+requisito di database). Attualmente lo stato (XP, nodi, core) vive solo
+nella sessione di gioco in corso: lasciare la campagna e rientrare
+riparte da zero. Il salvataggio persistente è un lavoro a parte, non
+ancora fatto.
+
+### Potenziamenti vs progressione permanente
+
+L'Arena ha tre power-up temporanei (scudo, fuoco rapido, velocità): si
+raccolgono a terra, durano una manciata di secondi o un colpo, e
+scompaiono. Lo skill tree della Campagna è l'opposto: una scelta fatta una
+volta, che resta per tutta la partita. Confonderli — far sì che un
+"potenziamento" trovato per terra sia in realtà permanente, o viceversa —
+toglierebbe peso a entrambe le decisioni: quella di spendere un punto
+abilità (irreversibile, va pensata) e quella di raccogliere qualcosa in
+un corridoio (immediata, va solo notata).
+
+Per questo la Campagna tiene i due sistemi separati e visivamente distinti
+(i core/l'esperienza sono verde-ciano, i potenziamenti tattici sono blu
+come lo scudo dell'Arena) invece di far convergere tutto nello stesso
+albero. Il primo esempio concreto è lo **scudo tattico**: un pickup fisso
+nel Magazzino, prima del Molo, che assorbe un colpo (del drone o da
+contatto col boss) e si consuma — niente XP, nessuna scelta permanente, si
+può riprendere dopo la morte nello stesso tentativo. Serve da "prova
+generale": prima di affrontare la Sentinella, il gioco offre esplicitamente
+una seconda chance a chi la va a cercare.
+
+Il piano per gli atti successivi è estendere questa stessa idea invece di
+inventarne un'altra: fuoco rapido temporaneo prima di una stanza con più
+nemici, un boost di velocità per superare un corridoio a fuoco incrociato
+in tempo. Sempre pickup fissi legati a una minaccia specifica (non un
+drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
 
 ## 7. Impatto sull'architettura esistente
 
@@ -171,6 +213,12 @@ requisito di database).
 
 ## 10. Sprint 1 — Verticale slice (modalità Tutorial)
 
+**Stato: giocabile.** Sim, rendering, controller e menu esistono e sono
+raggiungibili da "CAMPAGNA (BETA)" nel menu principale, con controlli
+touch oltre a tastiera/mouse. Restano aperti: narrazione, salvataggio
+persistente tra sessioni, e i tre rami dello skill tree oltre a Precisione
+(vedi sezione 6).
+
 Obiettivo: un loop giocabile end-to-end, per validare le meccaniche prima di
 scrivere tutto l'Atto I. Scope fissato dal briefing:
 
@@ -181,9 +229,13 @@ scrivere tutto l'Atto I. Scope fissato dal briefing:
 - **Boss:** Sentinella del Molo — scudo frontale sempre attivo, vulnerabile
   solo al core sul retro quando carica l'attacco ravvicinato.
 - **Morte:** checkpoint di stanza (regola "Tutorial" sopra).
-- **Skill tree:** un solo ramo, **Precisione**, sbloccabile con i core
-  raccolti nel livello (1 core per nodo). Gli altri rami restano solo su
-  carta per ora.
+- **Skill tree:** un solo ramo, **Precisione**, sbloccabile con punti
+  abilità guadagnati salendo di livello (esperienza da core, stanze,
+  drone, boss — vedi sezione 6). Gli altri rami restano solo su carta
+  per ora.
+- **Potenziamento tattico:** uno scudo raccoglibile nel Magazzino, prima
+  del Molo — assorbe un colpo e si consuma, distinto dallo skill tree
+  (sezione 6, "Potenziamenti vs progressione permanente").
 - **Narrazione:** nessuna per questa iterazione — ci si concentra su
   meccaniche e level design; il tono sci-fi/ARBITER arriva quando il loop è
   già divertente.
