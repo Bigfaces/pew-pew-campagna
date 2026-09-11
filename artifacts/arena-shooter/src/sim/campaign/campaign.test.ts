@@ -1,0 +1,231 @@
+// ================================================================
+// CAMPAIGN SIMULATION TESTS — Sprint 1 vertical slice
+// ================================================================
+// Same headless discipline as the Arena's sim.test.ts: the campaign
+// sim has no DOM dependency, so every mechanic in GDD.md section 10
+// is pinned down here without a browser.
+// ================================================================
+
+import { describe, expect, it } from 'vitest';
+
+import { TICK_MS, TILE } from '../constants';
+import {
+  BOSS_DEFEAT_BONUS_CORES,
+  BOSS_HITS_TO_DEFEAT,
+  DOOR_CLOSE_DELAY_MS,
+  DRONE_REACTION_MS,
+  NODE_OTTURATORE_COOLDOWN_MS,
+} from './constants';
+import { emptyCampaignInput, type CampaignInput } from './types';
+import {
+  coresSpent,
+  hasGrazeDamage,
+  weaponStatsFor,
+} from './skills';
+import { CampaignWorld } from './world';
+
+function input(over: Partial<CampaignInput> = {}): CampaignInput {
+  return { ...emptyCampaignInput(), ...over };
+}
+
+/** Step with empty input `n` times — used to let timers run down
+ *  without moving or firing. */
+function idleTicks(world: CampaignWorld, n: number): void {
+  for (let i = 0; i < n; i++) world.step();
+}
+
+describe('skills — ramo Precisione', () => {
+  it('base stats match the Arena weapon untouched', () => {
+    const stats = weaponStatsFor([]);
+    expect(stats.cooldownMs).toBe(1400);
+  });
+
+  it('Otturatore Rapido shortens the cooldown to the GDD value', () => {
+    const stats = weaponStatsFor(['otturatore-rapido']);
+    expect(stats.cooldownMs).toBe(NODE_OTTURATORE_COOLDOWN_MS);
+  });
+
+  it('Danno di Striscio only applies when unlocked', () => {
+    expect(hasGrazeDamage([])).toBe(false);
+    expect(hasGrazeDamage(['danno-di-striscio'])).toBe(true);
+  });
+
+  it('coresSpent sums the cost of every unlocked node', () => {
+    expect(coresSpent(['otturatore-rapido', 'aggancio-ottico'])).toBe(2);
+  });
+});
+
+describe('CampaignWorld — porta stagna a tempo', () => {
+  it('seals after the delay and blocks the corridor', () => {
+    const world = new CampaignWorld();
+    // Walk straight into the corridor sensor without touching the door.
+    world.state.player.x = 7.2 * TILE;
+    world.state.player.y = 5.5 * TILE;
+
+    world.step(); // arms the door on this tick
+    expect(world.state.door.armed).toBe(true);
+    expect(world.state.door.closed).toBe(false);
+
+    // Stay put (empty input = no movement) until the timer runs out.
+    idleTicks(world, Math.ceil(DOOR_CLOSE_DELAY_MS / TICK_MS) + 1);
+    expect(world.state.door.closed).toBe(true);
+
+    // Now try to push straight through where the door sits.
+    world.state.player.x = 8.5 * TILE;
+    world.state.player.y = 5.5 * TILE;
+    for (let i = 0; i < 30; i++) {
+      world.step(input({ forward: 1, aimAngle: 0 }));
+    }
+    expect(world.state.player.x).toBeLessThan(9 * TILE);
+  });
+
+  it('never arms if the player has not reached the sensor tile', () => {
+    const world = new CampaignWorld();
+    idleTicks(world, 50);
+    expect(world.state.door.armed).toBe(false);
+  });
+});
+
+describe('CampaignWorld — core e skill tree', () => {
+  it('unlocks a node only when enough cores are available', () => {
+    const world = new CampaignWorld();
+    expect(world.tryUnlockNode('otturatore-rapido')).toBe(false);
+
+    world.state.coresCollected = 1;
+    expect(world.tryUnlockNode('otturatore-rapido')).toBe(true);
+    expect(world.availableCores).toBe(0);
+
+    // A second node needs a second core.
+    expect(world.tryUnlockNode('aggancio-ottico')).toBe(false);
+    world.state.coresCollected = 2;
+    expect(world.tryUnlockNode('aggancio-ottico')).toBe(true);
+
+    // Cannot unlock the same node twice.
+    expect(world.tryUnlockNode('otturatore-rapido')).toBe(false);
+  });
+
+  it('picking up a core in the Magazzino increments coresCollected', () => {
+    const world = new CampaignWorld();
+    const core = world.state.cores.find((c) => c.id === 'magazzino')!;
+    world.state.player.x = core.x;
+    world.state.player.y = core.y;
+
+    const events = world.step();
+    expect(world.state.coresCollected).toBe(1);
+    expect(events.some((e) => e.type === 'coreCollected')).toBe(true);
+  });
+});
+
+describe('CampaignWorld — drone del Magazzino', () => {
+  it('kills the player after holding line of sight, then respawns at the checkpoint', () => {
+    const world = new CampaignWorld();
+    world.state.checkpoint = {
+      room: 'magazzino',
+      x: 13.5 * TILE,
+      y: 7 * TILE,
+      angle: -Math.PI / 2,
+    };
+    world.state.player.x = 13.5 * TILE;
+    world.state.player.y = 7 * TILE;
+
+    const ticksToFire = Math.ceil(DRONE_REACTION_MS / TICK_MS) + 2;
+    let died = false;
+    for (let i = 0; i < ticksToFire; i++) {
+      const events = world.step();
+      if (events.some((e) => e.type === 'playerDied')) died = true;
+    }
+
+    expect(died).toBe(true);
+    expect(world.state.player.x).toBe(13.5 * TILE);
+    expect(world.state.player.y).toBe(7 * TILE);
+    expect(world.state.drone.alive).toBe(true);
+  });
+});
+
+describe('CampaignWorld — Sentinella del Molo', () => {
+  it('blocks a hit taken from the front while guarding', () => {
+    const world = new CampaignWorld();
+    world.state.checkpoint = { room: 'molo', x: 0, y: 0, angle: 0 };
+    const boss = world.state.boss;
+
+    // Stand directly in front of the boss's starting facing (west)
+    // and fire while it is still in 'guard'.
+    world.state.player.x = boss.x - 40;
+    world.state.player.y = boss.y;
+    const aimAngle = Math.atan2(boss.y - world.state.player.y, boss.x - world.state.player.x);
+
+    const events = world.step(input({ aimAngle, fire: true }));
+    expect(events.some((e) => e.type === 'bossHit')).toBe(false);
+    expect(world.state.boss.damageTaken).toBe(0);
+  });
+
+  it('takes three rear hits during a charge to defeat, granting the bonus core', () => {
+    const world = new CampaignWorld();
+    world.state.checkpoint = { room: 'molo', x: 17.5 * TILE, y: 5.5 * TILE, angle: 0 };
+
+    for (let hit = 1; hit <= BOSS_HITS_TO_DEFEAT; hit++) {
+      // Force a fresh telegraph -> charge transition aimed at a known
+      // spot, so the charge direction (and therefore the rear arc) is
+      // deterministic for this test.
+      world.state.player.x = 17.5 * TILE;
+      world.state.player.y = 5.5 * TILE;
+      world.state.boss.phase = 'telegraph';
+      world.state.boss.phaseTimer = 1;
+      world.step(); // telegraph ends: chargeDir locks onto the player above
+
+      const boss = world.state.boss;
+      expect(boss.phase).toBe('charge');
+
+      // Reposition behind the boss (opposite its charge direction) and
+      // shoot the exposed core.
+      const dodgeX = boss.x - boss.chargeDirX * 40;
+      const dodgeY = boss.y - boss.chargeDirY * 40;
+      world.state.player.x = dodgeX;
+      world.state.player.y = dodgeY;
+      world.state.player.weaponCooldown = 0;
+      const aimAngle = Math.atan2(boss.y - dodgeY, boss.x - dodgeX);
+
+      const events = world.step(input({ aimAngle, fire: true }));
+      const hitEvent = events.find((e) => e.type === 'bossHit');
+      expect(hitEvent).toBeTruthy();
+      if (hitEvent && hitEvent.type === 'bossHit') expect(hitEvent.damage).toBe(1);
+    }
+
+    expect(world.state.boss.phase).toBe('defeated');
+    expect(world.state.outcome).toBe('victory');
+    expect(world.state.coresCollected).toBe(BOSS_DEFEAT_BONUS_CORES);
+  });
+
+  it('scores only a graze from the wider arc, and only with Danno di Striscio', () => {
+    const world = new CampaignWorld();
+    world.state.checkpoint = { room: 'molo', x: 17.5 * TILE, y: 5.5 * TILE, angle: 0 };
+    world.state.player.x = 17.5 * TILE;
+    world.state.player.y = 5.5 * TILE;
+    world.state.boss.phase = 'telegraph';
+    world.state.boss.phaseTimer = 1;
+    world.step();
+
+    const boss = world.state.boss;
+    // Offset 80 degrees from dead-rear: outside the solid arc (60deg)
+    // but inside the graze arc (100deg).
+    const rearDir = boss.angle + Math.PI;
+    const offsetAngle = rearDir + (80 * Math.PI) / 180;
+    const dist = 40;
+    const shooterX = boss.x + Math.cos(offsetAngle) * dist;
+    const shooterY = boss.y + Math.sin(offsetAngle) * dist;
+    world.state.player.x = shooterX;
+    world.state.player.y = shooterY;
+    world.state.player.weaponCooldown = 0;
+    const aimAngle = Math.atan2(boss.y - shooterY, boss.x - shooterX);
+
+    const withoutNode = world.step(input({ aimAngle, fire: true }));
+    expect(withoutNode.some((e) => e.type === 'bossHit')).toBe(false);
+
+    world.state.unlockedNodes.push('danno-di-striscio');
+    world.state.player.weaponCooldown = 0;
+    const withNode = world.step(input({ aimAngle, fire: true }));
+    const graze = withNode.find((e) => e.type === 'bossHit');
+    expect(graze).toBeTruthy();
+    if (graze && graze.type === 'bossHit') expect(graze.damage).toBe(0.5);
+  });
+});
