@@ -457,55 +457,60 @@ export class CampaignWorld {
       CAMP_MAP_W,
       CAMP_MAP_H,
     );
-    const room = roomForTx(Math.floor(p.x / TILE));
-
-    if (room === 'magazzino' && this.state.drone.alive) {
-      const dist = distanceAlongRayToCircle(
-        p.x,
-        p.y,
-        input.aimAngle,
-        DRONE_X,
-        DRONE_Y,
-        DRONE_RADIUS,
-      );
-      if (dist !== null && dist <= wall.dist) {
-        this.state.drone.alive = false;
-        this.events.push({ type: 'droneDown' });
-        this.grantXp(XP_DRONE_DOWN);
-        return;
-      }
-    }
-
-    if (room === 'molo' && this.state.boss.phase !== 'defeated') {
-      const boss = this.state.boss;
-      const dist = distanceAlongRayToCircle(
-        p.x,
-        p.y,
-        input.aimAngle,
-        boss.x,
-        boss.y,
-        BOSS_RADIUS,
-      );
-      if (dist !== null && dist <= wall.dist) {
-        const dmg = resolveBossHit(
-          boss.x,
-          boss.y,
-          boss.angle,
-          boss.phase,
+    // Which target the shot reaches is decided by distance and walls,
+    // never by which room the shooter is standing in. Gating on the
+    // room looked equivalent — the drone only lives in Magazzino, the
+    // boss only in Molo — but a player standing *on* a doorway tile
+    // belongs to the room behind them, so shots taken while peeking
+    // through the Molo threshold silently did nothing.
+    const boss = this.state.boss;
+    const droneDist = this.state.drone.alive
+      ? distanceAlongRayToCircle(
           p.x,
           p.y,
-          hasGrazeDamage(this.state.unlockedNodes),
-        );
-        if (dmg > 0) {
-          boss.damageTaken += dmg;
-          this.events.push({ type: 'bossHit', damage: dmg, phase: boss.phase });
-          this.grantXp(dmg >= 1 ? XP_BOSS_HIT_SOLID : XP_BOSS_HIT_GRAZE);
-          if (boss.damageTaken >= BOSS_HITS_TO_DEFEAT) {
-            boss.phase = 'defeated';
-            this.state.outcome = 'victory';
-            this.events.push({ type: 'bossDefeated' });
-            this.grantXp(XP_BOSS_DEFEAT);
-          }
+          input.aimAngle,
+          DRONE_X,
+          DRONE_Y,
+          DRONE_RADIUS,
+        )
+      : null;
+    const bossDist =
+      boss.phase !== 'defeated'
+        ? distanceAlongRayToCircle(p.x, p.y, input.aimAngle, boss.x, boss.y, BOSS_RADIUS)
+        : null;
+
+    const droneHit = droneDist !== null && droneDist <= wall.dist;
+    const bossHit = bossDist !== null && bossDist <= wall.dist;
+    // Nearest target wins, so you cannot shoot through one to reach
+    // the other.
+    const hitsDroneFirst = droneHit && (!bossHit || droneDist! <= bossDist!);
+
+    if (hitsDroneFirst) {
+      this.state.drone.alive = false;
+      this.events.push({ type: 'droneDown' });
+      this.grantXp(XP_DRONE_DOWN);
+      return;
+    }
+
+    if (bossHit) {
+      const dmg = resolveBossHit(
+        boss.x,
+        boss.y,
+        boss.angle,
+        boss.phase,
+        p.x,
+        p.y,
+        hasGrazeDamage(this.state.unlockedNodes),
+      );
+      if (dmg > 0) {
+        boss.damageTaken += dmg;
+        this.events.push({ type: 'bossHit', damage: dmg, phase: boss.phase });
+        this.grantXp(dmg >= 1 ? XP_BOSS_HIT_SOLID : XP_BOSS_HIT_GRAZE);
+        if (boss.damageTaken >= BOSS_HITS_TO_DEFEAT) {
+          boss.phase = 'defeated';
+          this.state.outcome = 'victory';
+          this.events.push({ type: 'bossDefeated' });
+          this.grantXp(XP_BOSS_DEFEAT);
         }
       }
     }

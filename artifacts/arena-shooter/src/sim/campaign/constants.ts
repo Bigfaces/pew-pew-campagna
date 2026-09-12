@@ -105,11 +105,20 @@ export const XP_BOSS_HIT_GRAZE = 12;
 export const XP_BOSS_DEFEAT = 150;
 
 /** XP cumulativa richiesta per raggiungere il livello (indice + 1).
- *  Calibrata sulla verticale slice: completarla del tutto (4 stanze,
- *  core, drone, boss abbattuto con qualche striscio) rende circa
- *  350-380 XP — abbastanza per arrivare a livello 4-5 e spendere ogni
- *  punto sul ramo Precisione, senza che restino punti in eccesso. */
-export const LEVEL_XP_THRESHOLDS: readonly number[] = [0, 50, 130, 240, 380, 550];
+ *
+ *  La tabella si ferma a 4 livelli perché i nodi sbloccabili sono 3:
+ *  un livello oltre l'ultimo nodo darebbe punti da spendere su niente.
+ *  Si allunga quando arriveranno gli altri rami (GDD.md sezione 6).
+ *
+ *  Calibrata su cosa è raggiungibile *prima* che il boss muoia, non
+ *  sul totale del run: la prima versione metteva le soglie a
+ *  50/130/240, e con 115 XP disponibili prima dello scontro il terzo
+ *  punto arrivava solo insieme al bonus di vittoria — cioè a partita
+ *  finita, su un nodo che non si poteva più usare. Ora chi esplora
+ *  tutto (stanze + core + drone = 115 XP) entra nel Molo con tutti e
+ *  tre i punti; chi tira dritto ignorando core e drone (45 XP) arriva
+ *  al massimo durante lo scontro, colpo dopo colpo. */
+export const LEVEL_XP_THRESHOLDS: readonly number[] = [0, 40, 75, 110];
 
 export function levelForXp(xp: number): number {
   let level = 1;

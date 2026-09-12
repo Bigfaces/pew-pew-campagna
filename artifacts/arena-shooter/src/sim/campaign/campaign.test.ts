@@ -15,11 +15,14 @@ import {
   DRONE_REACTION_MS,
   LEVEL_XP_THRESHOLDS,
   NODE_OTTURATORE_COOLDOWN_MS,
+  PRECISION_NODES,
   SHIELD_X,
   SHIELD_Y,
   XP_BOSS_DEFEAT,
   XP_BOSS_HIT_SOLID,
   XP_CORE,
+  XP_DRONE_DOWN,
+  XP_ROOM_ENTER,
   levelForXp,
 } from './constants';
 import { emptyCampaignInput, type CampaignInput } from './types';
@@ -85,6 +88,21 @@ describe('esperienza e livelli', () => {
     expect(world.state.level).toBe(2);
     expect(world.state.skillPoints).toBe(1);
     expect(events.some((e) => e.type === 'levelUp' && e.level === 2)).toBe(true);
+  });
+
+  /** La curva deve restare spendibile *durante* la partita: la prima
+   *  versione concedeva il terzo punto solo insieme al bonus di
+   *  vittoria, cioè su un nodo ormai inutilizzabile. */
+  it('grants a point for every node before the boss dies, exploring everything', () => {
+    const preBossXp = 3 * XP_ROOM_ENTER + 2 * XP_CORE + XP_DRONE_DOWN;
+    const pointsBeforeBoss = levelForXp(preBossXp) - 1;
+    expect(pointsBeforeBoss).toBe(PRECISION_NODES.length);
+  });
+
+  it('reaches max level mid-fight even skipping cores and drone', () => {
+    const roomsOnly = 3 * XP_ROOM_ENTER;
+    const afterThreeHits = roomsOnly + BOSS_HITS_TO_DEFEAT * XP_BOSS_HIT_SOLID;
+    expect(levelForXp(afterThreeHits) - 1).toBe(PRECISION_NODES.length);
   });
 });
 
@@ -292,6 +310,32 @@ describe('CampaignWorld — Sentinella del Molo', () => {
     // Three solid rear hits plus the defeat bonus, no other XP source
     // touched since the checkpoint was set directly rather than walked.
     expect(world.state.xp).toBe(BOSS_HITS_TO_DEFEAT * XP_BOSS_HIT_SOLID + XP_BOSS_DEFEAT);
+  });
+
+  /** Un tempo il bersaglio veniva scelto in base alla stanza del
+   *  giocatore, e la soglia del Molo (colonna 16) appartiene al
+   *  Magazzino: sporgersi dalla porta e sparare non faceva nulla,
+   *  senza alcun segnale. Ora decidono solo distanza e muri. */
+  it('registers a hit taken while peeking from the Molo doorway', () => {
+    const world = new CampaignWorld();
+    world.state.checkpoint = { room: 'molo', x: 17.5 * TILE, y: 5.5 * TILE, angle: 0 };
+    const boss = world.state.boss;
+    // Vulnerabile, e rivolto a est: chi arriva da ovest è alle spalle.
+    boss.phase = 'recover';
+    boss.phaseTimer = 5000;
+    boss.angle = 0;
+
+    // Colonna 16 = la soglia stessa, classificata come "magazzino".
+    world.state.player.x = 16.5 * TILE;
+    world.state.player.y = 5.5 * TILE;
+    world.state.player.weaponCooldown = 0;
+    const aimAngle = Math.atan2(
+      boss.y - world.state.player.y,
+      boss.x - world.state.player.x,
+    );
+
+    const events = world.step(input({ aimAngle, fire: true }));
+    expect(events.some((e) => e.type === 'bossHit')).toBe(true);
   });
 
   it('scores only a graze from the wider arc, and only with Danno di Striscio', () => {
