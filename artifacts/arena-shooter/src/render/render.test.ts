@@ -390,7 +390,13 @@ describe('render pipeline', () => {
       // at 1 it must be fully formed.
       for (const ads of [0, 0.2, 0.45, 0.5, 0.8, 1]) {
         renderViewmodel(ctx, vp, fx, player, 1000, ads);
-        renderScope(ctx, vp, fx, player, ads);
+        renderScope(
+          ctx,
+          vp,
+          fx,
+          { cooldownMs: player.weaponCooldown, maxCooldownMs: BULLET_COOLDOWN },
+          ads,
+        );
         renderCrosshair(ctx, vp, fx, player, ads);
       }
     }

@@ -96,6 +96,33 @@ export interface Checkpoint {
 
 export type CampaignOutcome = 'playing' | 'victory';
 
+/** What survives leaving the campaign and coming back.
+ *
+ *  Deliberately the *character*, not the *run*: position, boss damage
+ *  and door timers are not here, so returning replays the level from
+ *  the Attracco with the progression intact. Serializing the whole
+ *  world would be easy — CampaignState is plain JSON by design — but
+ *  it would also let a save land mid-charge with the boss on top of
+ *  the player, and the level is two minutes long.
+ *
+ *  `level` and `skillPoints` are absent on purpose: both follow from
+ *  `xp` (see levelForXp), and a stored copy is just a second version
+ *  of the truth waiting to disagree with the first. */
+export interface CampaignProfile {
+  /** Bumped when this shape changes. An unknown version is discarded
+   *  rather than migrated — it is a two-minute level, not a save file
+   *  worth rescuing. */
+  version: number;
+  xp: number;
+  unlockedNodes: string[];
+  /** Cores already taken, so returning cannot farm the same XP twice. */
+  collectedCoreIds: string[];
+  /** Rooms whose entry bonus was already paid, for the same reason. */
+  roomsAwarded: RoomId[];
+}
+
+export const CAMPAIGN_PROFILE_VERSION = 1;
+
 export interface CampaignState {
   tick: number;
   checkpoint: Checkpoint;
@@ -104,6 +131,9 @@ export interface CampaignState {
   drone: DroneState;
   cores: CoreState[];
   coresCollected: number;
+  /** Rooms whose entry XP has already been granted — once per
+   *  profile, not once per visit. */
+  roomsAwarded: RoomId[];
   shield: ShieldPickupState;
   /** Esperienza totale accumulata nel run — non scende mai, nemmeno
    *  alla morte: solo la posizione e i nemici della stanza si

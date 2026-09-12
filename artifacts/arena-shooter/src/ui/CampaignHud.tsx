@@ -145,11 +145,13 @@ export function CampaignPauseScreen({
   onUnlock,
   onResume,
   onQuit,
+  onReset,
 }: {
   snap: CampaignHudSnapshot;
   onUnlock: (id: string) => void;
   onResume: () => void;
   onQuit: () => void;
+  onReset: () => void;
 }): React.ReactElement {
   return (
     <div className="overlay">
@@ -165,6 +167,9 @@ export function CampaignPauseScreen({
           <p className="hint">
             Core raccolti: {snap.coresCollected} · Punti disponibili:{' '}
             {snap.availableSkillPoints}
+            <br />
+            La progressione resta salvata in questo browser; la posizione no —
+            uscire e rientrare rigioca il livello dall'Attracco.
           </p>
         </div>
 
@@ -205,6 +210,14 @@ export function CampaignPauseScreen({
         </button>
         <button className="btn secondary" type="button" onClick={onQuit}>
           ABBANDONA LA MISSIONE
+        </button>
+        <button
+          className="btn secondary"
+          type="button"
+          onClick={onReset}
+          style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
+        >
+          AZZERA LA PROGRESSIONE
         </button>
       </div>
     </div>

@@ -216,18 +216,29 @@ export function renderCrosshair(
  *  Drawn with an even-odd fill (viewport rectangle minus a circle)
  *  instead of a clip path, so the mask is a single fill call and no
  *  clipping state is left behind for later passes to trip over. */
+/** What the scope needs to draw its bolt-cycle arc. Deliberately not
+ *  `Entity`: which cooldown applies — the bolt-action one, the
+ *  rapid-fire pickup's, or a campaign node's shortened one — is a rule
+ *  belonging to whoever is firing, not to the thing drawing a ring. */
+export interface WeaponReadout {
+  /** ms left before the weapon can fire again. */
+  cooldownMs: number;
+  /** ms the current cooldown counts down from — what the arc fills
+   *  against. */
+  maxCooldownMs: number;
+}
+
 export function renderScope(
   ctx: CanvasRenderingContext2D,
   vp: Viewport,
   fx: CameraFx,
-  player: Entity,
+  weapon: WeaponReadout,
   ads: number,
 ): void {
   if (ads <= 0.005) return;
 
-  const maxCd = player.rapidFireTimer > 0 ? RAPIDFIRE_CD : BULLET_COOLDOWN;
-  const ready = player.weaponCooldown <= 0;
-  const progress = ready ? 1 : 1 - player.weaponCooldown / maxCd;
+  const ready = weapon.cooldownMs <= 0;
+  const progress = ready ? 1 : 1 - weapon.cooldownMs / weapon.maxCooldownMs;
 
   // Scope sway is the bob, amplified: magnification multiplies hand
   // movement, and hiding that would make the zoom feel weightless.

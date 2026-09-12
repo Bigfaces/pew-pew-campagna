@@ -318,7 +318,7 @@ export default function App(): React.ReactElement {
       {ui === 'campaign' && campaignSnap?.phase === 'playing' && (
         <>
           <CampaignHud snap={campaignSnap} />
-          <TouchControls game={campaignRef.current} />
+          <TouchControls game={campaignRef.current} adsActive={campaignSnap.adsActive} />
         </>
       )}
       {ui === 'campaign' && campaignSnap?.phase === 'paused' && (
@@ -327,6 +327,7 @@ export default function App(): React.ReactElement {
           onUnlock={(id) => campaignRef.current?.tryUnlockNode(id)}
           onResume={() => campaignRef.current?.resume()}
           onQuit={exitCampaign}
+          onReset={() => campaignRef.current?.resetProfile()}
         />
       )}
       {ui === 'campaign' && campaignSnap?.phase === 'over' && (

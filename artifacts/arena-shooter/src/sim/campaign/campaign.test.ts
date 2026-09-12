@@ -106,6 +106,59 @@ describe('esperienza e livelli', () => {
   });
 });
 
+describe('CampaignWorld — profilo salvato', () => {
+  it('round-trips the character without carrying the run', () => {
+    const world = new CampaignWorld();
+    world.state.skillPoints = 1;
+    world.tryUnlockNode('otturatore-rapido');
+    world.state.xp = 90;
+    world.state.cores[0]!.collected = true;
+    world.state.roomsAwarded.push('corridoio');
+
+    const resumed = new CampaignWorld(world.toProfile());
+    expect(resumed.state.xp).toBe(90);
+    expect(resumed.state.unlockedNodes).toEqual(['otturatore-rapido']);
+    expect(resumed.state.cores[0]!.collected).toBe(true);
+    expect(resumed.state.coresCollected).toBe(1);
+    expect(resumed.state.roomsAwarded).toContain('corridoio');
+
+    // Il run non si porta dietro: si ricomincia dall'Attracco.
+    expect(resumed.state.checkpoint.room).toBe('attracco');
+    expect(resumed.state.boss.damageTaken).toBe(0);
+    expect(resumed.state.door.closed).toBe(false);
+  });
+
+  it('derives level and skill points from xp instead of storing them', () => {
+    const world = new CampaignWorld({
+      version: 1,
+      xp: LEVEL_XP_THRESHOLDS[2]!,
+      unlockedNodes: [],
+      collectedCoreIds: [],
+      roomsAwarded: [],
+    });
+    expect(world.state.level).toBe(3);
+    expect(world.state.skillPoints).toBe(2);
+    expect(world.availableSkillPoints).toBe(2);
+  });
+
+  /** Senza questo, uscire al menu e rientrare sarebbe un ciclo di XP
+   *  stabile: le stesse stanze pagate all'infinito. */
+  it('does not pay room XP twice for a room already awarded', () => {
+    const first = new CampaignWorld();
+    first.state.player.x = 7.2 * TILE;
+    first.state.player.y = 5.5 * TILE;
+    first.step();
+    const earned = first.state.xp;
+    expect(earned).toBeGreaterThan(0);
+
+    const second = new CampaignWorld(first.toProfile());
+    second.state.player.x = 7.2 * TILE;
+    second.state.player.y = 5.5 * TILE;
+    second.step();
+    expect(second.state.xp).toBe(earned);
+  });
+});
+
 describe('CampaignWorld — porta stagna a tempo', () => {
   it('seals after the delay and blocks the corridor', () => {
     const world = new CampaignWorld();

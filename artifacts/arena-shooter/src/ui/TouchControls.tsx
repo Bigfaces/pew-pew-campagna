@@ -41,8 +41,10 @@ function captureQuietly(e: React.PointerEvent<HTMLDivElement>): void {
  *  is no reason to fake a keyboard just to reach it. */
 export function TouchControls({
   game,
+  adsActive,
 }: {
   game: CampaignGame | null;
+  adsActive: boolean;
 }): React.ReactElement {
   const knobRef = useRef<HTMLDivElement | null>(null);
   const joyOrigin = useRef<{ x: number; y: number } | null>(null);
@@ -108,6 +110,18 @@ export function TouchControls({
         onPointerCancel={resetJoy}
       >
         <div className="touch-joystick-knob" ref={knobRef} />
+      </div>
+      {/* Toggle, not hold: a thumb cannot stay on the scope button and
+          keep aiming with the same hand. */}
+      <div
+        className="touch-ads"
+        data-on={adsActive}
+        onPointerDown={(e) => {
+          captureQuietly(e);
+          game?.toggleAds();
+        }}
+      >
+        OTTICA
       </div>
       <div
         className="touch-fire"

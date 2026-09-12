@@ -13,10 +13,17 @@ import {
   renderCampaignWalls,
 } from '../render/campaignScene';
 import { CameraFx, computeViewport, type Viewport } from '../render/camera';
-import { renderBanner, renderDamageOverlay, type Banner } from '../render/overlay';
+import {
+  renderBanner,
+  renderDamageOverlay,
+  renderScope,
+  type Banner,
+} from '../render/overlay';
 import { renderBackdrop } from '../render/scene';
 import { buildBackdrops, getTextures } from '../render/textures';
 import {
+  ADS_SENS_MULT,
+  ADS_ZOOM,
   MAX_PITCH,
   MAX_TICKS_PER_FRAME,
   MOUSE_SENSITIVITY,
@@ -36,6 +43,11 @@ import { CAMP_MAP_H, CAMP_MAP_W } from '../sim/campaign/map';
 import { hasGrazeDamage, weaponStatsFor } from '../sim/campaign/skills';
 import type { CampaignEvent, CampaignInput, RoomId } from '../sim/campaign/types';
 import { CampaignWorld } from '../sim/campaign/world';
+import {
+  clearCampaignProfile,
+  loadCampaignProfile,
+  saveCampaignProfile,
+} from '../stats/campaignProfile';
 
 export type CampaignPhase = 'playing' | 'paused' | 'over';
 
@@ -52,6 +64,7 @@ export interface CampaignHudSnapshot {
   xpForNextLevel: number | null;
   availableSkillPoints: number;
   shieldActive: boolean;
+  adsActive: boolean;
   unlockedNodes: string[];
   door: { armed: boolean; closeTimerMs: number };
   bossActive: boolean;
@@ -73,7 +86,7 @@ export class CampaignGame {
   private ctx: CanvasRenderingContext2D;
   private opts: CampaignGameOptions;
 
-  private world = new CampaignWorld();
+  private world = new CampaignWorld(loadCampaignProfile() ?? undefined);
   private fx = new CameraFx();
   audio = new AudioEngine();
 
@@ -98,6 +111,13 @@ export class CampaignGame {
    *  a keyboard attached still works either way. */
   private touchMoveX = 0;
   private touchMoveY = 0;
+
+  /** Scope: held on the right mouse button, toggled by the on-screen
+   *  button. `adsT` is the eased 0..1 the renderer uses, so the zoom
+   *  travels instead of snapping between two fields of view. How fast
+   *  it travels is itself a Precisione node (Aggancio Ottico). */
+  private adsHeld = false;
+  private adsT = 0;
 
   private accumulator = 0;
   private lastFrame = 0;
@@ -155,6 +175,10 @@ export class CampaignGame {
   pause(): void {
     if (this.phase !== 'playing') return;
     this.phase = 'paused';
+    // A held mouse button is not reported while the pointer is
+    // released, so the scope has to be dropped explicitly or it would
+    // still be up on resume.
+    this.adsHeld = false;
     if (document.pointerLockElement === this.canvas) document.exitPointerLock();
     this.pushHud(true);
   }
@@ -202,13 +226,49 @@ export class CampaignGame {
     if (this.phase === 'playing') this.fireQueued = true;
   }
 
-  /** Spend an available core on a Precisione node — called from the
-   *  HUD, not the fixed-tick loop, since it is a menu action rather
-   *  than something that needs to be simulated. */
+  /** Raise or lower the scope. The mouse holds it; the on-screen
+   *  button toggles it, because holding a finger on a button while
+   *  aiming with the other is not a thing a phone can do. */
+  setAds(on: boolean): void {
+    if (this.adsHeld === on) return;
+    this.adsHeld = on;
+    this.audio.scope(on);
+    this.pushHud(true);
+  }
+
+  toggleAds(): void {
+    this.setAds(!this.adsHeld);
+  }
+
+  /** Spend an available skill point on a Precisione node — called
+   *  from the HUD, not the fixed-tick loop, since it is a menu action
+   *  rather than something that needs to be simulated. */
   tryUnlockNode(id: string): boolean {
     const ok = this.world.tryUnlockNode(id);
-    if (ok) this.pushHud(true);
+    if (ok) {
+      saveCampaignProfile(this.world.toProfile());
+      this.pushHud(true);
+    }
     return ok;
+  }
+
+  /** Throw away the saved character and restart from nothing. Offered
+   *  because a profile that has already bought every node makes the
+   *  level unreplayable the way it was meant to be played. */
+  resetProfile(): void {
+    clearCampaignProfile();
+    this.world = new CampaignWorld();
+    this.yaw = this.world.state.player.angle;
+    this.prevX = this.world.state.player.x;
+    this.prevY = this.world.state.player.y;
+    this.adsHeld = false;
+    this.adsT = 0;
+    this.banner = null;
+    this.fx.reset();
+    this.phase = 'playing';
+    this.accumulator = 0;
+    this.lastFrame = performance.now();
+    this.pushHud(true);
   }
 
   requestPointerLock(): void {
@@ -237,12 +297,18 @@ export class CampaignGame {
     this.cssW = cssW;
     this.cssH = cssH;
     this.dpr = dpr;
-    this.vp = computeViewport(cssW, cssH, dpr, 1);
+    this.vp = computeViewport(cssW, cssH, dpr, this.zoom());
     this.depth = new Float32Array(this.vp.numRays);
     buildBackdrops(getTextures(), cssW, cssH);
 
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.ctx.imageSmoothingEnabled = false;
+  }
+
+  /** Current magnification, eased so the zoom travels rather than
+   *  snapping between two fields of view. */
+  private zoom(): number {
+    return 1 + (ADS_ZOOM - 1) * this.adsT;
   }
 
   // ---- input -------------------------------------------------------
@@ -272,12 +338,21 @@ export class CampaignGame {
 
   private onMouseDown = (e: MouseEvent): void => {
     if (this.phase !== 'playing') return;
+    if (e.button === 2) {
+      e.preventDefault();
+      this.setAds(true);
+      return;
+    }
     if (e.button !== 0) return;
     if (!this.pointerLocked) {
       this.requestPointerLock();
       return;
     }
     this.fireQueued = true;
+  };
+
+  private onMouseUp = (e: MouseEvent): void => {
+    if (e.button === 2) this.setAds(false);
   };
 
   private onPointerLockChange = (): void => {
@@ -304,6 +379,9 @@ export class CampaignGame {
     document.addEventListener('visibilitychange', this.onVisibility);
     this.canvas.addEventListener('mousedown', this.onMouseDown);
     this.canvas.addEventListener('contextmenu', this.onContextMenu);
+    // On the window, not the canvas: releasing the button after the
+    // cursor has left the element must still lower the scope.
+    window.addEventListener('mouseup', this.onMouseUp);
 
     if (typeof ResizeObserver !== 'undefined') {
       this.ro = new ResizeObserver(() => this.resize());
@@ -320,17 +398,21 @@ export class CampaignGame {
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.canvas.removeEventListener('mousedown', this.onMouseDown);
     this.canvas.removeEventListener('contextmenu', this.onContextMenu);
+    window.removeEventListener('mouseup', this.onMouseUp);
   }
 
   private applyLook(frameDt: number): void {
     const k = this.keys;
-    const sens = MOUSE_SENSITIVITY * this.sensMult;
+    // Magnifying the view magnifies hand tremor with it, so the scope
+    // has to slow the look down or aiming gets harder, not easier.
+    const damp = 1 - this.adsT * (1 - ADS_SENS_MULT);
+    const sens = MOUSE_SENSITIVITY * this.sensMult * damp;
     this.yaw += this.mouseDX * sens;
     this.fx.addPitch((-this.mouseDY * sens) / MAX_PITCH / 2);
     this.mouseDX = 0;
     this.mouseDY = 0;
 
-    const turn = (TURN_SPEED * frameDt) / 1000;
+    const turn = (TURN_SPEED * frameDt * damp) / 1000;
     if (k.has('q') || k.has('arrowleft')) this.yaw -= turn;
     if (k.has('e') || k.has('arrowright')) this.yaw += turn;
   }
@@ -353,11 +435,10 @@ export class CampaignGame {
       strafe,
       aimAngle: this.yaw,
       fire: this.fireQueued,
-      // Scoped aiming is not wired up yet in the campaign — see
-      // GDD.md section 10 task list. The Aggancio Ottico node's stats
-      // exist and are tested, but nothing in this controller sets
-      // this true yet.
-      ads: false,
+      // The simulation applies the movement penalty itself from this
+      // flag (see applyMovement), so the controller must not also
+      // scale the input — that would charge the cost twice.
+      ads: this.adsHeld,
     };
     this.fireQueued = false;
     return input;
@@ -460,9 +541,34 @@ export class CampaignGame {
     const input = this.buildInput(TICK_MS);
     const events = this.world.step(input);
     this.handleEvents(events);
+
+    // Every form of progression goes through grantXp, so one event
+    // type covers the lot: cores, rooms, kills, the boss bonus.
+    if (events.some((e) => e.type === 'xpGained')) {
+      saveCampaignProfile(this.world.toProfile());
+    }
   }
 
   private updateFeel(frameDt: number): void {
+    // Ease the scope toward wherever the button is. Aggancio Ottico
+    // is exactly this number, so an unlocked node is felt as a faster
+    // sight picture rather than read off a menu.
+    const stats = weaponStatsFor(this.world.state.unlockedNodes);
+    const wantAds = this.adsHeld && this.phase === 'playing';
+    const prevAds = this.adsT;
+    const rate = frameDt / stats.adsTransitionMs;
+    this.adsT = wantAds ? Math.min(1, this.adsT + rate) : Math.max(0, this.adsT - rate);
+
+    // Rebuild the projection only on frames where the zoom moved,
+    // including the one it settles on — stopping a frame early would
+    // leave the view fractionally short of full magnification.
+    // The ray count is independent of zoom, so the depth buffer is
+    // left alone — reallocating it here would be a fresh array every
+    // frame of every transition, for a length that never changes.
+    if (this.adsT !== prevAds) {
+      this.vp = computeViewport(this.cssW, this.cssH, this.dpr, this.zoom());
+    }
+
     const moving =
       this.phase === 'playing' &&
       (this.keys.has('w') ||
@@ -509,6 +615,16 @@ export class CampaignGame {
       now,
     );
 
+    renderScope(
+      ctx,
+      vp,
+      fx,
+      {
+        cooldownMs: p.weaponCooldown,
+        maxCooldownMs: weaponStatsFor(world.state.unlockedNodes).cooldownMs,
+      },
+      this.adsT,
+    );
     this.renderCrosshair();
     renderDamageOverlay(ctx, vp, fx);
     if (this.banner) renderBanner(ctx, vp, this.banner, now);
@@ -561,6 +677,7 @@ export class CampaignGame {
       xpForNextLevel: xpForNextLevel(s.level),
       availableSkillPoints: this.world.availableSkillPoints,
       shieldActive: s.player.shieldActive,
+      adsActive: this.adsHeld,
       unlockedNodes: s.unlockedNodes,
       door: { armed: s.door.armed, closeTimerMs: s.door.closeTimer },
       bossActive: s.checkpoint.room === 'molo',

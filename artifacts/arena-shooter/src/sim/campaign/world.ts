@@ -65,9 +65,11 @@ import { campMoveEntity, distanceAlongRayToCircle, type IsSolidFn } from './phys
 import { campCastRay, campHasLOS } from './raycast';
 import { hasGrazeDamage, isValidNode, nodeCost, pointsSpent, weaponStatsFor } from './skills';
 import {
+  CAMPAIGN_PROFILE_VERSION,
   emptyCampaignInput,
   type CampaignEvent,
   type CampaignInput,
+  type CampaignProfile,
   type CampaignState,
 } from './types';
 
@@ -123,7 +125,14 @@ export class CampaignWorld {
 
   private isSolid: IsSolidFn = (tx, ty) => this.getTile(tx, ty) !== 0;
 
-  constructor() {
+  /** `profile` seeds a returning player: the character they built,
+   *  never where they were standing (see CampaignProfile). Absent —
+   *  or discarded as an unknown version — means a fresh start. */
+  constructor(profile?: CampaignProfile) {
+    const xp = profile?.xp ?? 0;
+    const level = levelForXp(xp);
+    const collected = new Set(profile?.collectedCoreIds ?? []);
+
     this.state = {
       tick: 0,
       checkpoint: { room: 'attracco', x: START_X, y: START_Y, angle: 0 },
@@ -143,13 +152,16 @@ export class CampaignWorld {
         id: d.id,
         x: (d.tx + 0.5) * TILE,
         y: (d.ty + 0.5) * TILE,
-        collected: false,
+        collected: collected.has(d.id),
       })),
-      coresCollected: 0,
-      xp: 0,
-      level: 1,
-      skillPoints: 0,
-      unlockedNodes: [],
+      coresCollected: collected.size,
+      roomsAwarded: [...(profile?.roomsAwarded ?? [])],
+      xp,
+      level,
+      // One point per level gained, so this follows from the level the
+      // XP buys — never stored, never able to drift from it.
+      skillPoints: level - 1,
+      unlockedNodes: [...(profile?.unlockedNodes ?? [])],
       boss: {
         x: BOSS_START_X,
         y: BOSS_START_Y,
@@ -171,6 +183,17 @@ export class CampaignWorld {
   /** Skill points earned by leveling up but not yet spent on a node. */
   get availableSkillPoints(): number {
     return this.state.skillPoints - pointsSpent(this.state.unlockedNodes);
+  }
+
+  /** The part of this run worth carrying to the next one. */
+  toProfile(): CampaignProfile {
+    return {
+      version: CAMPAIGN_PROFILE_VERSION,
+      xp: this.state.xp,
+      unlockedNodes: [...this.state.unlockedNodes],
+      collectedCoreIds: this.state.cores.filter((c) => c.collected).map((c) => c.id),
+      roomsAwarded: [...this.state.roomsAwarded],
+    };
   }
 
   /** Advance one fixed tick. Returns the events generated. */
@@ -266,7 +289,12 @@ export class CampaignWorld {
     if (ROOM_ORDER[room] > ROOM_ORDER[this.state.checkpoint.room]) {
       this.state.checkpoint = { room, x: p.x, y: p.y, angle: p.angle };
       this.events.push({ type: 'roomEntered', room });
-      this.grantXp(XP_ROOM_ENTER);
+      // Paid once per profile: otherwise leaving to the menu and
+      // walking back in would be a stable XP loop.
+      if (!this.state.roomsAwarded.includes(room)) {
+        this.state.roomsAwarded.push(room);
+        this.grantXp(XP_ROOM_ENTER);
+      }
     }
   }
 

@@ -133,10 +133,14 @@ vita" del gioco. I boss sono le uniche entità con più "hit" necessari,
 gestiti come barre di vulnerabilità a fasi, non come HP generici.
 
 Persistenza: come le statistiche attuali, su `localStorage` (nessun nuovo
-requisito di database). Attualmente lo stato (XP, nodi, core) vive solo
-nella sessione di gioco in corso: lasciare la campagna e rientrare
-riparte da zero. Il salvataggio persistente è un lavoro a parte, non
-ancora fatto.
+requisito di database). Si salva il **personaggio, non la partita**: XP,
+nodi sbloccati, core già presi e stanze già pagate sopravvivono; la
+posizione, i timer e i danni al boss no. Rientrare rigioca il livello
+dall'Attracco con il personaggio che ci si è costruiti — il livello dura
+due minuti, e un salvataggio a metà carica del boss sarebbe peggio del
+problema che risolve. Core e stanze sono segnati come già riscossi
+proprio perché rigiocare non diventi un ciclo di XP infinito. Dal menu di
+pausa si può azzerare tutto.
 
 ### Potenziamenti vs progressione permanente
 
@@ -215,9 +219,10 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
 
 **Stato: giocabile.** Sim, rendering, controller e menu esistono e sono
 raggiungibili da "CAMPAGNA (BETA)" nel menu principale, con controlli
-touch oltre a tastiera/mouse. Restano aperti: narrazione, salvataggio
-persistente tra sessioni, e i tre rami dello skill tree oltre a Precisione
-(vedi sezione 6).
+touch oltre a tastiera/mouse, ottica (tasto destro o pulsante a schermo)
+e progressione salvata in locale. Restano aperti: narrazione, i tre rami
+dello skill tree oltre a Precisione (sezione 6), e una seconda fase per
+la Sentinella.
 
 Obiettivo: un loop giocabile end-to-end, per validare le meccaniche prima di
 scrivere tutto l'Atto I. Scope fissato dal briefing:

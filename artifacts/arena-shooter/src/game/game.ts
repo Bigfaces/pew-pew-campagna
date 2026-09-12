@@ -1059,7 +1059,16 @@ export class Game {
 
     if (local.alive && this.phase !== 'over') {
       renderViewmodel(ctx, vp, fx, local, now, this.adsT);
-      renderScope(ctx, vp, fx, local, this.adsT);
+      renderScope(
+        ctx,
+        vp,
+        fx,
+        {
+          cooldownMs: local.weaponCooldown,
+          maxCooldownMs: local.rapidFireTimer > 0 ? RAPIDFIRE_CD : BULLET_COOLDOWN,
+        },
+        this.adsT,
+      );
       renderCrosshair(ctx, vp, fx, local, this.adsT);
     }
 
