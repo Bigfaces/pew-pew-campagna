@@ -10,6 +10,8 @@ import { describe, expect, it } from 'vitest';
 
 import { TICK_MS, TILE } from '../constants';
 import {
+  BOSS_ENRAGED_CHARGES,
+  BOSS_ENRAGE_AT,
   BOSS_HITS_TO_DEFEAT,
   DOOR_CLOSE_DELAY_MS,
   DRONE_REACTION_MS,
@@ -389,6 +391,77 @@ describe('CampaignWorld — Sentinella del Molo', () => {
 
     const events = world.step(input({ aimAngle, fire: true }));
     expect(events.some((e) => e.type === 'bossHit')).toBe(true);
+  });
+
+  it('charges twice in a row once enraged, and only once before', () => {
+    const world = new CampaignWorld();
+    world.state.checkpoint = { room: 'molo', x: 17.5 * TILE, y: 5.5 * TILE, angle: 0 };
+    world.state.player.x = 17.5 * TILE;
+    world.state.player.y = 5.5 * TILE;
+
+    /** Conta le cariche fino al ritorno in guardia.
+     *
+     *  Il giocatore resta invulnerabile per tutta la misura: il Molo è
+     *  stretto e una carica lo travolgerebbe, e la morte resetta il
+     *  boss (killPlayer) — falsando proprio la cosa che stiamo
+     *  contando. Qui interessa la macchina a stati, non la schivata. */
+    const chargesInOneVolley = (): number => {
+      const boss = world.state.boss;
+      boss.phase = 'guard';
+      boss.phaseTimer = 1;
+      let charges = 0;
+      let prev = boss.phase;
+      for (let i = 0; i < 1200; i++) {
+        world.state.player.respawnInvulnerableMs = 1000;
+        world.step();
+        if (boss.phase === 'charge' && prev !== 'charge') charges++;
+        // La raffica è finita quando torna in guardia.
+        if (boss.phase === 'guard' && prev === 'recover') break;
+        prev = boss.phase;
+      }
+      return charges;
+    };
+
+    expect(world.enraged).toBe(false);
+    expect(chargesInOneVolley()).toBe(1);
+
+    // Portala oltre la soglia di alterazione.
+    world.state.boss.damageTaken = BOSS_ENRAGE_AT;
+    expect(world.enraged).toBe(true);
+    expect(chargesInOneVolley()).toBe(BOSS_ENRAGED_CHARGES);
+  });
+
+  it('announces the switch to the second phase exactly once', () => {
+    const world = new CampaignWorld();
+    world.state.checkpoint = { room: 'molo', x: 17.5 * TILE, y: 5.5 * TILE, angle: 0 };
+    const boss = world.state.boss;
+    boss.phase = 'recover';
+    boss.phaseTimer = 9000;
+    boss.angle = 0;
+
+    const shootFromBehind = (): ReturnType<CampaignWorld['step']> => {
+      world.state.player.x = boss.x - 40;
+      world.state.player.y = boss.y;
+      world.state.player.weaponCooldown = 0;
+      const aimAngle = Math.atan2(
+        boss.y - world.state.player.y,
+        boss.x - world.state.player.x,
+      );
+      return world.step(input({ aimAngle, fire: true }));
+    };
+
+    // Il primo colpo pieno porta il danno a 1, oltre la soglia di 1.5? No:
+    // serve il secondo. L'annuncio deve arrivare con quello, una volta sola.
+    const first = shootFromBehind();
+    expect(first.some((e) => e.type === 'bossEnraged')).toBe(false);
+
+    const second = shootFromBehind();
+    expect(second.some((e) => e.type === 'bossEnraged')).toBe(true);
+
+    boss.phase = 'recover';
+    boss.phaseTimer = 9000;
+    const third = shootFromBehind();
+    expect(third.some((e) => e.type === 'bossEnraged')).toBe(false);
   });
 
   it('scores only a graze from the wider arc, and only with Danno di Striscio', () => {

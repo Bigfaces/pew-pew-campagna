@@ -21,10 +21,16 @@
 import { TICK_MS } from '../src/sim/constants';
 import {
   BOSS_CHARGE_MS,
+  BOSS_ENRAGED_CHARGES,
+  BOSS_ENRAGE_AT,
+  BOSS_GUARD_ENRAGED_MS,
   BOSS_GUARD_MS,
   BOSS_HITS_TO_DEFEAT,
+  BOSS_RECOVER_ENRAGED_MS,
   BOSS_RECOVER_MS,
+  BOSS_TELEGRAPH_ENRAGED_MS,
   BOSS_TELEGRAPH_MS,
+  BOSS_VOLLEY_RECOVER_MS,
   LEVEL_XP_THRESHOLDS,
   PRECISION_NODES,
   XP_BOSS_DEFEAT,
@@ -106,18 +112,37 @@ console.log(
     `${explorer >= NODES ? 'SÌ' : `NO (${explorer}/${NODES})`}`,
 );
 
-const cycleMs = BOSS_GUARD_MS + BOSS_TELEGRAPH_MS + BOSS_CHARGE_MS + BOSS_RECOVER_MS;
-const vulnerableMs = BOSS_CHARGE_MS + BOSS_RECOVER_MS;
+function bossCycle(label: string, guard: number, telegraph: number, charges: number, volleyPause: number, recover: number): void {
+  // Una raffica: guardia, poi per ogni carica un telegrafo e la carica
+  // stessa, separate da una pausa breve; l'ultima pausa è quella lunga.
+  const cycleMs =
+    guard + charges * (telegraph + BOSS_CHARGE_MS) + (charges - 1) * volleyPause + recover;
+  // Vulnerabile durante ogni carica e ogni pausa, breve o lunga.
+  const vulnerableMs = charges * BOSS_CHARGE_MS + (charges - 1) * volleyPause + recover;
+  console.log(`\n  ${label}`);
+  console.log(`    cariche per raffica     ${charges}`);
+  console.log(`    ciclo completo          ${(cycleMs / 1000).toFixed(1)} s`);
+  console.log(
+    `    finestra vulnerabile    ${(vulnerableMs / 1000).toFixed(1)} s  (${Math.round(
+      (vulnerableMs / cycleMs) * 100,
+    )}% del ciclo)`,
+  );
+}
+
 console.log('\n── Sentinella del Molo ──');
-console.log(`  ciclo completo            ${(cycleMs / 1000).toFixed(1)} s`);
-console.log(
-  `  finestra vulnerabile      ${(vulnerableMs / 1000).toFixed(1)} s  (${Math.round(
-    (vulnerableMs / cycleMs) * 100,
-  )}% del ciclo)`,
-);
 console.log(`  colpi per abbatterla      ${BOSS_HITS_TO_DEFEAT}`);
-console.log(
-  `  durata minima scontro     ${((cycleMs * BOSS_HITS_TO_DEFEAT) / 1000).toFixed(1)} s ` +
-    `(un colpo a ciclo, nessuno mancato)`,
-);
+console.log(`  si altera a               ${BOSS_ENRAGE_AT} danni`);
 console.log(`  tick della simulazione    ${TICK_MS.toFixed(2)} ms`);
+bossCycle('Prima fase', BOSS_GUARD_MS, BOSS_TELEGRAPH_MS, 1, 0, BOSS_RECOVER_MS);
+bossCycle(
+  'Seconda fase (alterata)',
+  BOSS_GUARD_ENRAGED_MS,
+  BOSS_TELEGRAPH_ENRAGED_MS,
+  BOSS_ENRAGED_CHARGES,
+  BOSS_VOLLEY_RECOVER_MS,
+  BOSS_RECOVER_ENRAGED_MS,
+);
+console.log(
+  '\n  La seconda fase deve stringere il ritmo *e* aprire di più: se la\n' +
+    '  percentuale vulnerabile scendesse, sarebbe solo più lunga da subire.',
+);

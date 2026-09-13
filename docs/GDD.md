@@ -86,7 +86,13 @@ subirla passivamente), e **niente bullet-hell** — coerente col ritmo
 1. **Sentinella del Molo** (fine Atto I) — robot cingolato lento, scudo
    frontale sempre attivo. Vulnerabile solo al "core" sul retro, esposto
    quando carica un attacco a distanza ravvicinata: bisogna farlo mancare
-   girandogli attorno, poi colpire.
+   girandogli attorno, poi colpire. **Due fasi:** a metà dei danni si
+   "altera" — guardia e telegrafo si accorciano e carica due volte per
+   raffica invece di una. Il principio è che la seconda fase stringa il
+   ritmo *e* apra di più: le pause tra le due cariche sono a loro volta
+   finestre vulnerabili, quindi la percentuale di ciclo scoperta sale
+   (31% → 54%, misurati da `balance:campaign`). Una seconda fase che
+   fosse solo più aggressiva sarebbe soltanto più lunga da subire.
 2. **Custode del Reattore** (fine Atto II) — non insegue: manipola
    l'ambiente (spegne le luci a settori, inverte due volte la gravità di
    una sezione della stanza). Il giocatore deve muoversi tra le zone sicure
@@ -193,7 +199,8 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
    tutto l'Atto I.
 2. Skill tree minimo (2 rami, pochi nodi) + persistenza.
 3. Trabocchetti restanti e composizioni (corridoi a fuoco incrociato).
-4. Narrativa: testi tra livelli, battute di ARBITER.
+4. Narrativa: battute di ARBITER *(fatto per la slice, sezione 10)*; testi
+   tra un livello e l'altro ancora da scrivere.
 5. Atti II e III, bilanciamento con il tool esteso.
 
 ## 9. Decisioni dal briefing
@@ -220,9 +227,10 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
 **Stato: giocabile.** Sim, rendering, controller e menu esistono e sono
 raggiungibili da "CAMPAGNA (BETA)" nel menu principale, con controlli
 touch oltre a tastiera/mouse, ottica (tasto destro o pulsante a schermo)
-e progressione salvata in locale. Restano aperti: narrazione, i tre rami
-dello skill tree oltre a Precisione (sezione 6), e una seconda fase per
-la Sentinella.
+e progressione salvata in locale. La Sentinella ha la sua seconda fase
+(sezione 5) e ARBITER commenta il run (sotto). Restano aperti: i tre rami
+dello skill tree oltre a Precisione (sezione 6) e il resto dell'Atto I —
+due livelli e i trabocchetti mancanti (sezione 4).
 
 Obiettivo: un loop giocabile end-to-end, per validare le meccaniche prima di
 scrivere tutto l'Atto I. Scope fissato dal briefing:
@@ -241,9 +249,14 @@ scrivere tutto l'Atto I. Scope fissato dal briefing:
 - **Potenziamento tattico:** uno scudo raccoglibile nel Magazzino, prima
   del Molo — assorbe un colpo e si consuma, distinto dallo skill tree
   (sezione 6, "Potenziamenti vs progressione permanente").
-- **Narrazione:** nessuna per questa iterazione — ci si concentra su
-  meccaniche e level design; il tono sci-fi/ARBITER arriva quando il loop è
-  già divertente.
+- **Narrazione:** il briefing l'aveva rimandata, e la sequenza era quella
+  giusta — il loop è arrivato per primo. Ora che regge, ARBITER parla:
+  battute brevi a sottotitolo, una sola volta ciascuna (prima morte per
+  causa, ingresso in una stanza, porta sigillata, core, scudo, drone
+  abbattuto, alterazione del boss, vittoria). Vivono in `ui/arbiter.ts`,
+  nello strato di presentazione e non nella sim: il testo cambia spesso,
+  la simulazione deve restare deterministica e testabile senza di esso.
+  I testi tra un livello e l'altro restano da scrivere.
 
 ### Task tecnici (bozza)
 

@@ -193,6 +193,7 @@ function drawBoss(
   cam: CameraView,
   boss: BossState,
   hasGraze: boolean,
+  enraged: boolean,
   nowMs: number,
 ): void {
   const scale = boss.phase === 'charge' ? 1.12 : 1;
@@ -246,6 +247,18 @@ function drawBoss(
     ctx.restore();
   }
 
+  // Seconda fase: un contorno che pulsa, così il cambio di ritmo si
+  // vede prima di subirlo. Il colore della fase resta quello: questo
+  // dice "è cambiata", non sostituisce "cosa sta facendo".
+  if (enraged && boss.phase !== 'defeated') {
+    ctx.save();
+    ctx.globalAlpha = 0.5 + Math.sin(nowMs * 0.009) * 0.35;
+    ctx.strokeStyle = '#ff7a2f';
+    ctx.lineWidth = Math.max(1.5, w * 0.07);
+    ctx.strokeRect(screenX - w / 2 - w * 0.05, topY - h * 0.02, w * 1.1, h * 1.04);
+    ctx.restore();
+  }
+
   if (boss.phase === 'defeated') {
     ctx.save();
     ctx.globalAlpha = 0.5;
@@ -280,6 +293,7 @@ export function renderCampaignBillboards(
   droneY: number,
   boss: BossState,
   hasGraze: boolean,
+  enraged: boolean,
   nowMs: number,
 ): void {
   const list: CampaignBillboard[] = [];
@@ -329,7 +343,8 @@ export function renderCampaignBillboards(
       const floorY = heightToScreenY(vp, fx, p.perp, 0);
       list.push({
         dist: p.perp,
-        draw: () => drawBoss(ctx, p.screenX, floorY, p.tileH, cam, boss, hasGraze, nowMs),
+        draw: () =>
+          drawBoss(ctx, p.screenX, floorY, p.tileH, cam, boss, hasGraze, enraged, nowMs),
       });
     }
   }

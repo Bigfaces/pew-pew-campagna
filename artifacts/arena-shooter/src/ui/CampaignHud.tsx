@@ -108,9 +108,13 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
           </div>
         )}
         {snap.bossActive && snap.bossPhase !== 'defeated' && (
-          <div className="hud-clock">
-            SENTINELLA — {BOSS_PHASE_LABEL[snap.bossPhase] ?? snap.bossPhase} ·{' '}
-            {snap.bossDamageTaken}/{snap.bossHitsToDefeat}
+          <div
+            className="hud-clock"
+            style={snap.bossEnraged ? { color: '#ff7a2f', borderColor: '#ff7a2f' } : undefined}
+          >
+            SENTINELLA{snap.bossEnraged ? ' ALTERATA' : ''} —{' '}
+            {BOSS_PHASE_LABEL[snap.bossPhase] ?? snap.bossPhase} · {snap.bossDamageTaken}/
+            {snap.bossHitsToDefeat}
           </div>
         )}
         <div className="hud-clock">
@@ -126,6 +130,8 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
         )}
         {snap.muted && <div className="hud-muted">AUDIO MUTO · M</div>}
       </div>
+
+      {snap.arbiter && <div className="arbiter-line">ARBITER — {snap.arbiter}</div>}
 
       {!snap.pointerLocked && (
         <div className="hud-hint campaign-hud-hint">

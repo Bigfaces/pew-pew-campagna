@@ -179,6 +179,7 @@ export const BOSS_GUARD_MS = 2600;
 export const BOSS_TELEGRAPH_MS = 900;
 export const BOSS_CHARGE_MS = 700;
 export const BOSS_RECOVER_MS = 900;
+
 /** px/tick — faster than PLAYER_SPEED (2.2), so the charge is a real
  *  threat, not a formality. */
 export const BOSS_CHARGE_SPEED = 3.4;
@@ -188,6 +189,29 @@ export const BOSS_TURN_RATE = 0.05;
  *  small integer count of exposed hits, not a generic HP bar — see
  *  GDD.md section 6. */
 export const BOSS_HITS_TO_DEFEAT = 3;
+
+// ---- Seconda fase: la Sentinella alterata ----
+// Un solo pattern ripetuto per tutto lo scontro si impara in due cicli
+// e poi diventa attesa. A meta' dei danni la Sentinella cambia ritmo:
+// aspetta meno, si prepara piu' in fretta, e soprattutto carica DUE
+// volte di fila — schivare una volta non basta piu', e chi ha imparato
+// a contare un solo scatto viene preso dal secondo.
+//
+// Non e' solo "piu' difficile": la coppia di cariche si paga con una
+// pausa finale piu' lunga, cioe' la finestra piu' generosa di tutto lo
+// scontro. Chi regge la sequenza viene premiato, invece di dover solo
+// sopportare piu' a lungo.
+/** Danno oltre il quale la Sentinella si altera (meta' della soglia). */
+export const BOSS_ENRAGE_AT = BOSS_HITS_TO_DEFEAT / 2;
+export const BOSS_GUARD_ENRAGED_MS = 1400;
+export const BOSS_TELEGRAPH_ENRAGED_MS = 600;
+/** Quante cariche di fila in una raffica, da alterata. */
+export const BOSS_ENRAGED_CHARGES = 2;
+/** Pausa breve *dentro* la raffica: lega le due cariche invece di
+ *  farle sembrare due cicli separati. */
+export const BOSS_VOLLEY_RECOVER_MS = 380;
+/** Pausa lunga dopo l'ultima carica della raffica: il premio. */
+export const BOSS_RECOVER_ENRAGED_MS = 1300;
 
 /** Half-angle of the true rear arc: standing here scores a full hit. */
 export const BOSS_REAR_ARC_HALF = (60 * Math.PI) / 180;

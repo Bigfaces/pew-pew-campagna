@@ -85,6 +85,10 @@ export interface BossState {
   damageTaken: number;
   chargeDirX: number;
   chargeDirY: number;
+  /** Cariche ancora da fare nella raffica in corso. Da alterata una
+   *  raffica ne contiene due: la seconda parte subito dopo una pausa
+   *  breve, senza tornare in guardia. */
+  chargesLeft: number;
 }
 
 export interface Checkpoint {
@@ -160,5 +164,6 @@ export type CampaignEvent =
   | { type: 'nodeUnlocked'; id: string }
   | { type: 'droneDown' }
   | { type: 'bossHit'; damage: number; phase: BossPhase }
+  | { type: 'bossEnraged' }
   | { type: 'bossDefeated' }
   | { type: 'playerDied'; cause: 'drone' | 'boss' };

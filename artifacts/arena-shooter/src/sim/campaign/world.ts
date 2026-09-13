@@ -24,16 +24,22 @@ import {
 import {
   BOSS_CHARGE_MS,
   BOSS_CHARGE_SPEED,
+  BOSS_ENRAGED_CHARGES,
+  BOSS_ENRAGE_AT,
+  BOSS_GUARD_ENRAGED_MS,
   BOSS_GRAZE_ARC_HALF,
   BOSS_GUARD_MS,
   BOSS_HITS_TO_DEFEAT,
   BOSS_RADIUS,
   BOSS_REAR_ARC_HALF,
+  BOSS_RECOVER_ENRAGED_MS,
   BOSS_RECOVER_MS,
   BOSS_START_X,
   BOSS_START_Y,
+  BOSS_TELEGRAPH_ENRAGED_MS,
   BOSS_TELEGRAPH_MS,
   BOSS_TURN_RATE,
+  BOSS_VOLLEY_RECOVER_MS,
   CORE_DEFS,
   CORE_PICKUP_RADIUS,
   DOOR_CLOSE_DELAY_MS,
@@ -171,6 +177,7 @@ export class CampaignWorld {
         damageTaken: 0,
         chargeDirX: 0,
         chargeDirY: 0,
+        chargesLeft: 0,
       },
       outcome: 'playing',
     };
@@ -178,6 +185,13 @@ export class CampaignWorld {
 
   get finished(): boolean {
     return this.state.outcome === 'victory';
+  }
+
+  /** Seconda fase della Sentinella: derivata dal danno subito, non
+   *  memorizzata, così non può restare accesa dopo un reset del boss
+   *  che azzera il danno (vedi killPlayer). */
+  get enraged(): boolean {
+    return this.state.boss.damageTaken >= BOSS_ENRAGE_AT;
   }
 
   /** Skill points earned by leveling up but not yet spent on a node. */
@@ -406,7 +420,11 @@ export class CampaignWorld {
         boss.phaseTimer -= TICK_MS;
         if (boss.phaseTimer <= 0) {
           boss.phase = 'telegraph';
-          boss.phaseTimer = BOSS_TELEGRAPH_MS;
+          boss.phaseTimer = this.enraged ? BOSS_TELEGRAPH_ENRAGED_MS : BOSS_TELEGRAPH_MS;
+          // La raffica si decide qui, una volta: se la Sentinella si
+          // altera a meta' raffica, la raffica in corso resta quella
+          // che il giocatore ha visto iniziare.
+          boss.chargesLeft = this.enraged ? BOSS_ENRAGED_CHARGES : 1;
         }
         break;
       }
@@ -442,16 +460,32 @@ export class CampaignWorld {
         }
         boss.phaseTimer -= TICK_MS;
         if (boss.phaseTimer <= 0) {
+          boss.chargesLeft = Math.max(0, boss.chargesLeft - 1);
           boss.phase = 'recover';
-          boss.phaseTimer = BOSS_RECOVER_MS;
+          // Dentro la raffica la pausa e' breve — le due cariche
+          // devono leggersi come una sola sequenza. Quella dopo
+          // l'ultima e' la piu' lunga dello scontro: e' il premio.
+          boss.phaseTimer =
+            boss.chargesLeft > 0
+              ? BOSS_VOLLEY_RECOVER_MS
+              : this.enraged
+                ? BOSS_RECOVER_ENRAGED_MS
+                : BOSS_RECOVER_MS;
         }
         break;
       }
       case 'recover': {
         boss.phaseTimer -= TICK_MS;
         if (boss.phaseTimer <= 0) {
-          boss.phase = 'guard';
-          boss.phaseTimer = BOSS_GUARD_MS;
+          if (boss.chargesLeft > 0) {
+            // Riparte senza tornare in guardia: la seconda carica
+            // ri-mira, ma concede molto meno tempo per leggerla.
+            boss.phase = 'telegraph';
+            boss.phaseTimer = BOSS_TELEGRAPH_ENRAGED_MS;
+          } else {
+            boss.phase = 'guard';
+            boss.phaseTimer = this.enraged ? BOSS_GUARD_ENRAGED_MS : BOSS_GUARD_MS;
+          }
         }
         break;
       }
@@ -531,8 +565,10 @@ export class CampaignWorld {
         hasGrazeDamage(this.state.unlockedNodes),
       );
       if (dmg > 0) {
+        const wasEnraged = this.enraged;
         boss.damageTaken += dmg;
         this.events.push({ type: 'bossHit', damage: dmg, phase: boss.phase });
+        if (!wasEnraged && this.enraged) this.events.push({ type: 'bossEnraged' });
         this.grantXp(dmg >= 1 ? XP_BOSS_HIT_SOLID : XP_BOSS_HIT_GRAZE);
         if (boss.damageTaken >= BOSS_HITS_TO_DEFEAT) {
           boss.phase = 'defeated';
@@ -573,6 +609,7 @@ export class CampaignWorld {
       boss.phase = 'guard';
       boss.phaseTimer = BOSS_GUARD_MS;
       boss.damageTaken = 0;
+      boss.chargesLeft = 0;
       boss.x = BOSS_START_X;
       boss.y = BOSS_START_Y;
       boss.angle = Math.PI;

@@ -43,6 +43,7 @@ import { CAMP_MAP_H, CAMP_MAP_W } from '../sim/campaign/map';
 import { hasGrazeDamage, weaponStatsFor } from '../sim/campaign/skills';
 import type { CampaignEvent, CampaignInput, RoomId } from '../sim/campaign/types';
 import { CampaignWorld } from '../sim/campaign/world';
+import { ArbiterVoice, ARBITER_LINE_MS, type ArbiterLine } from '../ui/arbiter';
 import {
   clearCampaignProfile,
   loadCampaignProfile,
@@ -65,6 +66,9 @@ export interface CampaignHudSnapshot {
   availableSkillPoints: number;
   shieldActive: boolean;
   adsActive: boolean;
+  /** La battuta di ARBITER da mostrare adesso, se ce n'è una viva. */
+  arbiter: string | null;
+  bossEnraged: boolean;
   unlockedNodes: string[];
   door: { armed: boolean; closeTimerMs: number };
   bossActive: boolean;
@@ -129,6 +133,8 @@ export class CampaignGame {
   private lastHudPush = 0;
   private mutedFlag = false;
   private banner: Banner | null = null;
+  private arbiterVoice = new ArbiterVoice();
+  private arbiterLine: ArbiterLine | null = null;
   private wasReady = true;
 
   private ro: ResizeObserver | null = null;
@@ -264,6 +270,8 @@ export class CampaignGame {
     this.adsHeld = false;
     this.adsT = 0;
     this.banner = null;
+    this.arbiterVoice = new ArbiterVoice();
+    this.arbiterLine = null;
     this.fx.reset();
     this.phase = 'playing';
     this.accumulator = 0;
@@ -542,6 +550,9 @@ export class CampaignGame {
     const events = this.world.step(input);
     this.handleEvents(events);
 
+    const line = this.arbiterVoice.lineFor(events, performance.now());
+    if (line) this.arbiterLine = line;
+
     // Every form of progression goes through grantXp, so one event
     // type covers the lot: cores, rooms, kills, the boss bonus.
     if (events.some((e) => e.type === 'xpGained')) {
@@ -612,6 +623,7 @@ export class CampaignGame {
       DRONE_Y,
       world.state.boss,
       hasGrazeDamage(world.state.unlockedNodes),
+      world.enraged,
       now,
     );
 
@@ -678,6 +690,11 @@ export class CampaignGame {
       availableSkillPoints: this.world.availableSkillPoints,
       shieldActive: s.player.shieldActive,
       adsActive: this.adsHeld,
+      arbiter:
+        this.arbiterLine && now - this.arbiterLine.at < ARBITER_LINE_MS
+          ? this.arbiterLine.text
+          : null,
+      bossEnraged: this.world.enraged && s.boss.phase !== 'defeated',
       unlockedNodes: s.unlockedNodes,
       door: { armed: s.door.armed, closeTimerMs: s.door.closeTimer },
       bossActive: s.checkpoint.room === 'molo',

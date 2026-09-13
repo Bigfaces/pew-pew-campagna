@@ -578,6 +578,45 @@
   max-width: calc(100vw - 24px);
 }
 
+/* ---- Campaign: la voce di ARBITER ---- */
+/* In basso al centro, come un sottotitolo: si legge camminando,
+   senza rubare il centro dello schermo alla mira. */
+.arbiter-line {
+  position: absolute;
+  bottom: 34px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(620px, calc(100vw - 32px));
+  padding: 7px 14px;
+  background: rgba(6, 8, 14, 0.74);
+  border-left: 2px solid var(--accent);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  text-align: left;
+  animation: arbiter-in 260ms ease-out;
+}
+
+@keyframes arbiter-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* Sopra i controlli a schermo, non sotto il pollice. */
+@media (pointer: coarse) {
+  .arbiter-line {
+    bottom: 132px;
+  }
+}
+
 /* ---- Campaign: touch controls ---- */
 /* Hidden by default — a mouse-driven desktop has no use for an
    on-screen joystick. `pointer: coarse` is true for a touchscreen
