@@ -11,16 +11,17 @@ import { TILE } from '../sim/constants';
 import {
   BOSS_GRAZE_ARC_HALF,
   BOSS_REAR_ARC_HALF,
-  DRONE_REACTION_MS,
+  COLLAPSE_HOLD_MS,
 } from '../sim/campaign/constants';
 import { angleDelta } from '../sim/raycast';
-import { CAMP_MAP_H, CAMP_MAP_W } from '../sim/campaign/map';
 import { campCastRay, type GetTileFn } from '../sim/campaign/raycast';
+import type { LevelDef, TilePos, TurretDef } from '../sim/campaign/levelTypes';
 import type {
   BossPhase,
   BossState,
+  CampaignState,
   CoreState,
-  DroneState,
+  TurretState,
 } from '../sim/campaign/types';
 import {
   EYE_HEIGHT,
@@ -34,7 +35,11 @@ import {
 import { getTextures, shadedTile, TEX_SIZE } from './textures';
 import type { CameraView } from './scene';
 
-const CAMP_MAP_DIAGONAL_TILES = 25; // hypot(22,11), rounded up
+/** Oltre questo non c'è niente da disegnare: la diagonale del livello
+ *  più grande dell'atto (26x13), arrotondata in su. Era la diagonale
+ *  dell'unica mappa esistente; con tre livelli deve coprire il più
+ *  grande, o gli altri verrebbero tagliati in fondo. */
+const CAMP_MAP_DIAGONAL_TILES = 30;
 const MAX_RENDER_DIST = CAMP_MAP_DIAGONAL_TILES * TILE;
 const FOG_DIST = TILE * 14;
 
@@ -145,20 +150,22 @@ function drawShield(
   drawDiamond(ctx, screenX, cy, size, '#44ccff', nowMs * 0.0018);
 }
 
-function drawDrone(
+function drawTurret(
   ctx: CanvasRenderingContext2D,
   screenX: number,
   cy: number,
   size: number,
-  drone: DroneState,
+  turret: TurretState,
+  def: TurretDef,
   nowMs: number,
 ): void {
   // Brightens and reddens as it locks on — the "linea di mira visibile
   // prima di sparare" the GDD calls for (drawn as a warning glow rather
-  // than a literal beam, keeping the wireframe style).
-  const droneReady =
-    1 - Math.max(0, Math.min(1, drone.reactionTimer / DRONE_REACTION_MS));
-  const pulse = 0.5 + Math.sin(nowMs * 0.02) * 0.5 * droneReady;
+  // than a literal beam, keeping the wireframe style). È l'unica cosa
+  // che rende la minaccia leggibile invece che subita, quindi vale per
+  // il drone e per la turret allo stesso modo.
+  const ready = 1 - Math.max(0, Math.min(1, turret.reactionTimer / def.reactionMs));
+  const pulse = 0.5 + Math.sin(nowMs * 0.02) * 0.5 * ready;
 
   ctx.save();
   ctx.globalAlpha = 0.3 + pulse * 0.4;
@@ -168,14 +175,24 @@ function drawDrone(
   ctx.fill();
   ctx.restore();
 
-  drawDiamond(
-    ctx,
-    screenX,
-    cy,
-    size,
-    `rgb(255,${Math.round(60 + 100 * (1 - droneReady))},60)`,
-    Math.PI / 4,
-  );
+  const color = `rgb(255,${Math.round(60 + 100 * (1 - ready))},60)`;
+  if (def.kind === 'drone') {
+    // Il drone resta un rombo sospeso: fluttua.
+    drawDiamond(ctx, screenX, cy, size, color, Math.PI / 4);
+    return;
+  }
+  // La turret è fissa alla struttura: un blocco squadrato, così a
+  // colpo d'occhio si distingue una cosa che vola da una imbullonata,
+  // anche se si comportano allo stesso modo.
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1.5, size * 0.18);
+  ctx.strokeRect(screenX - size * 0.8, cy - size * 0.8, size * 1.6, size * 1.6);
+  ctx.beginPath();
+  ctx.moveTo(screenX - size * 0.8, cy);
+  ctx.lineTo(screenX + size * 0.8, cy);
+  ctx.stroke();
+  ctx.restore();
 }
 
 const BOSS_PHASE_COLOR: Record<BossPhase, string> = {
@@ -279,24 +296,130 @@ interface CampaignBillboard {
  *  drone and the boss can all appear in the same shot in Magazzino, so
  *  they share one depth-sorted pass instead of three fixed-order ones
  *  that would let a farther entity paint over a nearer one. */
-export function renderCampaignBillboards(
+/** Un quadrato sul pavimento, in prospettiva: i quattro angoli del
+ *  tile proiettati e riempiti.
+ *
+ *  Gas, pozzo e uscita stanno *per terra*, e disegnarli come cartelli
+ *  verticali avrebbe mentito su dove sono — una nube che galleggia
+ *  all'altezza degli occhi non si legge come una zona da evitare
+ *  camminando. Un tile viene saltato se un angolo finisce dietro la
+ *  camera, e occluso sul suo centro invece che per colonna: è una
+ *  decalcomania, non geometria, e un tile mezzo nascosto dietro uno
+ *  spigolo costa meno di un depth-test per colonna. */
+function drawFloorTile(
   ctx: CanvasRenderingContext2D,
   vp: Viewport,
   fx: CameraFx,
   cam: CameraView,
   depth: Float32Array,
-  cores: readonly CoreState[],
-  shieldAvailable: boolean,
-  shieldX: number,
-  shieldY: number,
-  drone: DroneState,
-  droneX: number,
-  droneY: number,
-  boss: BossState,
+  tile: TilePos,
+  fill: string,
+  lift = 1,
+): void {
+  const x0 = tile.tx * TILE;
+  const y0 = tile.ty * TILE;
+  const corners = [
+    [x0, y0],
+    [x0 + TILE, y0],
+    [x0 + TILE, y0 + TILE],
+    [x0, y0 + TILE],
+  ] as const;
+
+  const centre = projectPoint(
+    vp,
+    fx,
+    cam.x,
+    cam.y,
+    cam.angle,
+    x0 + TILE / 2,
+    y0 + TILE / 2,
+  );
+  if (!centre.visible) return;
+  const col = Math.round((centre.screenX - fx.shakeX - fx.bobX) / SLICE_W);
+  if (col < 0 || col >= vp.numRays) return;
+  if (depth[col]! < centre.perp - 2) return;
+
+  const pts: { x: number; y: number }[] = [];
+  for (const [cx, cy] of corners) {
+    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, cx, cy);
+    if (!p.visible) return;
+    pts.push({ x: p.screenX, y: heightToScreenY(vp, fx, p.perp, lift) });
+  }
+
+  ctx.save();
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.moveTo(pts[0]!.x, pts[0]!.y);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawExitMarker(
+  ctx: CanvasRenderingContext2D,
+  screenX: number,
+  floorY: number,
+  tileH: number,
+  nowMs: number,
+): void {
+  const pulse = 0.55 + Math.sin(nowMs * 0.004) * 0.25;
+  const w = tileH * 0.34;
+  const h = tileH * 0.9;
+  ctx.save();
+  ctx.globalAlpha = pulse;
+  ctx.strokeStyle = '#7dfc9a';
+  ctx.lineWidth = Math.max(1.5, tileH * 0.04);
+  ctx.strokeRect(screenX - w / 2, floorY - h, w, h);
+  ctx.globalAlpha = pulse * 0.22;
+  ctx.fillStyle = '#7dfc9a';
+  ctx.fillRect(screenX - w / 2, floorY - h, w, h);
+  ctx.restore();
+}
+
+/** Tutto ciò che non è muro, ordinato dal più lontano al più vicino.
+ *
+ *  Prende lo stato invece di quindici parametri: la firma precedente
+ *  elencava core, scudo, drone e boss uno per uno, e ogni trabocchetto
+ *  nuovo ne aggiungeva due o tre. Passare `state` e `level` la rende
+ *  stabile — e la dipendenza esiste già comunque, visto che questo
+ *  modulo è il renderer *della campagna*. */
+export function renderCampaignScenery(
+  ctx: CanvasRenderingContext2D,
+  vp: Viewport,
+  fx: CameraFx,
+  cam: CameraView,
+  depth: Float32Array,
+  level: LevelDef,
+  state: CampaignState,
   hasGraze: boolean,
   enraged: boolean,
   nowMs: number,
 ): void {
+  // --- decalcomanie sul pavimento, sotto tutto il resto ---
+  for (const zone of level.gasZones) {
+    const breathe = 0.16 + Math.sin(nowMs * 0.0015) * 0.05;
+    for (const t of zone.tiles) {
+      drawFloorTile(ctx, vp, fx, cam, depth, t, `rgba(150, 255, 140, ${breathe})`, 2);
+    }
+  }
+
+  for (const f of state.collapsingFloors) {
+    const def = level.collapsingFloors.find((x) => x.id === f.id);
+    if (!def) continue;
+    // Mentre il giocatore ci sta sopra, il pavimento si scalda: è
+    // l'unico preavviso che esista, e senza di esso il crollo
+    // sembrerebbe arbitrario invece che meritato.
+    const stress = Math.max(0, Math.min(1, f.standingMs / COLLAPSE_HOLD_MS));
+    const fill = f.collapsed
+      ? 'rgba(10, 10, 14, 0.85)'
+      : `rgba(${Math.round(180 + 60 * stress)}, ${Math.round(120 - 80 * stress)}, 40, ${
+          0.18 + stress * 0.4
+        })`;
+    for (const t of def.tiles) drawFloorTile(ctx, vp, fx, cam, depth, t, fill, 2);
+  }
+
+  // --- billboard, ordinati per distanza ---
   const list: CampaignBillboard[] = [];
 
   const occluded = (screenX: number, perp: number): boolean => {
@@ -305,53 +428,90 @@ export function renderCampaignBillboards(
     return depth[col]! < perp - 2;
   };
 
-  for (const c of cores) {
+  const push = (
+    x: number,
+    y: number,
+    anchor: number,
+    make: (screenX: number, y: number, tileH: number, perp: number) => () => void,
+  ): void => {
+    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, x, y, anchor);
+    if (!p.visible || occluded(p.screenX, p.perp)) return;
+    list.push({ dist: p.perp, draw: make(p.screenX, p.perp, p.tileH, p.perp) });
+  };
+
+  for (const c of state.cores) {
     if (c.collected) continue;
-    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, c.x, c.y);
-    if (!p.visible || occluded(p.screenX, p.perp)) continue;
-
-    const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + c.x) * TILE * 0.08;
-    const cy = heightToScreenY(vp, fx, p.perp, bobZ);
-    const size = p.tileH * 0.36;
-    list.push({ dist: p.perp, draw: () => drawCore(ctx, p.screenX, cy, size, nowMs) });
+    push(c.x, c.y, 1, (screenX, _y, tileH, perp) => {
+      const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + c.x) * TILE * 0.08;
+      const cy = heightToScreenY(vp, fx, perp, bobZ);
+      return () => drawCore(ctx, screenX, cy, tileH * 0.36, nowMs);
+    });
   }
 
-  if (shieldAvailable) {
-    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, shieldX, shieldY);
-    if (p.visible && !occluded(p.screenX, p.perp)) {
-      const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + shieldX) * TILE * 0.08;
-      const cy = heightToScreenY(vp, fx, p.perp, bobZ);
-      const size = p.tileH * 0.36;
-      list.push({ dist: p.perp, draw: () => drawShield(ctx, p.screenX, cy, size, nowMs) });
-    }
+  for (const sh of state.shields) {
+    if (sh.collected) continue;
+    push(sh.x, sh.y, 1, (screenX, _y, tileH, perp) => {
+      const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + sh.x) * TILE * 0.08;
+      const cy = heightToScreenY(vp, fx, perp, bobZ);
+      return () => drawShield(ctx, screenX, cy, tileH * 0.36, nowMs);
+    });
   }
 
-  if (drone.alive) {
-    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, droneX, droneY);
-    if (p.visible && !occluded(p.screenX, p.perp)) {
-      const cy = heightToScreenY(vp, fx, p.perp, TILE * 0.55);
-      const size = p.tileH * 0.3;
-      list.push({
-        dist: p.perp,
-        draw: () => drawDrone(ctx, p.screenX, cy, size, drone, nowMs),
-      });
-    }
+  for (const t of state.turrets) {
+    if (!t.alive) continue;
+    const def = level.turrets.find((d) => d.id === t.id);
+    if (!def) continue;
+    const tx = (def.tx + 0.5) * TILE;
+    const ty = (def.ty + 0.5) * TILE;
+    push(tx, ty, 1, (screenX, _y, tileH, perp) => {
+      // Il drone fluttua a mezz'aria, la turret è imbullonata più in
+      // basso: la differenza di quota fa metà del lavoro di
+      // distinguerle a distanza.
+      const z = def.kind === 'drone' ? TILE * 0.55 : TILE * 0.42;
+      const cy = heightToScreenY(vp, fx, perp, z);
+      return () => drawTurret(ctx, screenX, cy, tileH * 0.3, t, def, nowMs);
+    });
   }
 
-  {
-    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, boss.x, boss.y, 0.5);
-    if (p.visible && !occluded(p.screenX, p.perp)) {
-      const floorY = heightToScreenY(vp, fx, p.perp, 0);
-      list.push({
-        dist: p.perp,
-        draw: () =>
-          drawBoss(ctx, p.screenX, floorY, p.tileH, cam, boss, hasGraze, enraged, nowMs),
-      });
-    }
+  if (level.exit) {
+    const ex = (level.exit.tx + 0.5) * TILE;
+    const ey = (level.exit.ty + 0.5) * TILE;
+    push(ex, ey, 0.5, (screenX, _y, tileH, perp) => {
+      const floorY = heightToScreenY(vp, fx, perp, 0);
+      return () => drawExitMarker(ctx, screenX, floorY, tileH, nowMs);
+    });
+  }
+
+  const boss = state.boss;
+  if (boss) {
+    push(boss.x, boss.y, 0.5, (screenX, _y, tileH, perp) => {
+      const floorY = heightToScreenY(vp, fx, perp, 0);
+      return () =>
+        drawBoss(ctx, screenX, floorY, tileH, cam, boss, hasGraze, enraged, nowMs);
+    });
   }
 
   list.sort((a, b) => b.dist - a.dist);
   for (const b of list) b.draw();
+}
+
+/** Il velo che il gas lascia sugli occhi. Disegnato dopo la scena e
+ *  prima dell'interfaccia: acceca il mondo, non la HUD — quella si
+ *  spegne da sé (niente minimappa, niente ottica), ed è una cosa
+ *  diversa dal vedere male. */
+export function renderGasVeil(
+  ctx: CanvasRenderingContext2D,
+  vp: Viewport,
+  strength: number,
+  nowMs: number,
+): void {
+  if (strength <= 0) return;
+  const a = Math.min(1, strength);
+  ctx.save();
+  ctx.globalAlpha = a * (0.22 + Math.sin(nowMs * 0.006) * 0.05);
+  ctx.fillStyle = '#9bff8c';
+  ctx.fillRect(0, 0, vp.width, vp.height);
+  ctx.restore();
 }
 
 // ================================================================
@@ -369,57 +529,61 @@ export function renderCampaignBillboards(
 // scelta già fatta per physics e raycast della campagna.
 // ================================================================
 
-/** Cache del fondo: i muri non cambiano mai tranne che per la porta,
- *  quindi ridisegnare 242 tile per frame sarebbe lavoro buttato. La
- *  chiave include lo stato della porta proprio perché quello cambia. */
-let campMinimapCache: { canvas: HTMLCanvasElement; size: number; door: boolean } | null =
-  null;
+/** Cache del fondo: i muri non cambiano solo perché il giocatore si
+ *  muove, quindi ridisegnare ogni tile per frame sarebbe lavoro
+ *  buttato. La chiave include livello e stato delle porte, cioè le
+ *  due sole cose che possono cambiare il disegno. */
+let campMinimapCache: {
+  canvas: HTMLCanvasElement;
+  size: number;
+  levelId: string;
+  doors: string;
+} | null = null;
 
 function campMinimapBackground(
   size: number,
+  level: LevelDef,
   getTile: GetTileFn,
-  doorClosed: boolean,
+  doorKey: string,
 ): HTMLCanvasElement {
   const cached = campMinimapCache;
-  if (cached && cached.size === size && cached.door === doorClosed) return cached.canvas;
+  if (cached && cached.size === size && cached.levelId === level.id && cached.doors === doorKey) {
+    return cached.canvas;
+  }
 
   const c = document.createElement('canvas');
   c.width = size;
   c.height = size;
   const g = c.getContext('2d')!;
-  const sx = size / CAMP_MAP_W;
-  const sy = size / CAMP_MAP_H;
+  const sx = size / level.width;
+  const sy = size / level.height;
 
   g.fillStyle = 'rgba(6, 12, 18, 0.82)';
   g.fillRect(0, 0, size, size);
   g.fillStyle = 'rgba(120, 190, 230, 0.30)';
-  for (let ty = 0; ty < CAMP_MAP_H; ty++) {
-    for (let tx = 0; tx < CAMP_MAP_W; tx++) {
+  for (let ty = 0; ty < level.height; ty++) {
+    for (let tx = 0; tx < level.width; tx++) {
       if (getTile(tx, ty) !== 0) g.fillRect(tx * sx, ty * sy, sx + 0.5, sy + 0.5);
     }
+  }
+  // I trabocchetti sul fondo, non tra i contatti: sono parte della
+  // pianta della stazione, non cose che si muovono.
+  g.fillStyle = 'rgba(150, 255, 140, 0.22)';
+  for (const z of level.gasZones) {
+    for (const t of z.tiles) g.fillRect(t.tx * sx, t.ty * sy, sx, sy);
+  }
+  g.fillStyle = 'rgba(230, 140, 40, 0.26)';
+  for (const f of level.collapsingFloors) {
+    for (const t of f.tiles) g.fillRect(t.tx * sx, t.ty * sy, sx, sy);
   }
   g.strokeStyle = 'rgba(150, 220, 255, 0.45)';
   g.lineWidth = 1;
   g.strokeRect(0.5, 0.5, size - 1, size - 1);
 
-  campMinimapCache = { canvas: c, size, door: doorClosed };
+  campMinimapCache = { canvas: c, size, levelId: level.id, doors: doorKey };
   return c;
 }
 
-export interface MinimapContacts {
-  cores: readonly CoreState[];
-  drone: DroneState;
-  droneX: number;
-  droneY: number;
-  boss: BossState;
-  shieldX: number;
-  shieldY: number;
-  shieldAvailable: boolean;
-}
-
-/** Draws the sector minimap. `contacts` is null with only Scanner di
- *  Settore unlocked: you see the map and yourself, but not what is on
- *  it — which is exactly the difference the second node sells. */
 /** Dove finisce la minimappa, in px CSS (vp.width è già in px CSS).
  *
  *  Esportata perché la HUD deve sapere quanto spazio lasciarle. La
@@ -427,71 +591,75 @@ export interface MinimapContacts {
  *  questo dato le finisce sotto — è esattamente quello che faceva la
  *  prima versione, verificata su iPhone 13. Una formula sola, letta da
  *  chi disegna e da chi deve scansarsi, invece di due numeri da tenere
- *  d'accordo a mano ogni volta che uno dei due cambia.
- *
- *  La mappa è larga il doppio di quanto è alta (22x11): riservarle un
- *  quadrato sprecherebbe metà dello spazio su un telefono. */
+ *  d'accordo a mano ogni volta che uno dei due cambia. */
 export function campMinimapBox(vpWidth: number): { w: number; h: number; pad: number } {
   const w = Math.round(Math.min(200, Math.max(120, vpWidth * 0.17)));
-  return { w, h: Math.round((w * CAMP_MAP_H) / CAMP_MAP_W), pad: 12 };
+  return { w, h: Math.round(w * 0.55), pad: 12 };
 }
 
+/** Disegna la minimappa del settore. `showContacts` è falso col solo
+ *  Scanner di Settore: vedi la pianta e te stesso, ma non cosa c'è
+ *  sopra — che è esattamente la differenza che vende il secondo nodo. */
 export function renderCampaignMinimap(
   ctx: CanvasRenderingContext2D,
   vp: Viewport,
+  level: LevelDef,
+  state: CampaignState,
   getTile: GetTileFn,
-  doorClosed: boolean,
-  playerX: number,
-  playerY: number,
-  playerAngle: number,
-  contacts: MinimapContacts | null,
+  showContacts: boolean,
 ): void {
   const { w, h, pad } = campMinimapBox(vp.width);
   const mx = vp.width - w - pad;
   const my = pad;
-  const sx = w / (CAMP_MAP_W * TILE);
-  const sy = h / (CAMP_MAP_H * TILE);
+  const sx = w / (level.width * TILE);
+  const sy = h / (level.height * TILE);
+  const doorKey = state.doors.map((d) => (d.closed ? '1' : '0')).join('');
 
   ctx.save();
   ctx.globalAlpha = 0.92;
   // Il fondo è disegnato su un canvas quadrato di lato `w` e poi
-  // schiacciato all'altezza reale: una sola cache, invece di una per
+  // schiacciato all'altezza reale: una sola cache invece di una per
   // ogni rapporto di forma.
-  ctx.drawImage(campMinimapBackground(w, getTile, doorClosed), mx, my, w, h);
+  ctx.drawImage(campMinimapBackground(w, level, getTile, doorKey), mx, my, w, h);
 
-  if (contacts) {
-    for (const c of contacts.cores) {
-      if (c.collected) continue;
-      ctx.fillStyle = '#ffd166';
-      ctx.fillRect(mx + c.x * sx - 1.5, my + c.y * sy - 1.5, 3, 3);
+  const dot = (x: number, y: number, color: string, r: number): void => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(mx + x * sx, my + y * sy, r, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  if (level.exit) {
+    dot((level.exit.tx + 0.5) * TILE, (level.exit.ty + 0.5) * TILE, '#7dfc9a', 3);
+  }
+
+  if (showContacts) {
+    for (const c of state.cores) {
+      if (!c.collected) dot(c.x, c.y, '#ffd166', 2);
     }
-    if (contacts.shieldAvailable) {
-      ctx.fillStyle = '#44ccff';
-      ctx.fillRect(mx + contacts.shieldX * sx - 1.5, my + contacts.shieldY * sy - 1.5, 3, 3);
+    for (const sh of state.shields) {
+      if (!sh.collected) dot(sh.x, sh.y, '#44ccff', 2);
     }
-    if (contacts.drone.alive) {
-      ctx.fillStyle = '#ff5c5c';
-      ctx.beginPath();
-      ctx.arc(mx + contacts.droneX * sx, my + contacts.droneY * sy, 2.5, 0, Math.PI * 2);
-      ctx.fill();
+    for (const t of state.turrets) {
+      if (!t.alive) continue;
+      const def = level.turrets.find((d) => d.id === t.id);
+      if (def) dot((def.tx + 0.5) * TILE, (def.ty + 0.5) * TILE, '#ff5c5c', 2.5);
     }
-    if (contacts.boss.phase !== 'defeated') {
-      ctx.fillStyle = '#ff7a2f';
-      ctx.beginPath();
-      ctx.arc(mx + contacts.boss.x * sx, my + contacts.boss.y * sy, 4, 0, Math.PI * 2);
-      ctx.fill();
+    if (state.boss && state.boss.phase !== 'defeated') {
+      dot(state.boss.x, state.boss.y, '#ff7a2f', 4);
     }
   }
 
   // Il giocatore per ultimo: un contatto non deve mai coprire la
   // freccia che dice dove sei.
-  const px = mx + playerX * sx;
-  const py = my + playerY * sy;
+  const p = state.player;
+  const px = mx + p.x * sx;
+  const py = my + p.y * sy;
   ctx.fillStyle = '#eaf6ff';
   ctx.beginPath();
-  ctx.moveTo(px + Math.cos(playerAngle) * 5, py + Math.sin(playerAngle) * 5);
-  ctx.lineTo(px + Math.cos(playerAngle + 2.5) * 4, py + Math.sin(playerAngle + 2.5) * 4);
-  ctx.lineTo(px + Math.cos(playerAngle - 2.5) * 4, py + Math.sin(playerAngle - 2.5) * 4);
+  ctx.moveTo(px + Math.cos(p.angle) * 5, py + Math.sin(p.angle) * 5);
+  ctx.lineTo(px + Math.cos(p.angle + 2.5) * 4, py + Math.sin(p.angle + 2.5) * 4);
+  ctx.lineTo(px + Math.cos(p.angle - 2.5) * 4, py + Math.sin(p.angle - 2.5) * 4);
   ctx.closePath();
   ctx.fill();
 

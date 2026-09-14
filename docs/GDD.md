@@ -59,22 +59,51 @@ già usato in Arena, niente doppiaggio registrato).
 - Riuso diretto di `sim/` (tick fissi, PRNG seedato) e `render/` (stesso
   motore raycast): la campagna aggiunge *contenuto* (mappe, entità, stati),
   non un nuovo motore.
+- **Un livello è un dato, non un modulo.** Fino allo Sprint 1 la mappa era
+  un file e le entità erano costanti: funzionava finché il livello era uno.
+  Adesso una `LevelDef` descrive griglia, stanze, trabocchetti,
+  raccoglibili, boss e uscita, e `CampaignWorld` ne prende una senza sapere
+  quale. Aggiungere un livello vuol dire scrivere un dato; aggiungere un
+  tipo di trabocchetto vuol dire toccare la simulazione una volta sola.
+  È anche ciò che rende verificabile il level design: un test strutturale
+  controlla tutte le mappe dell'atto — ogni entità su un tile calpestabile,
+  le stanze che coprono le colonne senza buchi, e una visita in ampiezza
+  che dimostri che dallo spawn si arriva davvero alla fine.
 
 ## 4. Trabocchetti
 
 Pensati per essere implementabili con sola geometria/logica, senza asset:
 
-| Trabocchetto | Meccanica | Nota tecnica |
-| --- | --- | --- |
-| Porta stagna a tempo | Si chiude dopo N secondi dall'attivazione di un sensore; se sei dentro, danno o percorso bloccato | Timer nello stato di sim, deterministico |
-| Pavimento che cede | Dopo un tot di peso/tempo sopra, teletrasporta il giocatore al piano/stanza sottostante (nessuna fisica di caduta reale, solo un "warp" di stato) | Trigger a volume + transizione di stato, niente fisica nuova |
-| Turret laser | Nemico stazionario, linea di mira visibile prima di sparare (tempo di reazione leggibile) | Riusa l'AI a stati dei bot esistenti, senza movimento |
-| Gas/EMP | Area che disattiva temporaneamente minimappa o HUD ottico | Flag temporaneo sullo stato del giocatore, già simile ai power-up esistenti |
-| Corridoio a fuoco incrociato | Due-tre turret con tempi sfalsati: si supera leggendo il pattern, non a forza | Composizione di turret + timer, nessuna nuova entità |
+| Trabocchetto | Meccanica | Dove sta | Stato |
+| --- | --- | --- | --- |
+| Porta stagna a tempo | Si chiude N secondi dopo l'attivazione di un sensore | Attracco, corridoio | fatto |
+| Turret laser | Nemico stazionario, linea di mira visibile prima di sparare (tempo di reazione leggibile) | Condotti, Molo | fatto |
+| Pavimento che cede | Restarci sopra troppo a lungo riporta al punto di partenza della stanza — nessuna fisica di caduta, solo un "warp" di stato | Condotti, il pozzo | fatto |
+| Gas/EMP | Area che spegne minimappa e ottica finché non se ne esce, più una coda | Condotti, la camera | fatto |
+| Corridoio a fuoco incrociato | Tre turret sfasate di un terzo di ciclo: si supera leggendo il ritmo, non a forza | Molo, la galleria | fatto |
 
 Tutti derivano da primitive già presenti (trigger volumetrici, timer,
 stati temporanei) più i bot esistenti, riletti come "trappole" invece che
-avversari mobili.
+avversari mobili. Tre cose che il codice ha chiarito e che vale la pena
+fissare qui:
+
+- **Il drone *era* già una turret.** Non si è mai mosso: linea di vista,
+  tempo di reazione, colpo, ricarica. Sono la stessa entità, e `kind`
+  decide soltanto se si disegna come un rombo sospeso o come un blocco
+  imbullonato. Tenerne due avrebbe raddoppiato la logica per una
+  differenza di disegno.
+- **Il pavimento che cede non uccide.** Costa tempo e posizione. Una morte
+  lo renderebbe indistinguibile da una turret, e il punto è avere una
+  minaccia che non si risolve sparando. La soglia è tarata sulla
+  traversata misurata, non stimata: si passa camminando dritti, non si
+  passa fermandosi a mirare. La prima taratura la metteva esattamente
+  alla durata della traversata, e cedeva a chiunque — cioè era un muro
+  travestito da scelta.
+- **Il fuoco incrociato ha bisogno di geometria, non solo di timer.** La
+  prima galleria era un tubo dritto: tutte e tre le turret vedevano tutto,
+  quindi sparava sempre qualcuna e non c'era ritmo da leggere. Due chicane
+  spezzano il corridoio in tre segmenti, una turret per segmento. Solo
+  allora lo sfasamento conta.
 
 ## 5. Boss
 
@@ -211,29 +240,41 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
 
 ## 7. Impatto sull'architettura esistente
 
-- `sim/`: nuovo stato di progressione (core raccolti, nodi sbloccati),
-  nuove entità trap/boss come macchine a stati, tutto avanzato a tick fissi
-  e seedato come oggi. Nessuna modifica al modello a entità "input-driven"
+- `sim/`: stato di progressione (XP, nodi sbloccati, livello raggiunto),
+  entità trap/boss come macchine a stati, tutto avanzato a tick fissi e
+  seedato come oggi. Nessuna modifica al modello a entità "input-driven"
   esistente: le trappole sono ambiente, i boss sono bot con AI più
-  articolata.
+  articolata. Un `CampaignWorld` simula **un** livello: passare al
+  successivo vuol dire costruirne un altro con lo stesso profilo, non
+  ripulire questo. I timer, i danni al boss e le posizioni di un livello
+  non hanno senso nel seguente, e azzerarli uno a uno sarebbe una lista da
+  ricordare di aggiornare a ogni trabocchetto aggiunto.
 - `render/`: nessun asset nuovo per ora. Boss e trappole si distinguono con
   forme/colori (stesso approccio delle texture generate in codice).
 - `ui/`: nuove schermate — selezione capitolo/livello, skill tree, schermata
   di fine missione — riusando i componenti React già presenti in Arena.
 - `net/`: la campagna è single-player; il multiplayer resta esclusivo della
   modalità Arena, invariata.
-- `stats/` e bilanciamento: estendere `tools/balance.mts` con metriche di
-  campagna (tempo per stanza, tentativi per boss) sullo stesso principio
-  già usato per l'Arena — si discute con i numeri, non a parole.
+- `stats/` e bilanciamento: `tools/balance-campaign.mts` cammina l'atto
+  sulle definizioni dei livelli — non su una lista di tappe scritta a mano,
+  che racconterebbe l'atto che c'era quando è stata scritta — e verifica
+  quattro invarianti sull'economia dei punti abilità. Stesso principio
+  dell'Arena: si discute con i numeri, non a parole.
+- Verificabilità del level design: oltre ai test strutturali (sezione 3),
+  un bot attraversa ogni livello camminando e sparando alle turret. È un
+  giocatore mediocre di proposito — niente scatto, niente copertura — e
+  proprio per questo è la soglia giusta: se ce la fa lui, il livello è
+  attraversabile. È il test che ha bocciato la prima galleria e la prima
+  camera del gas, che dal codice sembravano entrambe a posto.
 
 ## 8. Roadmap proposta
 
-1. Un livello "verticale slice": 2-3 stanze, un trabocchetto, un boss
-   semplice (Sentinella del Molo), per validare il loop prima di scrivere
-   tutto l'Atto I.
+1. Un livello "verticale slice" *(fatto)* — poi diventato l'Atto I
+   completo: tre livelli, il boss alla fine del terzo.
 2. Skill tree *(fatto)* — quattro rami, dieci nodi, persistenza su
    `localStorage`.
-3. Trabocchetti restanti e composizioni (corridoi a fuoco incrociato).
+3. Trabocchetti restanti e composizioni *(fatto)* — tutti e cinque,
+   corridoio a fuoco incrociato compreso.
 4. Narrativa: battute di ARBITER *(fatto per la slice, sezione 10)*; testi
    tra un livello e l'altro ancora da scrivere.
 5. Atti II e III, bilanciamento con il tool esteso.
@@ -261,25 +302,36 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
      corrente (3 livelli + boss): la posta si alza per chi cerca la sfida
      vera.
 
-## 10. Sprint 1 — Verticale slice (modalità Tutorial)
+## 10. Atto I (modalità Tutorial)
 
-**Stato: giocabile.** Sim, rendering, controller e menu esistono e sono
-raggiungibili da "CAMPAGNA (BETA)" nel menu principale, con controlli
-touch oltre a tastiera/mouse, ottica (tasto destro o pulsante a schermo)
-e progressione salvata in locale. La Sentinella ha la sua seconda fase
-(sezione 5), ARBITER commenta il run (sotto) e lo skill tree è completo:
-quattro rami, dieci nodi, due prerequisiti (sezione 6). Resta aperto il
-resto dell'Atto I — due livelli e i trabocchetti mancanti (sezione 4).
+*Nato come "verticale slice": un livello solo, per validare il loop prima
+di scriverne nove. Il loop ha retto, e la slice è diventata il primo dei
+tre livelli dell'atto.*
+
+**Stato: l'Atto I è completo e giocabile.** Tre livelli concatenati —
+Attracco, Condotti, Molo — raggiungibili da "CAMPAGNA (BETA)" nel menu
+principale, con controlli touch oltre a tastiera/mouse, ottica e
+progressione salvata in locale. Tutti e cinque i trabocchetti della
+sezione 4 esistono, la Sentinella ha la sua seconda fase (sezione 5),
+ARBITER commenta il run (sotto) e lo skill tree è completo: quattro rami,
+dieci nodi, due prerequisiti (sezione 6).
+
+Il prossimo passo è l'Atto II (sezione 2), che è anche il primo banco di
+prova dell'idea che un livello sia solo un dato: se costruirne uno nuovo
+richiede di toccare la simulazione, l'astrazione non regge e va rivista
+prima di moltiplicarla per nove.
 
 Obiettivo: un loop giocabile end-to-end, per validare le meccaniche prima di
 scrivere tutto l'Atto I. Scope fissato dal briefing:
 
-- **Livello:** 2-3 stanze collegate da corridoi (riuso del raycaster
-  esistente, nessuna mappa nuova enorme).
-- **Trabocchetto:** porta stagna a tempo (si chiude N secondi dopo
-  l'attivazione di un sensore).
-- **Boss:** Sentinella del Molo — scudo frontale sempre attivo, vulnerabile
-  solo al core sul retro quando carica l'attacco ravvicinato.
+- **Livelli:** tre, lineari, di 3-4 stanze ciascuno (riuso del raycaster
+  esistente, nessuna mappa enorme). Raggiungere l'uscita di un livello
+  apre il successivo; il terzo finisce col boss invece che con un'uscita.
+- **Trabocchetti:** tutti e cinque della sezione 4, distribuiti sui tre
+  livelli.
+- **Boss:** Sentinella del Molo, alla fine del terzo livello — scudo
+  frontale sempre attivo, vulnerabile solo al core sul retro quando carica
+  l'attacco ravvicinato, con una seconda fase a metà danni (sezione 5).
 - **Morte:** checkpoint di stanza (regola "Tutorial" sopra).
 - **Skill tree:** tutti e quattro i rami (sezione 6), dieci nodi,
   sbloccabili con punti abilità guadagnati salendo di livello (esperienza

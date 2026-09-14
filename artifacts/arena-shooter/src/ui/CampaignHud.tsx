@@ -7,13 +7,6 @@ import {
 import { prereqMet } from '../sim/campaign/skills';
 import type { CampaignHudSnapshot } from '../game/campaignGame';
 
-const ROOM_LABEL: Record<CampaignHudSnapshot['room'], string> = {
-  attracco: 'ATTRACCO',
-  corridoio: 'CORRIDOIO',
-  magazzino: 'MAGAZZINO',
-  molo: 'MOLO',
-};
-
 const BOSS_PHASE_LABEL: Record<string, string> = {
   guard: 'IN GUARDIA',
   telegraph: 'SI PREPARA',
@@ -126,7 +119,14 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
             : undefined
         }
       >
-        <div className="hud-clock">{ROOM_LABEL[snap.room]}</div>
+        {/* Il nome arriva già pronto dallo snapshot: le stanze sono
+            dato del livello, e una tabella qui sarebbe una seconda
+            lista da aggiornare a ogni livello aggiunto — che è
+            esattamente il modo in cui una stanza nuova finirebbe per
+            chiamarsi `undefined`. */}
+        <div className="hud-clock">
+          {snap.levelOrdinal}/{snap.levelCount} · {snap.room}
+        </div>
         {snap.door.armed && (
           <div className="hud-clock" data-urgent>
             PORTA IN CHIUSURA · {(snap.door.closeTimerMs / 1000).toFixed(1)}s
@@ -158,6 +158,11 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
         {snap.dashReady !== null && (
           <div className="hud-clock" data-ready={snap.dashReady >= 1 || undefined}>
             SCATTO{snap.dashReady >= 1 ? ' PRONTO' : ` ${Math.round(snap.dashReady * 100)}%`}
+          </div>
+        )}
+        {snap.blinded && (
+          <div className="hud-clock" style={{ color: '#9bff8c', borderColor: '#9bff8c' }}>
+            SENSORI CIECHI
           </div>
         )}
         {snap.muted && <div className="hud-muted">AUDIO MUTO · M</div>}

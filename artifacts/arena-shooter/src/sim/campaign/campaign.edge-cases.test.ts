@@ -14,14 +14,18 @@
 import { describe, expect, it } from 'vitest';
 
 import { ENTITY_RADIUS, TICK_MS, TILE } from '../constants';
-import {
-  BOSS_CHARGE_MS,
-  BOSS_START_X,
-  BOSS_START_Y,
-  DRONE_REACTION_MS,
-} from './constants';
+import { BOSS_CHARGE_MS, TURRET_REACTION_MS } from './constants';
 import { campCircleHitsTile } from './physics';
 import { weaponStatsFor } from './skills';
+import {
+  attracco,
+  bossHome,
+  doorOf,
+  enterBossRoom,
+  molo,
+  shieldOf,
+  turretOf,
+} from './testSupport';
 import { emptyCampaignInput, type CampaignInput } from './types';
 import { CampaignWorld } from './world';
 
@@ -39,7 +43,7 @@ function idleTicks(world: CampaignWorld, n: number): void {
 
 describe('CampaignWorld — checkpoint mai regressivo', () => {
   it('non torna a una stanza precedente se il giocatore ci rientra', () => {
-    const world = new CampaignWorld();
+    const world = attracco();
 
     // Entra nel corridoio: il checkpoint avanza.
     world.state.player.x = 8 * TILE;
@@ -63,13 +67,18 @@ describe('CampaignWorld — checkpoint mai regressivo', () => {
 // --------------------------------------------------------------------
 
 describe('CampaignWorld — morte resetta solo il pericolo della propria stanza', () => {
-  it('morire per il drone nel Magazzino non riarma la porta già sigillata né tocca il boss', () => {
-    const world = new CampaignWorld();
+  // Nota: con l'Atto I diviso in tre livelli, porta e boss non stanno
+  // più nello stesso livello, quindi la regola si verifica dove
+  // ciascuna coppia esiste davvero. È la stessa regola, guardata da
+  // due livelli diversi.
+
+  it('morire per il drone nel Magazzino non riarma la porta già sigillata', () => {
+    const world = attracco();
 
     // La porta è già stata superata e sigillata prima di arrivare qui.
-    world.state.door.armed = false;
-    world.state.door.closed = true;
-    world.state.door.closeTimer = 0;
+    doorOf(world).state.armed = false;
+    doorOf(world).state.closed = true;
+    doorOf(world).state.closeTimer = 0;
 
     world.state.checkpoint = {
       room: 'magazzino',
@@ -80,7 +89,7 @@ describe('CampaignWorld — morte resetta solo il pericolo della propria stanza'
     world.state.player.x = 13.5 * TILE;
     world.state.player.y = 7 * TILE;
 
-    const ticksToFire = Math.ceil(DRONE_REACTION_MS / TICK_MS) + 2;
+    const ticksToFire = Math.ceil(TURRET_REACTION_MS / TICK_MS) + 2;
     let died = false;
     for (let i = 0; i < ticksToFire; i++) {
       const events = world.step();
@@ -89,27 +98,31 @@ describe('CampaignWorld — morte resetta solo il pericolo della propria stanza'
 
     expect(died).toBe(true);
     // La porta resta sigillata: non è il pericolo di questa stanza.
-    expect(world.state.door.closed).toBe(true);
-    expect(world.state.door.armed).toBe(false);
-    // Il boss non è ancora stato raggiunto: resta intonso.
-    expect(world.state.boss.phase).toBe('guard');
-    expect(world.state.boss.damageTaken).toBe(0);
-    expect(world.state.boss.x).toBe(BOSS_START_X);
-    expect(world.state.boss.y).toBe(BOSS_START_Y);
+    expect(doorOf(world).state.closed).toBe(true);
+    expect(doorOf(world).state.armed).toBe(false);
+    // Il drone invece sì: è di casa qui.
+    expect(turretOf(world).state.alive).toBe(true);
   });
 
-  it('morire nel Molo resetta boss e posizione ma non i core raccolti né i nodi sbloccati', () => {
-    const world = new CampaignWorld();
-    world.state.checkpoint = { room: 'molo', x: 17.5 * TILE, y: 5.5 * TILE, angle: 0 };
-    world.state.player.x = 17.5 * TILE;
-    world.state.player.y = 5.5 * TILE;
+  it('morire nel Molo resetta il boss, non le turret della galleria né i progressi', () => {
+    const world = molo();
+    const home = bossHome(world.level);
+    enterBossRoom(world);
+    world.state.player.x = home.x - 60;
+    world.state.player.y = home.y;
+    world.state.checkpoint.x = home.x - 60;
+
+    // Una turret della galleria, cioè di una stanza precedente, già
+    // abbattuta: morire nel Molo non deve rimetterla in piedi.
+    const galleria = turretOf(world, 'galleria-a');
+    galleria.state.alive = false;
 
     // Progressi che non appartengono al Molo e non devono sparire.
     world.state.coresCollected = 2;
     world.state.unlockedNodes = ['otturatore-rapido'];
 
     // Il boss è già a mezza carica, a un soffio dal giocatore.
-    const boss = world.state.boss;
+    const boss = world.state.boss!;
     boss.phase = 'charge';
     boss.phaseTimer = BOSS_CHARGE_MS;
     boss.damageTaken = 1;
@@ -117,18 +130,19 @@ describe('CampaignWorld — morte resetta solo il pericolo della propria stanza'
     boss.chargeDirY = 0;
     boss.x = world.state.player.x + 10;
     boss.y = world.state.player.y;
+    world.state.player.respawnInvulnerableMs = 0;
 
     const events = world.step(input());
     expect(events.some((e) => e.type === 'playerDied' && e.cause === 'boss')).toBe(true);
 
-    expect(world.state.boss.phase).toBe('guard');
-    expect(world.state.boss.damageTaken).toBe(0);
-    expect(world.state.boss.x).toBe(BOSS_START_X);
-    expect(world.state.boss.y).toBe(BOSS_START_Y);
-    expect(world.state.player.x).toBe(17.5 * TILE);
-    expect(world.state.player.y).toBe(5.5 * TILE);
+    expect(world.state.boss!.phase).toBe('guard');
+    expect(world.state.boss!.damageTaken).toBe(0);
+    expect(world.state.boss!.x).toBe(home.x);
+    expect(world.state.boss!.y).toBe(home.y);
+    expect(world.state.player.x).toBe(home.x - 60);
 
     // Non toccati dal reset del Molo.
+    expect(turretOf(world, 'galleria-a').state.alive).toBe(false);
     expect(world.state.coresCollected).toBe(2);
     expect(world.state.unlockedNodes).toEqual(['otturatore-rapido']);
   });
@@ -140,7 +154,7 @@ describe('CampaignWorld — morte resetta solo il pericolo della propria stanza'
 
 describe('CampaignWorld — drone rispetta la linea di vista', () => {
   it('non spara mai se un muro reale blocca la vista, anche aspettando a lungo', () => {
-    const world = new CampaignWorld();
+    const world = attracco();
     // La nicchia del core (8,3) è sulla stessa riga del drone (13,3),
     // ma i tile (9,3)-(11,3) sono muro pieno: nessuna linea retta è
     // possibile, indipendentemente da quanto si aspetta.
@@ -154,10 +168,10 @@ describe('CampaignWorld — drone rispetta la linea di vista', () => {
     }
 
     expect(died).toBe(false);
-    expect(world.state.drone.alive).toBe(true);
+    expect(turretOf(world).state.alive).toBe(true);
     // Il timer di reazione non è mai potuto scendere: la vista non è
     // mai stata libera nemmeno per un tick.
-    expect(world.state.drone.reactionTimer).toBe(DRONE_REACTION_MS);
+    expect(turretOf(world).state.reactionTimer).toBe(TURRET_REACTION_MS);
   });
 });
 
@@ -167,17 +181,18 @@ describe('CampaignWorld — drone rispetta la linea di vista', () => {
 
 /** A fresh world with the boss mid-charge, facing east (angle 0), so
  *  "rear" is due west — a known, fixed reference for angle-boundary
- *  tests. checkpoint.room is left at its default ('attracco'), so
+ *  tests. checkpoint.room is left at the level's first room, so
  *  updateBoss's own phase/timer logic never runs and cannot rotate or
  *  advance the boss out from under the test. */
 function bossChargeWorld(): CampaignWorld {
-  const world = new CampaignWorld();
-  const boss = world.state.boss;
+  const world = molo();
+  const boss = world.state.boss!;
+  const home = bossHome(world.level);
   boss.phase = 'charge';
   boss.angle = 0;
   boss.damageTaken = 0;
-  boss.x = BOSS_START_X;
-  boss.y = BOSS_START_Y;
+  boss.x = home.x;
+  boss.y = home.y;
   return world;
 }
 
@@ -235,8 +250,8 @@ describe('Sentinella del Molo — confine esatto dell\'arco vulnerabile', () => 
 
   it('nessun danno se la fase non è charge/recover, indipendentemente dall\'angolo', () => {
     const world = bossChargeWorld();
-    world.state.boss.phase = 'guard';
-    world.state.boss.phaseTimer = 10_000; // non far scadere la fase durante il tick
+    world.state.boss!.phase = 'guard';
+    world.state.boss!.phaseTimer = 10_000; // non far scadere la fase durante il tick
     // Anche allineati al retro esatto, in guard non c'è finestra di danno.
     expect(fireAtBossAngle(world, 0, ['danno-di-striscio'])).toBe(0);
   });
@@ -248,7 +263,7 @@ describe('Sentinella del Molo — confine esatto dell\'arco vulnerabile', () => 
 
 describe('CampaignWorld — sparare a vuoto', () => {
   it('non genera eventi in una stanza senza nemici, ma consuma comunque il cooldown', () => {
-    const world = new CampaignWorld();
+    const world = attracco();
     const stats = weaponStatsFor([]);
     // Attracco: né drone né boss.
     world.state.player.x = 3 * TILE;
@@ -268,7 +283,7 @@ describe('CampaignWorld — sparare a vuoto', () => {
 
 describe('CampaignWorld — collisione contro uno spigolo', () => {
   it('non attraversa il muro spingendo in diagonale contro un angolo convesso', () => {
-    const world = new CampaignWorld();
+    const world = attracco();
     // Tile (1,1) è pavimento aperto; i muri di bordo mappa (tx=0 e
     // ty=0) formano uno spigolo retto proprio nel punto (TILE, TILE).
     world.state.player.x = 1.5 * TILE;

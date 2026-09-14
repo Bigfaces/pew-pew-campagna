@@ -13,15 +13,21 @@
 // simulazione.
 // ================================================================
 
-import {
-  CAMPAIGN_PROFILE_VERSION,
-  type CampaignProfile,
-  type RoomId,
-} from '../sim/campaign/types';
+import { ACT_ONE, FIRST_LEVEL_ID } from '../sim/campaign/levels';
+import { CAMPAIGN_PROFILE_VERSION, type CampaignProfile } from '../sim/campaign/types';
 
 const KEY = 'pew-pew.campaign.profile';
 
-const ROOMS: readonly RoomId[] = ['attracco', 'corridoio', 'magazzino', 'molo'];
+/** Le chiavi `livello/stanza` che possono legittimamente comparire in
+ *  un profilo. Validare contro l'atto invece che contro una lista
+ *  scritta a mano vuol dire che aggiungere un livello non lascia qui
+ *  un elenco che dimentica la stanza nuova e le toglie il bonus in
+ *  silenzio. */
+const ROOM_KEYS: ReadonlySet<string> = new Set(
+  ACT_ONE.flatMap((l) => l.rooms.map((r) => `${l.id}/${r.id}`)),
+);
+
+const LEVEL_IDS: ReadonlySet<string> = new Set(ACT_ONE.map((l) => l.id));
 
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -54,10 +60,17 @@ export function loadCampaignProfile(): CampaignProfile | null {
       version: CAMPAIGN_PROFILE_VERSION,
       xp: Math.floor(p['xp']),
       unlockedNodes: stringArray(p['unlockedNodes']),
+      // Un id di livello che non riconosciamo riporta all'inizio
+      // dell'atto invece di rifiutare tutto il profilo: perdere il
+      // punto in cui si era arrivati è meno grave che perdere anche
+      // XP e nodi.
+      levelId:
+        typeof p['levelId'] === 'string' && LEVEL_IDS.has(p['levelId'])
+          ? p['levelId']
+          : FIRST_LEVEL_ID,
+      completedLevels: stringArray(p['completedLevels']).filter((l) => LEVEL_IDS.has(l)),
       collectedCoreIds: stringArray(p['collectedCoreIds']),
-      roomsAwarded: stringArray(p['roomsAwarded']).filter((r): r is RoomId =>
-        (ROOMS as readonly string[]).includes(r),
-      ),
+      roomsAwarded: stringArray(p['roomsAwarded']).filter((r) => ROOM_KEYS.has(r)),
     };
   } catch {
     return null;

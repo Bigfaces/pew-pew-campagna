@@ -1,25 +1,20 @@
 // ================================================================
-// BALANCE HARNESS — Campagna
+// BALANCE HARNESS — Campagna, Atto I
 // ================================================================
-// Il gemello di balance.mts per la verticale slice (GDD.md sezione
-// 10, task 5). Stesso principio: le affermazioni sul bilanciamento si
-// controllano invece di discuterle.
+// Il gemello di balance.mts per la campagna. Stesso principio: le
+// affermazioni sul bilanciamento si controllano invece di discuterle.
 //
 //   pnpm --filter @workspace/arena-shooter run balance:campaign
 //
-// Riporta due cose che non si vedono leggendo le costanti:
-//
-//   1. QUANDO arrivano i punti abilità lungo un run, confrontati con
-//      quanti nodi ci sono da sbloccare. La prima taratura concedeva
-//      il terzo punto solo insieme al bonus di vittoria — cioè su un
-//      nodo che non si poteva più usare. Si vede solo sommando la
-//      progressione nell'ordine in cui il giocatore la incontra.
-//   2. Il ritmo del boss: quanto dura un ciclo e quanta della sua
-//      durata è finestra vulnerabile.
+// La differenza rispetto alla prima versione è che il percorso non è
+// più scritto a mano: viene camminato sulle definizioni dei livelli.
+// Una lista di tappe copiata a mano racconta l'atto che c'era quando
+// è stata scritta, e mente in silenzio dal primo livello che cambia.
 // ================================================================
 
 import { TICK_MS } from '../src/sim/constants';
 import {
+  ALL_SKILL_NODES,
   BOSS_CHARGE_MS,
   BOSS_ENRAGED_CHARGES,
   BOSS_ENRAGE_AT,
@@ -31,16 +26,17 @@ import {
   BOSS_TELEGRAPH_ENRAGED_MS,
   BOSS_TELEGRAPH_MS,
   BOSS_VOLLEY_RECOVER_MS,
-  ALL_SKILL_NODES,
   LEVEL_XP_THRESHOLDS,
   SKILL_TREE,
   XP_BOSS_DEFEAT,
   XP_BOSS_HIT_SOLID,
   XP_CORE,
-  XP_DRONE_DOWN,
   XP_ROOM_ENTER,
+  XP_TURRET_DOWN,
   levelForXp,
 } from '../src/sim/campaign/constants';
+import { ACT_ONE } from '../src/sim/campaign/levels';
+import { roomAtTx } from '../src/sim/campaign/levelTypes';
 
 const NODES = ALL_SKILL_NODES.length;
 const BIGGEST_BRANCH = Math.max(...SKILL_TREE.map((b) => b.nodes.length));
@@ -49,112 +45,155 @@ function pointsAt(xp: number): number {
   return levelForXp(xp) - 1;
 }
 
-/** Un run nell'ordine in cui il giocatore incontra le ricompense. */
-interface Step {
+interface Stop {
   label: string;
   xp: number;
-  /** false dal colpo che uccide il boss in poi: la slice finisce lì,
-   *  e un punto guadagnato in quell'istante non si può più spendere
-   *  su niente. È la distinzione che nascondeva il bug della prima
-   *  taratura. */
+  /** false dal colpo che uccide il boss in poi: l'atto finisce lì, e
+   *  un punto guadagnato in quell'istante si potrà spendere solo
+   *  rigiocando. È la distinzione che nascondeva il bug della prima
+   *  taratura, quando i nodi erano tre e l'atto un livello solo. */
   spendable: boolean;
 }
 
-function run(label: string, steps: Step[], startXp = 0): { xp: number; useful: number } {
-  console.log(`\n── ${label} ──`);
-  let xp = startXp;
-  let pointsWhileUseful = pointsAt(xp);
-  for (const s of steps) {
-    xp += s.xp;
-    const pts = pointsAt(xp);
-    if (s.spendable) pointsWhileUseful = pts;
-    console.log(
-      `  ${s.label.padEnd(30)} ${String(xp).padStart(4)} XP   lv${levelForXp(xp)}   ${pts} punti${
-        s.spendable ? '' : '   (troppo tardi per spenderli)'
-      }`,
-    );
+/** Le tappe di un livello, lette dalla sua definizione.
+ *  `thorough` = raccoglie tutto e abbatte tutto; altrimenti attraversa
+ *  soltanto. */
+function stopsFor(level: (typeof ACT_ONE)[number], thorough: boolean): Stop[] {
+  const stops: Stop[] = [];
+  const spawnRoom = roomAtTx(level, level.spawn.tx);
+
+  // Le stanze pagano il bonus d'ingresso, tranne quella di partenza:
+  // in quella non si "entra".
+  for (const room of level.rooms) {
+    if (room.id === spawnRoom) continue;
+    stops.push({ label: `entra in ${room.name}`, xp: XP_ROOM_ENTER, spendable: true });
   }
-  console.log(`  → punti spendibili mentre servono ancora: ${pointsWhileUseful}/${NODES}`);
-  return { xp, useful: pointsWhileUseful };
+  if (thorough) {
+    for (const c of level.cores) {
+      stops.push({ label: `core ${c.id}`, xp: XP_CORE, spendable: true });
+    }
+    for (const t of level.turrets) {
+      stops.push({ label: `${t.kind} ${t.id}`, xp: XP_TURRET_DOWN, spendable: true });
+    }
+  }
+  if (level.boss) {
+    for (let i = 1; i <= BOSS_HITS_TO_DEFEAT; i++) {
+      const kills = i === BOSS_HITS_TO_DEFEAT;
+      stops.push({
+        label: `colpo al boss ${i}${kills ? ' (uccide)' : ''}`,
+        xp: XP_BOSS_HIT_SOLID,
+        spendable: !kills,
+      });
+    }
+    stops.push({ label: 'bonus di vittoria', xp: XP_BOSS_DEFEAT, spendable: false });
+  }
+  return stops;
 }
 
-console.log('CAMPAGNA — BILANCIAMENTO');
+interface Walk {
+  xp: number;
+  /** Punti disponibili all'ultima tappa in cui si potevano ancora
+   *  spendere. */
+  useful: number;
+  /** Punti totali alla fine di ciascun livello. */
+  perLevel: number[];
+}
+
+function walkAct(label: string, thorough: boolean, verbose: boolean): Walk {
+  console.log(`\n══ ${label} ══`);
+  let xp = 0;
+  let useful = 0;
+  const perLevel: number[] = [];
+
+  for (const level of ACT_ONE) {
+    console.log(`\n  ── ${level.ordinal}. ${level.name} ──`);
+    for (const stop of stopsFor(level, thorough)) {
+      xp += stop.xp;
+      const pts = pointsAt(xp);
+      if (stop.spendable) useful = pts;
+      if (verbose) {
+        console.log(
+          `    ${stop.label.padEnd(32)} ${String(xp).padStart(4)} XP  lv${String(
+            levelForXp(xp),
+          ).padStart(2)}  ${pts} punti${stop.spendable ? '' : '   (troppo tardi per spenderli)'}`,
+        );
+      }
+    }
+    perLevel.push(pointsAt(xp));
+    console.log(`    → fine livello: ${xp} XP, ${pointsAt(xp)}/${NODES} punti`);
+  }
+
+  console.log(`\n  Punti spendibili mentre servono ancora: ${useful}/${NODES}`);
+  return { xp, useful, perLevel };
+}
+
+console.log('CAMPAGNA — BILANCIAMENTO DELL’ATTO I');
 console.log(`\nSoglie di livello: ${LEVEL_XP_THRESHOLDS.join(', ')}`);
 console.log(`Nodi sbloccabili: ${NODES}`);
-for (const b of SKILL_TREE) {
-  console.log(`  ${b.name.padEnd(16)} ${b.nodes.length} nodi`);
-}
+for (const b of SKILL_TREE) console.log(`  ${b.name.padEnd(16)} ${b.nodes.length} nodi`);
 
-const explorer = run('Esplora tutto (primo run)', [
-  { label: 'entra in corridoio', xp: XP_ROOM_ENTER, spendable: true },
-  { label: 'core del corridoio', xp: XP_CORE, spendable: true },
-  { label: 'entra in magazzino', xp: XP_ROOM_ENTER, spendable: true },
-  { label: 'core del magazzino', xp: XP_CORE, spendable: true },
-  { label: 'drone abbattuto', xp: XP_DRONE_DOWN, spendable: true },
-  { label: 'entra nel molo', xp: XP_ROOM_ENTER, spendable: true },
-  { label: 'colpo al boss 1', xp: XP_BOSS_HIT_SOLID, spendable: true },
-  { label: 'colpo al boss 2', xp: XP_BOSS_HIT_SOLID, spendable: true },
-  { label: 'colpo al boss 3 (uccide)', xp: XP_BOSS_HIT_SOLID, spendable: false },
-  { label: 'bonus di vittoria', xp: XP_BOSS_DEFEAT, spendable: false },
-]);
-
-run('Tira dritto (niente core, niente drone)', [
-  { label: 'entra in corridoio', xp: XP_ROOM_ENTER, spendable: true },
-  { label: 'entra in magazzino', xp: XP_ROOM_ENTER, spendable: true },
-  { label: 'entra nel molo', xp: XP_ROOM_ENTER, spendable: true },
-  { label: 'colpo al boss 1', xp: XP_BOSS_HIT_SOLID, spendable: true },
-  { label: 'colpo al boss 2', xp: XP_BOSS_HIT_SOLID, spendable: true },
-  { label: 'colpo al boss 3 (uccide)', xp: XP_BOSS_HIT_SOLID, spendable: false },
-  { label: 'bonus di vittoria', xp: XP_BOSS_DEFEAT, spendable: false },
-]);
-
-// Un secondo run non ripaga stanze e core: sono once-per-profilo,
-// altrimenti uscire al menu e rientrare sarebbe un loop di XP stabile.
-// Quello che resta è il drone e il boss — ed è su questo residuo che
-// si misura quanto ci mette l'albero a riempirsi.
-const REPEAT_RUN_XP = XP_DRONE_DOWN + 3 * XP_BOSS_HIT_SOLID + XP_BOSS_DEFEAT;
-console.log(`\nUn run ripetuto vale ${REPEAT_RUN_XP} XP (stanze e core sono già pagati).`);
-
-let xp = explorer.xp;
-let runs = 1;
-console.log(`  dopo il run 1: ${xp} XP → ${pointsAt(xp)}/${NODES} punti`);
-while (pointsAt(xp) < NODES && runs < 20) {
-  xp += REPEAT_RUN_XP;
-  runs++;
-  console.log(`  dopo il run ${runs}: ${xp} XP → ${pointsAt(xp)}/${NODES} punti`);
-}
+const thorough = walkAct('Esplora e ripulisce tutto', true, true);
+const rushed = walkAct('Tira dritto (niente core, niente turret)', false, false);
 
 // ---- Invarianti ----
-// Le tre cose che possono rompersi ritarando XP o aggiungendo nodi, e
-// che leggendo le costanti non si vedono.
+// Le cose che possono rompersi ritarando l'XP o aggiungendo un
+// livello, e che leggendo le costanti non si vedono.
 
 const maxPoints = LEVEL_XP_THRESHOLDS.length - 1;
-console.log('\nInvarianti');
+const gainsEveryLevel = (w: Walk): boolean =>
+  w.perLevel.every((p, i) => (i === 0 ? p > 0 : p > w.perLevel[i - 1]!));
+
+console.log('\n\nINVARIANTI');
+
 console.log(
-  `  1. Nessun punto senza un nodo su cui finire: ${maxPoints} punti / ${NODES} nodi — ` +
-    `${maxPoints === NODES ? 'SÌ' : 'NO'}`,
-);
-console.log(
-  `  2. Al primo run ci si può specializzare (un ramo intero prima del boss): ` +
-    `${explorer.useful} punti / ramo più grande ${BIGGEST_BRANCH} — ` +
-    `${explorer.useful >= BIGGEST_BRANCH ? 'SÌ' : 'NO'}`,
-);
-console.log(
-  `  3. L'albero completo NON arriva al primo run, ma arriva: run ${runs} — ` +
-    `${runs > 1 && pointsAt(xp) >= NODES ? 'SÌ' : 'NO'}`,
-);
-console.log(
-  '\n  La 2 e la 3 tirano in direzioni opposte di proposito: un albero\n' +
-    '  comprabile tutto subito non è un albero, e uno che non lascia\n' +
-    '  scegliere niente al primo run non è una progressione.',
+  `\n  1. Nessun punto senza un nodo su cui finire\n` +
+    `     ${maxPoints} punti massimi / ${NODES} nodi → ${maxPoints === NODES ? 'SÌ' : 'NO'}`,
 );
 
-function bossCycle(label: string, guard: number, telegraph: number, charges: number, volleyPause: number, recover: number): void {
-  // Una raffica: guardia, poi per ogni carica un telegrafo e la carica
-  // stessa, separate da una pausa breve; l'ultima pausa è quella lunga.
+console.log(
+  `\n  2. L'albero si apre lungo tutto l'atto, non tutto in fondo\n` +
+    `     punti a fine livello, esplorando: ${thorough.perLevel.join(' → ')} → ${
+      gainsEveryLevel(thorough) ? 'SÌ' : 'NO'
+    }\n` +
+    `     punti a fine livello, tirando dritto: ${rushed.perLevel.join(' → ')} → ${
+      gainsEveryLevel(rushed) ? 'SÌ' : 'NO'
+    }`,
+);
+
+console.log(
+  `\n  3. Ci si può specializzare prima dello scontro finale\n` +
+    `     ${thorough.useful} punti spendibili / ramo più grande ${BIGGEST_BRANCH} → ${
+      thorough.useful >= BIGGEST_BRANCH ? 'SÌ' : 'NO'
+    }`,
+);
+
+console.log(
+  `\n  4. L'albero NON si riempie tutto prima del boss, ma si riempie\n` +
+    `     spendibili prima del colpo decisivo: ${thorough.useful}/${NODES}\n` +
+    `     totali a fine atto: ${pointsAt(thorough.xp)}/${NODES} → ${
+      thorough.useful < NODES && pointsAt(thorough.xp) >= NODES ? 'SÌ' : 'NO'
+    }`,
+);
+
+console.log(
+  '\n  La 3 e la 4 tirano in direzioni opposte di proposito: un albero\n' +
+    '  comprabile tutto prima del boss non fa scegliere niente, e uno che\n' +
+    "  non si riempie mai non premia l'atto finito. Gli ultimi punti\n" +
+    '  arrivano con la vittoria e si spendono rigiocando.',
+);
+
+// ---- Ritmo del boss ----
+
+function bossCycle(
+  label: string,
+  guard: number,
+  telegraph: number,
+  charges: number,
+  volleyPause: number,
+  recover: number,
+): void {
   const cycleMs =
     guard + charges * (telegraph + BOSS_CHARGE_MS) + (charges - 1) * volleyPause + recover;
-  // Vulnerabile durante ogni carica e ogni pausa, breve o lunga.
   const vulnerableMs = charges * BOSS_CHARGE_MS + (charges - 1) * volleyPause + recover;
   console.log(`\n  ${label}`);
   console.log(`    cariche per raffica     ${charges}`);
@@ -166,7 +205,7 @@ function bossCycle(label: string, guard: number, telegraph: number, charges: num
   );
 }
 
-console.log('\n── Sentinella del Molo ──');
+console.log('\n\n══ Sentinella del Molo ══');
 console.log(`  colpi per abbatterla      ${BOSS_HITS_TO_DEFEAT}`);
 console.log(`  si altera a               ${BOSS_ENRAGE_AT} danni`);
 console.log(`  tick della simulazione    ${TICK_MS.toFixed(2)} ms`);

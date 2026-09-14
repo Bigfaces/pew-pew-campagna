@@ -10,9 +10,10 @@
 import { AudioEngine } from '../audio/engine';
 import {
   campMinimapBox,
-  renderCampaignBillboards,
   renderCampaignMinimap,
+  renderCampaignScenery,
   renderCampaignWalls,
+  renderGasVeil,
 } from '../render/campaignScene';
 import { CameraFx, computeViewport, type Viewport } from '../render/camera';
 import {
@@ -30,19 +31,18 @@ import {
   MAX_TICKS_PER_FRAME,
   MOUSE_SENSITIVITY,
   TICK_MS,
+  TILE,
   TURN_SPEED,
   clampSensitivity,
 } from '../sim/constants';
 import {
   BOSS_HITS_TO_DEFEAT,
   DASH_COOLDOWN_MS,
-  DRONE_X,
-  DRONE_Y,
-  SHIELD_X,
-  SHIELD_Y,
+  GAS_LINGER_MS,
   xpForNextLevel,
 } from '../sim/campaign/constants';
-import { CAMP_MAP_H, CAMP_MAP_W } from '../sim/campaign/map';
+import { ACT_ONE, FIRST_LEVEL_ID, levelById } from '../sim/campaign/levels';
+import { roomName } from '../sim/campaign/levelTypes';
 import {
   hasContacts,
   hasGrazeDamage,
@@ -65,7 +65,15 @@ export interface CampaignHudSnapshot {
   phase: CampaignPhase;
   pointerLocked: boolean;
   muted: boolean;
-  room: RoomId;
+  /** Nome della stanza, già pronto da mostrare: le stanze sono dato
+   *  del livello, quindi la HUD non può più avere una tabella di
+   *  etichette scritta a mano. */
+  room: string;
+  levelName: string;
+  levelOrdinal: number;
+  levelCount: number;
+  /** Il gas ha spento minimappa e ottica. */
+  blinded: boolean;
   coresCollected: number;
   xp: number;
   level: number;
@@ -108,7 +116,11 @@ export class CampaignGame {
   private ctx: CanvasRenderingContext2D;
   private opts: CampaignGameOptions;
 
-  private world = new CampaignWorld(loadCampaignProfile() ?? undefined);
+  /** Il mondo simula un livello per volta. Il profilo dice a quale
+   *  dell'atto si era arrivati; dentro il livello si riparte
+   *  dall'inizio, per la stessa ragione per cui non si salva la
+   *  posizione (vedi CampaignProfile). */
+  private world = CampaignGame.buildWorld(loadCampaignProfile());
   private fx = new CameraFx();
   audio = new AudioEngine();
 
@@ -288,12 +300,70 @@ export class CampaignGame {
     return ok;
   }
 
+  /** Il mondo per un profilo: il livello a cui era arrivato, o il
+   *  primo dell'atto se non c'è profilo. Statico perché serve anche
+   *  all'inizializzatore di campo, prima che `this` esista. */
+  private static buildWorld(profile: ReturnType<typeof loadCampaignProfile>): CampaignWorld {
+    return new CampaignWorld(
+      levelById(profile?.levelId ?? FIRST_LEVEL_ID),
+      profile ?? undefined,
+    );
+  }
+
+  /** Fine di un livello. Con un livello dopo si costruisce quello e si
+   *  continua; senza, l'atto è finito.
+   *
+   *  Si costruisce un mondo nuovo invece di riusare questo: timer,
+   *  danni al boss, porte e pavimenti del livello appena chiuso non
+   *  hanno senso nel successivo, e azzerarli uno per uno sarebbe una
+   *  lista da ricordare di aggiornare a ogni trabocchetto aggiunto.
+   *  Il profilo è il solo ponte fra i due — cioè esattamente ciò che
+   *  deve sopravvivere. */
+  private finishLevel(next: string | null): void {
+    const profile = this.world.toProfile();
+
+    if (next === null) {
+      saveCampaignProfile(profile);
+      this.phase = 'over';
+      if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+      return;
+    }
+
+    const carried: typeof profile = { ...profile, levelId: next };
+    saveCampaignProfile(carried);
+    this.world = new CampaignWorld(levelById(next), carried);
+    this.syncToWorld();
+    this.raise(
+      `LIVELLO ${this.world.level.ordinal} — ${this.world.level.name}`,
+      'settore successivo',
+      '#7dfc9a',
+    );
+    this.arbiterLine = {
+      text: this.world.level.intro,
+      at: performance.now(),
+    };
+    this.pushHud(true);
+  }
+
+  /** Riallinea il controller a un mondo appena costruito. La camera ha
+   *  un suo yaw guidato dal mouse e una posizione interpolata dal tick
+   *  precedente: senza questo, il primo frame del livello nuovo
+   *  verrebbe disegnato guardando dove si era nel vecchio. */
+  private syncToWorld(): void {
+    this.yaw = this.world.state.player.angle;
+    this.prevX = this.world.state.player.x;
+    this.prevY = this.world.state.player.y;
+    this.adsHeld = false;
+    this.adsT = 0;
+    this.vp = computeViewport(this.cssW, this.cssH, this.dpr, this.zoom());
+  }
+
   /** Throw away the saved character and restart from nothing. Offered
    *  because a profile that has already bought every node makes the
-   *  level unreplayable the way it was meant to be played. */
+   *  act unreplayable the way it was meant to be played. */
   resetProfile(): void {
     clearCampaignProfile();
-    this.world = new CampaignWorld();
+    this.world = CampaignGame.buildWorld(null);
     this.yaw = this.world.state.player.angle;
     this.prevX = this.world.state.player.x;
     this.prevY = this.world.state.player.y;
@@ -522,8 +592,25 @@ export class CampaignGame {
         case 'shieldBreak':
           this.audio.shieldBreak(this.world.state.player.x, this.world.state.player.y);
           break;
-        case 'droneDown':
-          this.audio.kill(DRONE_X, DRONE_Y);
+        case 'turretDown': {
+          const def = this.world.level.turrets.find((t) => t.id === ev.id);
+          if (def) this.audio.kill((def.tx + 0.5) * TILE, (def.ty + 0.5) * TILE);
+          break;
+        }
+        case 'floorCollapsed':
+          this.audio.impact(this.world.state.player.x, this.world.state.player.y);
+          this.fx.shake(18);
+          this.raise('IL PAVIMENTO CEDE', '', '#ff9a3c');
+          // Il crollo teletrasporta: la camera va risincronizzata come
+          // dopo una morte, o resta puntata dove si stava andando.
+          this.prevX = this.world.state.player.x;
+          this.prevY = this.world.state.player.y;
+          break;
+        case 'gasEntered':
+          this.raise('CONTAMINANTE', 'niente scanner, niente ottica', '#9bff8c');
+          break;
+        case 'levelCompleted':
+          this.finishLevel(ev.next);
           break;
         case 'bossHit':
           this.audio.hitMarker();
@@ -532,10 +619,6 @@ export class CampaignGame {
         case 'bossDefeated':
           this.audio.matchEnd(true);
           this.raise('SENTINELLA ABBATTUTA', '', '#7dfc9a');
-          this.phase = 'over';
-          if (document.pointerLockElement === this.canvas) {
-            document.exitPointerLock();
-          }
           break;
         case 'playerDied':
           this.audio.death();
@@ -608,7 +691,10 @@ export class CampaignGame {
     // is exactly this number, so an unlocked node is felt as a faster
     // sight picture rather than read off a menu.
     const stats = weaponStatsFor(this.world.state.unlockedNodes);
-    const wantAds = this.adsHeld && this.phase === 'playing';
+    // Il gas spegne anche l'ottica: "disattiva minimappa o HUD ottico"
+    // (GDD sezione 4). Si abbassa da sé invece di ignorare il tasto,
+    // così il giocatore vede *perché* non sta più mirando.
+    const wantAds = this.adsHeld && this.phase === 'playing' && !this.world.blinded;
     const prevAds = this.adsT;
     const rate = frameDt / stats.adsTransitionMs;
     this.adsT = wantAds ? Math.min(1, this.adsT + rate) : Math.max(0, this.adsT - rate);
@@ -650,25 +736,32 @@ export class CampaignGame {
 
     const now = performance.now();
     renderBackdrop(ctx, vp, fx);
-    renderCampaignWalls(ctx, vp, fx, cam, this.depth, world.getTile, CAMP_MAP_W, CAMP_MAP_H);
-    renderCampaignBillboards(
+    renderCampaignWalls(
       ctx,
       vp,
       fx,
       cam,
       this.depth,
-      world.state.cores,
-      !world.state.shield.collected,
-      SHIELD_X,
-      SHIELD_Y,
-      world.state.drone,
-      DRONE_X,
-      DRONE_Y,
-      world.state.boss,
+      world.getTile,
+      world.level.width,
+      world.level.height,
+    );
+    renderCampaignScenery(
+      ctx,
+      vp,
+      fx,
+      cam,
+      this.depth,
+      world.level,
+      world.state,
       hasGrazeDamage(world.state.unlockedNodes),
       world.enraged,
       now,
     );
+
+    // Il velo va sopra il mondo e sotto l'interfaccia: acceca quello
+    // che si guarda, non quello che si legge.
+    renderGasVeil(ctx, vp, world.state.player.empMs / GAS_LINGER_MS, now);
 
     renderScope(
       ctx,
@@ -684,27 +777,18 @@ export class CampaignGame {
     // dell'interfaccia, non un oggetto del mondo, e il mirino resta
     // l'ultima cosa disegnata perché è quella che non deve mai finire
     // sotto a nient'altro.
-    if (hasMinimap(world.state.unlockedNodes)) {
+    // Il gas spegne lo scanner: è il punto del trabocchetto. Il
+    // controllo sta qui e non dentro il renderer perché "avere il
+    // nodo" e "poterlo usare adesso" sono due domande diverse, e la
+    // seconda è una regola di gioco.
+    if (hasMinimap(world.state.unlockedNodes) && !world.blinded) {
       renderCampaignMinimap(
         ctx,
         vp,
+        world.level,
+        world.state,
         world.getTile,
-        world.state.door.closed,
-        cam.x,
-        cam.y,
-        cam.angle,
-        hasContacts(world.state.unlockedNodes)
-          ? {
-              cores: world.state.cores,
-              drone: world.state.drone,
-              droneX: DRONE_X,
-              droneY: DRONE_Y,
-              boss: world.state.boss,
-              shieldX: SHIELD_X,
-              shieldY: SHIELD_Y,
-              shieldAvailable: !world.state.shield.collected,
-            }
-          : null,
+        hasContacts(world.state.unlockedNodes),
       );
     }
 
@@ -753,7 +837,11 @@ export class CampaignGame {
       phase: this.phase,
       pointerLocked: this.pointerLocked,
       muted: this.mutedFlag,
-      room: s.checkpoint.room,
+      room: roomName(this.world.level, s.checkpoint.room),
+      levelName: this.world.level.name,
+      levelOrdinal: this.world.level.ordinal,
+      levelCount: ACT_ONE.length,
+      blinded: this.world.blinded,
       coresCollected: s.coresCollected,
       xp: s.xp,
       level: s.level,
@@ -771,12 +859,20 @@ export class CampaignGame {
         this.arbiterLine && now - this.arbiterLine.at < ARBITER_LINE_MS
           ? this.arbiterLine.text
           : null,
-      bossEnraged: this.world.enraged && s.boss.phase !== 'defeated',
+      bossEnraged: this.world.enraged && s.boss?.phase !== 'defeated',
       unlockedNodes: s.unlockedNodes,
-      door: { armed: s.door.armed, closeTimerMs: s.door.closeTimer },
-      bossActive: s.checkpoint.room === 'molo',
-      bossPhase: s.boss.phase,
-      bossDamageTaken: s.boss.damageTaken,
+      // La porta più urgente fra quelle armate: un livello può averne
+      // più d'una, ma la HUD deve mostrare quella che sta per chiudersi
+      // adesso, non un elenco.
+      door: (() => {
+        const armed = s.doors.filter((d) => d.armed);
+        if (armed.length === 0) return { armed: false, closeTimerMs: 0 };
+        const soonest = armed.reduce((a, b) => (b.closeTimer < a.closeTimer ? b : a));
+        return { armed: true, closeTimerMs: soonest.closeTimer };
+      })(),
+      bossActive: s.boss !== null && s.checkpoint.room === this.world.level.boss?.room,
+      bossPhase: s.boss?.phase ?? 'defeated',
+      bossDamageTaken: s.boss?.damageTaken ?? 0,
       bossHitsToDefeat: BOSS_HITS_TO_DEFEAT,
       victory: this.world.finished,
     });

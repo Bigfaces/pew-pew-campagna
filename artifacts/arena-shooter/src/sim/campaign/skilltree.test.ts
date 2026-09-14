@@ -17,13 +17,11 @@ import { PLAYER_SPEED, TICK_MS, TILE } from '../constants';
 import {
   ALL_SKILL_NODES,
   BOSS_RADIUS,
-  BOSS_START_X,
-  BOSS_START_Y,
+  TURRET_COOLDOWN_MS,
+  TURRET_REACTION_MS,
   DASH_COOLDOWN_MS,
   DASH_DURATION_MS,
   NODE_PASSO_LUNGO_MULT,
-  SHIELD_X,
-  SHIELD_Y,
   SKILL_TREE,
 } from './constants';
 import {
@@ -34,6 +32,8 @@ import {
   prereqMet,
   shieldCapacity,
 } from './skills';
+import { LEVEL_ATTRACCO } from './levels';
+import { attracco, bossHome, centre, molo, shieldOf } from './testSupport';
 import { emptyCampaignInput, type CampaignInput } from './types';
 import { CampaignWorld } from './world';
 
@@ -45,10 +45,31 @@ function input(over: Partial<CampaignInput> = {}): CampaignInput {
  *  punto libero dell'Attracco, lontano dai muri, così che uno scatto
  *  abbia spazio per svolgersi senza collidere. */
 function worldWith(nodes: string[], x = 2.5 * TILE, y = 5.5 * TILE): CampaignWorld {
-  const world = new CampaignWorld();
+  const world = attracco();
   world.state.unlockedNodes = nodes;
   world.state.player.x = x;
   world.state.player.y = y;
+  world.state.player.angle = 0;
+  return world;
+}
+
+/** Dove sta lo scudo dell'Attracco, letto dal livello invece che
+ *  scritto a mano: se si sposta, i test lo seguono. */
+const SHIELD = (() => {
+  const d = LEVEL_ATTRACCO.shields[0]!;
+  return centre(d.tx, d.ty);
+})();
+
+/** Un mondo del Molo con i nodi dati e il giocatore già nella stanza
+ *  del boss: i test sulla schivata hanno bisogno di un boss, e il boss
+ *  vive nel terzo livello. */
+function bossWorldWith(nodes: string[]): CampaignWorld {
+  const world = molo();
+  world.state.unlockedNodes = nodes;
+  const home = bossHome(world.level);
+  world.state.checkpoint = { room: 'molo', x: home.x - 200, y: home.y, angle: 0 };
+  world.state.player.x = home.x - 200;
+  world.state.player.y = home.y;
   world.state.player.angle = 0;
   return world;
 }
@@ -79,7 +100,7 @@ describe('albero — regole comuni', () => {
   });
 
   it('un nodo dietro un prerequisito non si sblocca senza di esso', () => {
-    const world = new CampaignWorld();
+    const world = attracco();
     world.state.skillPoints = 5;
 
     expect(world.tryUnlockNode('scatto-evasivo')).toBe(false);
@@ -102,7 +123,7 @@ describe('albero — regole comuni', () => {
   it('un nodo sconosciuto nel profilo non blocca l’albero', () => {
     expect(pointsSpent(['nodo-che-non-esiste-piu'])).toBe(0);
 
-    const world = new CampaignWorld();
+    const world = attracco();
     world.state.skillPoints = 1;
     world.state.unlockedNodes = ['nodo-che-non-esiste-piu'];
     expect(world.availableSkillPoints).toBe(1);
@@ -196,17 +217,18 @@ describe('Mobilità — Scatto', () => {
   });
 
   it('la morte annulla uno scatto in corso', () => {
-    const world = worldWith(['scatto']);
+    const world = bossWorldWith(['scatto']);
     world.step(input({ forward: 1, dash: true }));
     expect(world.state.player.dashTimer).toBeGreaterThan(0);
 
     // killPlayer è privato: lo si raggiunge dal boss, che è la via per
     // cui il caso si presenta davvero.
-    world.state.checkpoint = { room: 'molo', x: BOSS_START_X - 60, y: BOSS_START_Y, angle: 0 };
-    world.state.player.x = BOSS_START_X;
-    world.state.player.y = BOSS_START_Y;
-    world.state.boss.phase = 'charge';
-    world.state.boss.phaseTimer = 500;
+    const boss = world.state.boss!;
+    boss.phase = 'charge';
+    boss.phaseTimer = 500;
+    boss.x = world.state.player.x;
+    boss.y = world.state.player.y;
+    world.state.player.respawnInvulnerableMs = 0;
     world.step();
 
     expect(world.state.player.dashTimer).toBe(0);
@@ -242,21 +264,15 @@ describe('Mobilità — Passo Lungo e Scatto Evasivo', () => {
   /** Il caso che il nodo promette: "la carica si attraversa". */
   it('senza Scatto Evasivo la carica uccide, con il nodo no', () => {
     function run(nodes: string[]): { died: boolean; chargeAdvanced: boolean } {
-      const world = worldWith(nodes, BOSS_START_X - 200, BOSS_START_Y);
-      world.state.checkpoint = {
-        room: 'molo',
-        x: BOSS_START_X - 200,
-        y: BOSS_START_Y,
-        angle: 0,
-      };
-      const boss = world.state.boss;
+      const world = bossWorldWith(nodes);
+      const boss = world.state.boss!;
       boss.phase = 'charge';
       boss.phaseTimer = 400;
       boss.angle = 0;
       boss.chargeDirX = 1;
       boss.chargeDirY = 0;
-      boss.x = BOSS_START_X - 200;
-      boss.y = BOSS_START_Y;
+      boss.x = world.state.player.x;
+      boss.y = world.state.player.y;
       // Il giocatore è addosso al boss e scatta *dentro* la carica,
       // non via da essa: scappare funziona anche senza il nodo (lo
       // scatto è più veloce della carica), quindi non direbbe niente
@@ -278,7 +294,7 @@ describe('Mobilità — Passo Lungo e Scatto Evasivo', () => {
           died = true;
         }
       }
-      return { died, chargeAdvanced: world.state.boss.phaseTimer < timerBefore };
+      return { died, chargeAdvanced: world.state.boss!.phaseTimer < timerBefore };
     }
 
     expect(run(['scatto']).died).toBe(true);
@@ -293,8 +309,8 @@ describe('Mobilità — Passo Lungo e Scatto Evasivo', () => {
 
 describe('Sopravvivenza', () => {
   function shieldWorld(nodes: string[]): CampaignWorld {
-    const world = worldWith(nodes, SHIELD_X, SHIELD_Y);
-    world.state.checkpoint = { room: 'magazzino', x: SHIELD_X, y: SHIELD_Y, angle: 0 };
+    const world = worldWith(nodes, SHIELD.x, SHIELD.y);
+    world.state.checkpoint = { room: 'magazzino', x: SHIELD.x, y: SHIELD.y, angle: 0 };
     return world;
   }
 
@@ -312,36 +328,33 @@ describe('Sopravvivenza', () => {
     world.step();
     expect(world.state.player.shieldCharges).toBe(2);
 
-    // Due colpi assorbiti, nessuna morte.
-    const p = world.state.player;
-    const boss = world.state.boss;
-    world.state.checkpoint = { room: 'molo', x: p.x, y: p.y, angle: 0 };
-    boss.phase = 'charge';
-    boss.phaseTimer = 4000;
-    boss.x = p.x;
-    boss.y = p.y;
-    p.respawnInvulnerableMs = 0;
+    // Il drone del Magazzino come sorgente di colpi ripetuti: spara a
+    // cadenza fissa, quindi bastano i tick. Prima il boss, che però
+    // adesso vive in un altro livello — e lo scudo sta in questo.
+    world.state.player.x = 13.5 * TILE;
+    world.state.player.y = 7 * TILE;
+    world.state.checkpoint = { room: 'magazzino', x: 13.5 * TILE, y: 7 * TILE, angle: 0 };
 
-    let deaths = 0;
     let breaks = 0;
-    for (let i = 0; i < 6; i++) {
+    let deaths = 0;
+    const ticks = Math.ceil((TURRET_REACTION_MS + 3 * TURRET_COOLDOWN_MS) / TICK_MS);
+    for (let i = 0; i < ticks && deaths === 0; i++) {
       for (const e of world.step()) {
         if (e.type === 'shieldBreak') breaks++;
         if (e.type === 'playerDied') deaths++;
       }
-      // La carica sposta il boss: riportalo addosso al giocatore per
-      // ottenere colpi ripetuti senza dipendere dalla geometria.
-      boss.x = world.state.player.x;
-      boss.y = world.state.player.y;
-      world.state.player.respawnInvulnerableMs = 0;
     }
+
+    // Due colpi assorbiti, il terzo uccide. Il ciclo si ferma alla
+    // morte: il checkpoint è sotto il tiro del drone, quindi
+    // continuare conterebbe morti ripetute invece dello scudo.
     expect(breaks).toBe(2);
     expect(deaths).toBe(1);
   });
 
   it('Riserva di Bordo ricarica lo scudo entrando in una stanza nuova', () => {
-    const world = worldWith(['riserva-di-bordo'], SHIELD_X, SHIELD_Y);
-    world.state.checkpoint = { room: 'magazzino', x: SHIELD_X, y: SHIELD_Y, angle: 0 };
+    const world = worldWith(['riserva-di-bordo'], SHIELD.x, SHIELD.y);
+    world.state.checkpoint = { room: 'magazzino', x: SHIELD.x, y: SHIELD.y, angle: 0 };
     world.step();
     expect(world.state.player.shieldCharges).toBe(1);
 
@@ -364,8 +377,8 @@ describe('Sopravvivenza', () => {
   });
 
   it('senza il nodo entrare in una stanza non ricarica niente', () => {
-    const world = worldWith([], SHIELD_X, SHIELD_Y);
-    world.state.checkpoint = { room: 'magazzino', x: SHIELD_X, y: SHIELD_Y, angle: 0 };
+    const world = worldWith([], SHIELD.x, SHIELD.y);
+    world.state.checkpoint = { room: 'magazzino', x: SHIELD.x, y: SHIELD.y, angle: 0 };
     world.step();
     world.state.player.shieldCharges = 0;
     world.state.player.x = 18.5 * TILE;
@@ -376,8 +389,8 @@ describe('Sopravvivenza', () => {
   it('tornare indietro e rientrare non ricarica una seconda volta', () => {
     // I checkpoint avanzano soltanto, quindi la ricarica non è un
     // loop: è la stessa proprietà che protegge l'XP delle stanze.
-    const world = worldWith(['riserva-di-bordo'], SHIELD_X, SHIELD_Y);
-    world.state.checkpoint = { room: 'magazzino', x: SHIELD_X, y: SHIELD_Y, angle: 0 };
+    const world = worldWith(['riserva-di-bordo'], SHIELD.x, SHIELD.y);
+    world.state.checkpoint = { room: 'magazzino', x: SHIELD.x, y: SHIELD.y, angle: 0 };
     world.step();
 
     world.state.player.x = 18.5 * TILE; // Molo

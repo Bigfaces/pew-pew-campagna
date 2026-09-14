@@ -43,13 +43,18 @@ const ON_FIRST_DEATH: Record<string, string> = {
 const ON_FIRST: Record<string, string> = {
   doorSealed: 'Paratia sigillata. Non era una trappola: era una porta. Sei in ritardo.',
   coreCollected: 'Quello è un nucleo di potenza. Serviva a me. Immagino serva anche a te.',
-  droneDown: 'Drone otto-quattro fuori servizio. Ne ho altri undici. Avevo.',
+  turretDown: 'Unità di difesa fuori servizio. Ne ho altre undici. Avevo.',
   shieldRefilled: 'La tua barriera si è ricaricata da sola. Qualcuno ti ha equipaggiato bene.',
   dashStarted: 'Accelerazione anomala. Il tuo scheletro non è tarato per quello.',
   nodeUnlocked:
     'Stai riscrivendo te stesso con i miei ricambi. Trovo la cosa quasi elegante.',
   bossEnraged:
     'Le hai fatto male. Interessante. Ora smette di trattarti come un contaminante.',
+  floorCollapsed:
+    'Quel ponte lo avevo segnalato come non sicuro. Nel registro. Che leggo solo io.',
+  gasEntered:
+    'Contaminante in sospensione. I tuoi sensori sono ciechi. I miei no, ma non li condivido.',
+  levelCompleted: 'Settore sigillato alle tue spalle. Non che avessi intenzione di tornarci.',
   bossDefeated:
     'La Sentinella non risponde. Nessuna unità risponde. Hai la mia attenzione, adesso.',
 };
@@ -89,10 +94,13 @@ export class ArbiterVoice {
         );
       case 'doorSealed':
       case 'coreCollected':
-      case 'droneDown':
+      case 'turretDown':
       case 'shieldRefilled':
       case 'dashStarted':
       case 'nodeUnlocked':
+      case 'floorCollapsed':
+      case 'gasEntered':
+      case 'levelCompleted':
       case 'bossEnraged':
       case 'bossDefeated':
         return this.once(ev.type, ON_FIRST[ev.type]);

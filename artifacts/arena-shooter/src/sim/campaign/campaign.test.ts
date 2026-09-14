@@ -14,27 +14,49 @@ import {
   BOSS_ENRAGE_AT,
   BOSS_HITS_TO_DEFEAT,
   DOOR_CLOSE_DELAY_MS,
-  DRONE_REACTION_MS,
+  TURRET_COOLDOWN_MS,
+  TURRET_REACTION_MS,
   LEVEL_XP_THRESHOLDS,
   NODE_OTTURATORE_COOLDOWN_MS,
   ALL_SKILL_NODES,
   SKILL_TREE,
-  SHIELD_X,
-  SHIELD_Y,
   XP_BOSS_DEFEAT,
   XP_BOSS_HIT_SOLID,
   XP_CORE,
-  XP_DRONE_DOWN,
+  XP_TURRET_DOWN,
   XP_ROOM_ENTER,
   levelForXp,
 } from './constants';
-import { emptyCampaignInput, type CampaignInput } from './types';
+import {
+  CAMPAIGN_PROFILE_VERSION,
+  emptyCampaignInput,
+  type CampaignInput,
+} from './types';
 import {
   hasGrazeDamage,
   pointsSpent,
   weaponStatsFor,
 } from './skills';
+import {
+  attracco,
+  bossHome,
+  centre,
+  doorOf,
+  enterBossRoom,
+  molo,
+  shieldOf,
+  turretOf,
+} from './testSupport';
+import { ACT_ONE, LEVEL_ATTRACCO } from './levels';
+import { roomAtTx } from './levelTypes';
 import { CampaignWorld } from './world';
+
+/** Lo scudo dell'Attracco, letto dal livello: se si sposta, i test
+ *  lo seguono invece di puntare a coordinate scritte due volte. */
+const SHIELD = (() => {
+  const d = LEVEL_ATTRACCO.shields[0]!;
+  return centre(d.tx, d.ty);
+})();
 
 function input(over: Partial<CampaignInput> = {}): CampaignInput {
   return { ...emptyCampaignInput(), ...over };
@@ -76,14 +98,14 @@ describe('esperienza e livelli', () => {
   });
 
   it('gaining XP past a threshold raises the level and grants a skill point', () => {
-    const world = new CampaignWorld();
+    const world = attracco();
     expect(world.state.level).toBe(1);
     expect(world.state.skillPoints).toBe(0);
 
     // Force xp to just below the level-2 threshold, then push it over
     // with a single core pickup — the level-up must land on this tick.
     world.state.xp = LEVEL_XP_THRESHOLDS[1]! - XP_CORE;
-    const core = world.state.cores.find((c) => c.id === 'magazzino')!;
+    const core = world.state.cores.find((c) => c.id === 'attracco/magazzino')!;
     world.state.player.x = core.x;
     world.state.player.y = core.y;
 
@@ -93,30 +115,60 @@ describe('esperienza e livelli', () => {
     expect(events.some((e) => e.type === 'levelUp' && e.level === 2)).toBe(true);
   });
 
+  /** XP raccoglibile in un livello, esplorandolo tutto. Calcolata
+   *  dalla definizione invece che scritta a mano: una lista di tappe
+   *  copiata racconta l'atto che c'era quando è stata scritta, e mente
+   *  in silenzio dal primo livello che cambia. */
+  function levelXp(level: (typeof ACT_ONE)[number], thorough: boolean): number {
+    const spawnRoom = roomAtTx(level, level.spawn.tx);
+    let xp = level.rooms.filter((r) => r.id !== spawnRoom).length * XP_ROOM_ENTER;
+    if (thorough) {
+      xp += level.cores.length * XP_CORE + level.turrets.length * XP_TURRET_DOWN;
+    }
+    return xp;
+  }
+
   /** La curva deve restare spendibile *durante* la partita: la prima
-   *  versione concedeva il terzo punto solo insieme al bonus di
+   *  versione concedeva l'ultimo punto solo insieme al bonus di
    *  vittoria, cioè su un nodo ormai inutilizzabile.
    *
    *  Con un solo ramo l'asticella era "tutti i nodi prima del boss".
-   *  Con quattro rami quella soglia sarebbe sbagliata al contrario:
-   *  un albero comprabile per intero alla prima partita non è un
-   *  albero. Quello che deve restare vero è che chi esplora possa
-   *  *specializzarsi* — cioè riempire almeno un ramo completo prima di
-   *  entrare nel Molo. */
-  it('affords a full branch before the boss fight, exploring everything', () => {
-    const preBossXp = 3 * XP_ROOM_ENTER + 2 * XP_CORE + XP_DRONE_DOWN;
-    const pointsBeforeBoss = levelForXp(preBossXp) - 1;
+   *  Con quattro rami e tre livelli quella soglia sarebbe sbagliata al
+   *  contrario: un albero comprabile per intero prima dello scontro
+   *  finale non fa scegliere niente. Quello che deve restare vero è
+   *  che chi esplora possa *specializzarsi* — riempire almeno un ramo
+   *  completo prima di entrare nel Molo. */
+  it('affords a full branch before the final fight, exploring everything', () => {
+    const preBoss = ACT_ONE.filter((l) => l.boss === null).reduce(
+      (sum, l) => sum + levelXp(l, true),
+      0,
+    );
+    const points = levelForXp(preBoss) - 1;
     const biggestBranch = Math.max(...SKILL_TREE.map((b) => b.nodes.length));
-    expect(pointsBeforeBoss).toBeGreaterThanOrEqual(biggestBranch);
+    expect(points).toBeGreaterThanOrEqual(biggestBranch);
   });
 
-  /** L'altro lato dello stesso vincolo: chi tira dritto ignorando core
-   *  e drone deve comunque guadagnare punti *mentre* combatte, non
-   *  soltanto a partita finita. */
-  it('still earns spendable points mid-fight when skipping cores and drone', () => {
-    const roomsOnly = 3 * XP_ROOM_ENTER;
-    // Due colpi, non tre: il terzo uccide il boss e chiude la slice,
-    // quindi un punto che arrivasse lì non sarebbe spendibile.
+  /** L'albero deve aprirsi lungo tutto l'atto, non tutto in fondo:
+   *  ogni livello porta almeno un punto nuovo anche a chi tira dritto
+   *  senza raccogliere né ripulire niente. */
+  it('grants at least one new point in every level of the act, even rushing', () => {
+    let xp = 0;
+    let previous = 0;
+    for (const level of ACT_ONE) {
+      xp += levelXp(level, false);
+      const points = levelForXp(xp) - 1;
+      expect(points, `dopo ${level.name}`).toBeGreaterThan(previous);
+      previous = points;
+    }
+  });
+
+  /** L'altro lato dello stesso vincolo: chi tira dritto deve comunque
+   *  guadagnare punti *mentre* combatte, non soltanto a partita
+   *  finita. */
+  it('still earns spendable points mid-fight when skipping cores and turrets', () => {
+    const roomsOnly = ACT_ONE.reduce((sum, l) => sum + levelXp(l, false), 0);
+    // Due colpi, non tre: il terzo uccide il boss e chiude l'atto,
+    // quindi un punto che arrivasse lì non sarebbe più spendibile.
     const beforeKillingBlow = roomsOnly + (BOSS_HITS_TO_DEFEAT - 1) * XP_BOSS_HIT_SOLID;
     expect(levelForXp(beforeKillingBlow) - 1).toBeGreaterThan(levelForXp(roomsOnly) - 1);
   });
@@ -131,31 +183,34 @@ describe('esperienza e livelli', () => {
 
 describe('CampaignWorld — profilo salvato', () => {
   it('round-trips the character without carrying the run', () => {
-    const world = new CampaignWorld();
+    const world = attracco();
     world.state.skillPoints = 1;
     world.tryUnlockNode('otturatore-rapido');
     world.state.xp = 90;
     world.state.cores[0]!.collected = true;
-    world.state.roomsAwarded.push('corridoio');
+    world.state.roomsAwarded.push('attracco/corridoio');
+    doorOf(world).state.closed = true;
 
-    const resumed = new CampaignWorld(world.toProfile());
+    const resumed = attracco(world.toProfile());
     expect(resumed.state.xp).toBe(90);
     expect(resumed.state.unlockedNodes).toEqual(['otturatore-rapido']);
     expect(resumed.state.cores[0]!.collected).toBe(true);
     expect(resumed.state.coresCollected).toBe(1);
-    expect(resumed.state.roomsAwarded).toContain('corridoio');
+    expect(resumed.state.roomsAwarded).toContain('attracco/corridoio');
+    expect(resumed.state.levelId).toBe('attracco');
 
-    // Il run non si porta dietro: si ricomincia dall'Attracco.
+    // Il run non si porta dietro: si ricomincia dall'inizio del livello.
     expect(resumed.state.checkpoint.room).toBe('attracco');
-    expect(resumed.state.boss.damageTaken).toBe(0);
-    expect(resumed.state.door.closed).toBe(false);
+    expect(doorOf(resumed).state.closed).toBe(false);
   });
 
   it('derives level and skill points from xp instead of storing them', () => {
-    const world = new CampaignWorld({
-      version: 1,
+    const world = attracco({
+      version: CAMPAIGN_PROFILE_VERSION,
       xp: LEVEL_XP_THRESHOLDS[2]!,
       unlockedNodes: [],
+      levelId: 'attracco',
+      completedLevels: [],
       collectedCoreIds: [],
       roomsAwarded: [],
     });
@@ -167,14 +222,14 @@ describe('CampaignWorld — profilo salvato', () => {
   /** Senza questo, uscire al menu e rientrare sarebbe un ciclo di XP
    *  stabile: le stesse stanze pagate all'infinito. */
   it('does not pay room XP twice for a room already awarded', () => {
-    const first = new CampaignWorld();
+    const first = attracco();
     first.state.player.x = 7.2 * TILE;
     first.state.player.y = 5.5 * TILE;
     first.step();
     const earned = first.state.xp;
     expect(earned).toBeGreaterThan(0);
 
-    const second = new CampaignWorld(first.toProfile());
+    const second = attracco(first.toProfile());
     second.state.player.x = 7.2 * TILE;
     second.state.player.y = 5.5 * TILE;
     second.step();
@@ -184,18 +239,18 @@ describe('CampaignWorld — profilo salvato', () => {
 
 describe('CampaignWorld — porta stagna a tempo', () => {
   it('seals after the delay and blocks the corridor', () => {
-    const world = new CampaignWorld();
+    const world = attracco();
     // Walk straight into the corridor sensor without touching the door.
     world.state.player.x = 7.2 * TILE;
     world.state.player.y = 5.5 * TILE;
 
     world.step(); // arms the door on this tick
-    expect(world.state.door.armed).toBe(true);
-    expect(world.state.door.closed).toBe(false);
+    expect(doorOf(world).state.armed).toBe(true);
+    expect(doorOf(world).state.closed).toBe(false);
 
     // Stay put (empty input = no movement) until the timer runs out.
     idleTicks(world, Math.ceil(DOOR_CLOSE_DELAY_MS / TICK_MS) + 1);
-    expect(world.state.door.closed).toBe(true);
+    expect(doorOf(world).state.closed).toBe(true);
 
     // Now try to push straight through where the door sits.
     world.state.player.x = 8.5 * TILE;
@@ -207,15 +262,15 @@ describe('CampaignWorld — porta stagna a tempo', () => {
   });
 
   it('never arms if the player has not reached the sensor tile', () => {
-    const world = new CampaignWorld();
+    const world = attracco();
     idleTicks(world, 50);
-    expect(world.state.door.armed).toBe(false);
+    expect(doorOf(world).state.armed).toBe(false);
   });
 });
 
 describe('CampaignWorld — core e skill tree', () => {
   it('unlocks a node only when enough skill points are available', () => {
-    const world = new CampaignWorld();
+    const world = attracco();
     expect(world.tryUnlockNode('otturatore-rapido')).toBe(false);
 
     world.state.skillPoints = 1;
@@ -232,8 +287,8 @@ describe('CampaignWorld — core e skill tree', () => {
   });
 
   it('picking up a core in the Magazzino increments coresCollected', () => {
-    const world = new CampaignWorld();
-    const core = world.state.cores.find((c) => c.id === 'magazzino')!;
+    const world = attracco();
+    const core = world.state.cores.find((c) => c.id === 'attracco/magazzino')!;
     world.state.player.x = core.x;
     world.state.player.y = core.y;
 
@@ -245,7 +300,7 @@ describe('CampaignWorld — core e skill tree', () => {
 
 describe('CampaignWorld — drone del Magazzino', () => {
   it('kills the player after holding line of sight, then respawns at the checkpoint', () => {
-    const world = new CampaignWorld();
+    const world = attracco();
     world.state.checkpoint = {
       room: 'magazzino',
       x: 13.5 * TILE,
@@ -255,7 +310,7 @@ describe('CampaignWorld — drone del Magazzino', () => {
     world.state.player.x = 13.5 * TILE;
     world.state.player.y = 7 * TILE;
 
-    const ticksToFire = Math.ceil(DRONE_REACTION_MS / TICK_MS) + 2;
+    const ticksToFire = Math.ceil(TURRET_REACTION_MS / TICK_MS) + 2;
     let died = false;
     for (let i = 0; i < ticksToFire; i++) {
       const events = world.step();
@@ -265,32 +320,32 @@ describe('CampaignWorld — drone del Magazzino', () => {
     expect(died).toBe(true);
     expect(world.state.player.x).toBe(13.5 * TILE);
     expect(world.state.player.y).toBe(7 * TILE);
-    expect(world.state.drone.alive).toBe(true);
+    expect(turretOf(world).state.alive).toBe(true);
   });
 });
 
 describe('CampaignWorld — scudo tattico', () => {
   it('absorbs a drone hit instead of killing the player, then is spent', () => {
-    const world = new CampaignWorld();
+    const world = attracco();
     world.state.checkpoint = {
       room: 'magazzino',
       x: 13.5 * TILE,
       y: 7 * TILE,
       angle: -Math.PI / 2,
     };
-    world.state.player.x = SHIELD_X;
-    world.state.player.y = SHIELD_Y;
+    world.state.player.x = SHIELD.x;
+    world.state.player.y = SHIELD.y;
 
     // Walk over the pickup first.
     const pickupEvents = world.step();
-    expect(world.state.shield.collected).toBe(true);
+    expect(shieldOf(world).collected).toBe(true);
     expect(world.state.player.shieldCharges).toBe(1);
     expect(pickupEvents.some((e) => e.type === 'shieldPickup')).toBe(true);
 
     // Now stand where the drone can see us and let it fire.
     world.state.player.x = 13.5 * TILE;
     world.state.player.y = 7 * TILE;
-    const ticksToFire = Math.ceil(DRONE_REACTION_MS / TICK_MS) + 2;
+    const ticksToFire = Math.ceil(TURRET_REACTION_MS / TICK_MS) + 2;
     let sawBreak = false;
     let sawDeath = false;
     for (let i = 0; i < ticksToFire; i++) {
@@ -313,7 +368,7 @@ describe('CampaignWorld — scudo tattico', () => {
   });
 
   it('is collectable again after a death resets its room', () => {
-    const world = new CampaignWorld();
+    const world = attracco();
     world.state.checkpoint = {
       room: 'magazzino',
       x: 13.5 * TILE,
@@ -321,22 +376,22 @@ describe('CampaignWorld — scudo tattico', () => {
       angle: -Math.PI / 2,
     };
     // Already spent (or never picked up) before this attempt.
-    world.state.shield.collected = true;
+    shieldOf(world).collected = true;
     world.state.player.x = 13.5 * TILE;
     world.state.player.y = 7 * TILE;
 
-    const ticksToFire = Math.ceil(DRONE_REACTION_MS / TICK_MS) + 2;
+    const ticksToFire = Math.ceil(TURRET_REACTION_MS / TICK_MS) + 2;
     for (let i = 0; i < ticksToFire; i++) world.step();
 
-    expect(world.state.shield.collected).toBe(false);
+    expect(shieldOf(world).collected).toBe(false);
   });
 });
 
 describe('CampaignWorld — Sentinella del Molo', () => {
   it('blocks a hit taken from the front while guarding', () => {
-    const world = new CampaignWorld();
-    world.state.checkpoint = { room: 'molo', x: 0, y: 0, angle: 0 };
-    const boss = world.state.boss;
+    const world = molo();
+    enterBossRoom(world);
+    const boss = world.state.boss!;
 
     // Stand directly in front of the boss's starting facing (west)
     // and fire while it is still in 'guard'.
@@ -346,12 +401,12 @@ describe('CampaignWorld — Sentinella del Molo', () => {
 
     const events = world.step(input({ aimAngle, fire: true }));
     expect(events.some((e) => e.type === 'bossHit')).toBe(false);
-    expect(world.state.boss.damageTaken).toBe(0);
+    expect(world.state.boss!.damageTaken).toBe(0);
   });
 
   it('takes three rear hits during a charge to defeat, granting the XP bonus', () => {
-    const world = new CampaignWorld();
-    world.state.checkpoint = { room: 'molo', x: 17.5 * TILE, y: 5.5 * TILE, angle: 0 };
+    const world = molo();
+    enterBossRoom(world);
 
     for (let hit = 1; hit <= BOSS_HITS_TO_DEFEAT; hit++) {
       // Force a fresh telegraph -> charge transition aimed at a known
@@ -359,11 +414,11 @@ describe('CampaignWorld — Sentinella del Molo', () => {
       // deterministic for this test.
       world.state.player.x = 17.5 * TILE;
       world.state.player.y = 5.5 * TILE;
-      world.state.boss.phase = 'telegraph';
-      world.state.boss.phaseTimer = 1;
+      world.state.boss!.phase = 'telegraph';
+      world.state.boss!.phaseTimer = 1;
       world.step(); // telegraph ends: chargeDir locks onto the player above
 
-      const boss = world.state.boss;
+      const boss = world.state.boss!;
       expect(boss.phase).toBe('charge');
 
       // Reposition behind the boss (opposite its charge direction) and
@@ -381,7 +436,7 @@ describe('CampaignWorld — Sentinella del Molo', () => {
       if (hitEvent && hitEvent.type === 'bossHit') expect(hitEvent.damage).toBe(1);
     }
 
-    expect(world.state.boss.phase).toBe('defeated');
+    expect(world.state.boss!.phase).toBe('defeated');
     expect(world.state.outcome).toBe('victory');
     // Three solid rear hits plus the defeat bonus, no other XP source
     // touched since the checkpoint was set directly rather than walked.
@@ -393,9 +448,9 @@ describe('CampaignWorld — Sentinella del Molo', () => {
    *  Magazzino: sporgersi dalla porta e sparare non faceva nulla,
    *  senza alcun segnale. Ora decidono solo distanza e muri. */
   it('registers a hit taken while peeking from the Molo doorway', () => {
-    const world = new CampaignWorld();
-    world.state.checkpoint = { room: 'molo', x: 17.5 * TILE, y: 5.5 * TILE, angle: 0 };
-    const boss = world.state.boss;
+    const world = molo();
+    enterBossRoom(world);
+    const boss = world.state.boss!;
     // Vulnerabile, e rivolto a est: chi arriva da ovest è alle spalle.
     boss.phase = 'recover';
     boss.phaseTimer = 5000;
@@ -415,8 +470,8 @@ describe('CampaignWorld — Sentinella del Molo', () => {
   });
 
   it('charges twice in a row once enraged, and only once before', () => {
-    const world = new CampaignWorld();
-    world.state.checkpoint = { room: 'molo', x: 17.5 * TILE, y: 5.5 * TILE, angle: 0 };
+    const world = molo();
+    enterBossRoom(world);
     world.state.player.x = 17.5 * TILE;
     world.state.player.y = 5.5 * TILE;
 
@@ -427,7 +482,7 @@ describe('CampaignWorld — Sentinella del Molo', () => {
      *  boss (killPlayer) — falsando proprio la cosa che stiamo
      *  contando. Qui interessa la macchina a stati, non la schivata. */
     const chargesInOneVolley = (): number => {
-      const boss = world.state.boss;
+      const boss = world.state.boss!;
       boss.phase = 'guard';
       boss.phaseTimer = 1;
       let charges = 0;
@@ -447,15 +502,15 @@ describe('CampaignWorld — Sentinella del Molo', () => {
     expect(chargesInOneVolley()).toBe(1);
 
     // Portala oltre la soglia di alterazione.
-    world.state.boss.damageTaken = BOSS_ENRAGE_AT;
+    world.state.boss!.damageTaken = BOSS_ENRAGE_AT;
     expect(world.enraged).toBe(true);
     expect(chargesInOneVolley()).toBe(BOSS_ENRAGED_CHARGES);
   });
 
   it('announces the switch to the second phase exactly once', () => {
-    const world = new CampaignWorld();
-    world.state.checkpoint = { room: 'molo', x: 17.5 * TILE, y: 5.5 * TILE, angle: 0 };
-    const boss = world.state.boss;
+    const world = molo();
+    enterBossRoom(world);
+    const boss = world.state.boss!;
     boss.phase = 'recover';
     boss.phaseTimer = 9000;
     boss.angle = 0;
@@ -486,15 +541,15 @@ describe('CampaignWorld — Sentinella del Molo', () => {
   });
 
   it('scores only a graze from the wider arc, and only with Danno di Striscio', () => {
-    const world = new CampaignWorld();
-    world.state.checkpoint = { room: 'molo', x: 17.5 * TILE, y: 5.5 * TILE, angle: 0 };
+    const world = molo();
+    enterBossRoom(world);
     world.state.player.x = 17.5 * TILE;
     world.state.player.y = 5.5 * TILE;
-    world.state.boss.phase = 'telegraph';
-    world.state.boss.phaseTimer = 1;
+    world.state.boss!.phase = 'telegraph';
+    world.state.boss!.phaseTimer = 1;
     world.step();
 
-    const boss = world.state.boss;
+    const boss = world.state.boss!;
     // Offset 80 degrees from dead-rear: outside the solid arc (60deg)
     // but inside the graze arc (100deg).
     const rearDir = boss.angle + Math.PI;

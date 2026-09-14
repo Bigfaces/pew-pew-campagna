@@ -1,16 +1,22 @@
 // ================================================================
-// CAMPAIGN WORLD — the authoritative Sprint 1 vertical-slice sim
+// CAMPAIGN WORLD — la simulazione autorevole di un livello
 // ================================================================
 // Single-player, tick-based like the Arena's World (sim/world.ts),
 // but with campaign rules instead of FFA ones: a checkpoint per room
-// instead of a respawn timer, a timed door instead of power-ups, one
-// boss with a hit-phase fight instead of a kill target. See GDD.md
-// sections 9-10 for the design this implements.
+// instead of a respawn timer, timed doors and turrets instead of
+// power-ups, a boss with a hit-phase fight instead of a kill target.
+// See GDD.md sections 3-6 for the design this implements.
 //
 // Deliberately its own class rather than a mode flag on World: the
 // two share no rules (win condition, respawn behaviour, what "input"
 // even drives), so forcing them into one class would mean branching
 // on mode everywhere instead of the Arena staying exactly as it is.
+//
+// Un mondo simula UN livello. Passare al livello successivo vuol dire
+// costruirne un altro con lo stesso profilo, non mutare questo: i
+// timer, i danni al boss e le posizioni di un livello non hanno senso
+// nel successivo, e azzerarli uno a uno sarebbe una lista da
+// aggiornare ogni volta che si aggiunge un trabocchetto.
 // ================================================================
 
 import {
@@ -26,49 +32,39 @@ import {
   BOSS_CHARGE_SPEED,
   BOSS_ENRAGED_CHARGES,
   BOSS_ENRAGE_AT,
-  BOSS_GUARD_ENRAGED_MS,
   BOSS_GRAZE_ARC_HALF,
+  BOSS_GUARD_ENRAGED_MS,
   BOSS_GUARD_MS,
   BOSS_HITS_TO_DEFEAT,
   BOSS_RADIUS,
   BOSS_REAR_ARC_HALF,
   BOSS_RECOVER_ENRAGED_MS,
   BOSS_RECOVER_MS,
-  BOSS_START_X,
-  BOSS_START_Y,
   BOSS_TELEGRAPH_ENRAGED_MS,
   BOSS_TELEGRAPH_MS,
   BOSS_TURN_RATE,
   BOSS_VOLLEY_RECOVER_MS,
-  CORE_DEFS,
   CORE_PICKUP_RADIUS,
   DASH_DURATION_MS,
   DASH_SPEED,
-  DOOR_CLOSE_DELAY_MS,
-  DOOR_SENSOR_TX,
-  DOOR_TILES,
-  DRONE_FIRE_COOLDOWN_MS,
-  DRONE_RADIUS,
-  DRONE_REACTION_MS,
-  DRONE_X,
-  DRONE_Y,
   RESPAWN_INVULN_MS,
-  ROOM_ORDER,
   SHIELD_PICKUP_RADIUS,
-  SHIELD_X,
-  SHIELD_Y,
-  START_X,
-  START_Y,
+  TURRET_RADIUS,
   XP_BOSS_DEFEAT,
   XP_BOSS_HIT_GRAZE,
   XP_BOSS_HIT_SOLID,
   XP_CORE,
-  XP_DRONE_DOWN,
   XP_ROOM_ENTER,
+  XP_TURRET_DOWN,
   levelForXp,
-  roomForTx,
 } from './constants';
-import { CAMP_MAP_H, CAMP_MAP_W, campGetTile } from './map';
+import {
+  roomAtTx,
+  roomOrder,
+  tileAt,
+  type LevelDef,
+  type TurretDef,
+} from './levelTypes';
 import { campMoveEntity, distanceAlongRayToCircle, type IsSolidFn } from './physics';
 import { campCastRay, campHasLOS } from './raycast';
 import {
@@ -100,6 +96,10 @@ function angleDelta(from: number, to: number): number {
   return d;
 }
 
+function centreOf(tx: number, ty: number): { x: number; y: number } {
+  return { x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE };
+}
+
 /** How much damage a hit on the boss's hurtbox actually does, given
  *  where the shooter is standing relative to the boss's facing.
  *  Positional, not aim-angle-based: "vulnerabile solo al core sul
@@ -124,21 +124,28 @@ function resolveBossHit(
 }
 
 export class CampaignWorld {
+  readonly level: LevelDef;
   state: CampaignState;
   /** Events produced by the most recent step(). Drained by the
    *  presentation layer; the sim never reads it back. */
   events: CampaignEvent[] = [];
 
   /** Tile value as seen by movement, LOS, hitscan and the renderer:
-   *  the static map plus the door's tiles, once sealed. Public — the
-   *  renderer needs it too, to draw the very door it can walk into. */
+   *  the static map, plus any sealed door, minus any collapsed floor.
+   *  Public — the renderer needs it too, to draw the very door it can
+   *  walk into.
+   *
+   *  Un pavimento ceduto NON diventa muro: resta attraversabile, ed è
+   *  la trappola a decidere cosa succede a chi ci sta sopra. Renderlo
+   *  solido avrebbe murato il pozzo a metà, trasformando un costo di
+   *  tempo in un livello impossibile. */
   getTile = (tx: number, ty: number): number => {
-    if (this.state.door.closed) {
-      for (const d of DOOR_TILES) {
-        if (d.tx === tx && d.ty === ty) return 1;
-      }
+    for (const d of this.state.doors) {
+      if (!d.closed) continue;
+      const def = this.level.doors.find((x) => x.id === d.id);
+      if (def?.tiles.some((t) => t.tx === tx && t.ty === ty)) return 1;
     }
-    return campGetTile(tx, ty);
+    return tileAt(this.level, tx, ty);
   };
 
   private isSolid: IsSolidFn = (tx, ty) => this.getTile(tx, ty) !== 0;
@@ -146,17 +153,25 @@ export class CampaignWorld {
   /** `profile` seeds a returning player: the character they built,
    *  never where they were standing (see CampaignProfile). Absent —
    *  or discarded as an unknown version — means a fresh start. */
-  constructor(profile?: CampaignProfile) {
+  constructor(level: LevelDef, profile?: CampaignProfile) {
+    this.level = level;
     const xp = profile?.xp ?? 0;
-    const level = levelForXp(xp);
+    const playerLevel = levelForXp(xp);
     const collected = new Set(profile?.collectedCoreIds ?? []);
+    const spawn = centreOf(level.spawn.tx, level.spawn.ty);
 
     this.state = {
       tick: 0,
-      checkpoint: { room: 'attracco', x: START_X, y: START_Y, angle: 0 },
+      levelId: level.id,
+      checkpoint: {
+        room: roomAtTx(level, level.spawn.tx),
+        x: spawn.x,
+        y: spawn.y,
+        angle: 0,
+      },
       player: {
-        x: START_X,
-        y: START_Y,
+        x: spawn.x,
+        y: spawn.y,
         angle: 0,
         pitch: 0,
         weaponCooldown: 0,
@@ -166,48 +181,79 @@ export class CampaignWorld {
         dashCooldown: 0,
         dashDirX: 0,
         dashDirY: 0,
+        empMs: 0,
       },
-      door: { armed: false, closeTimer: 0, closed: false },
-      shield: { collected: false },
-      drone: { alive: true, reactionTimer: DRONE_REACTION_MS, fireCooldown: 0 },
-      cores: CORE_DEFS.map((d) => ({
+      doors: level.doors.map((d) => ({
         id: d.id,
-        x: (d.tx + 0.5) * TILE,
-        y: (d.ty + 0.5) * TILE,
+        armed: false,
+        closeTimer: 0,
+        closed: false,
+      })),
+      turrets: level.turrets.map((t) => ({
+        id: t.id,
+        alive: true,
+        reactionTimer: t.reactionMs,
+        // Lo sfasamento è un cooldown iniziale: una turret che parte
+        // "già a metà ricarica" apre il fuoco più tardi delle altre,
+        // ed è tutto ciò che serve per il fuoco incrociato.
+        fireCooldown: t.phaseMs,
+      })),
+      collapsingFloors: level.collapsingFloors.map((f) => ({
+        id: f.id,
+        standingMs: 0,
+        collapsed: false,
+        resetTimer: 0,
+      })),
+      cores: level.cores.map((d) => ({
+        id: d.id,
+        ...centreOf(d.tx, d.ty),
         collected: collected.has(d.id),
+      })),
+      shields: level.shields.map((d) => ({
+        id: d.id,
+        ...centreOf(d.tx, d.ty),
+        collected: false,
       })),
       coresCollected: collected.size,
       roomsAwarded: [...(profile?.roomsAwarded ?? [])],
+      completedLevels: [...(profile?.completedLevels ?? [])],
       xp,
-      level,
+      level: playerLevel,
       // One point per level gained, so this follows from the level the
       // XP buys — never stored, never able to drift from it.
-      skillPoints: level - 1,
+      skillPoints: playerLevel - 1,
       unlockedNodes: [...(profile?.unlockedNodes ?? [])],
-      boss: {
-        x: BOSS_START_X,
-        y: BOSS_START_Y,
-        angle: Math.PI,
-        phase: 'guard',
-        phaseTimer: BOSS_GUARD_MS,
-        damageTaken: 0,
-        chargeDirX: 0,
-        chargeDirY: 0,
-        chargesLeft: 0,
-      },
+      boss: level.boss
+        ? {
+            ...centreOf(level.boss.tx, level.boss.ty),
+            angle: Math.PI,
+            phase: 'guard',
+            phaseTimer: BOSS_GUARD_MS,
+            damageTaken: 0,
+            chargeDirX: 0,
+            chargeDirY: 0,
+            chargesLeft: 0,
+          }
+        : null,
       outcome: 'playing',
     };
   }
 
   get finished(): boolean {
-    return this.state.outcome === 'victory';
+    return this.state.outcome !== 'playing';
   }
 
   /** Seconda fase della Sentinella: derivata dal danno subito, non
    *  memorizzata, così non può restare accesa dopo un reset del boss
    *  che azzera il danno (vedi killPlayer). */
   get enraged(): boolean {
-    return this.state.boss.damageTaken >= BOSS_ENRAGE_AT;
+    const boss = this.state.boss;
+    return boss !== null && boss.damageTaken >= BOSS_ENRAGE_AT;
+  }
+
+  /** Minimappa e ottica sono fuori uso: il gas le ha spente. */
+  get blinded(): boolean {
+    return this.state.player.empMs > 0;
   }
 
   /** Il giocatore non può essere colpito adesso. Due sorgenti, una
@@ -231,6 +277,8 @@ export class CampaignWorld {
       version: CAMPAIGN_PROFILE_VERSION,
       xp: this.state.xp,
       unlockedNodes: [...this.state.unlockedNodes],
+      levelId: this.state.levelId,
+      completedLevels: [...this.state.completedLevels],
       collectedCoreIds: this.state.cores.filter((c) => c.collected).map((c) => c.id),
       roomsAwarded: [...this.state.roomsAwarded],
     };
@@ -242,26 +290,26 @@ export class CampaignWorld {
     this.state.tick++;
 
     const p = this.state.player;
-    if (p.weaponCooldown > 0) {
-      p.weaponCooldown = Math.max(0, p.weaponCooldown - TICK_MS);
-    }
+    if (p.weaponCooldown > 0) p.weaponCooldown = Math.max(0, p.weaponCooldown - TICK_MS);
     if (p.respawnInvulnerableMs > 0) {
       p.respawnInvulnerableMs = Math.max(0, p.respawnInvulnerableMs - TICK_MS);
     }
-    if (p.dashCooldown > 0) {
-      p.dashCooldown = Math.max(0, p.dashCooldown - TICK_MS);
-    }
+    if (p.dashCooldown > 0) p.dashCooldown = Math.max(0, p.dashCooldown - TICK_MS);
 
     this.startDashIfRequested(input);
     this.applyMovement(input);
     this.updateCheckpoint();
-    this.updateDoor();
+    this.updateDoors();
+    this.updateGas();
+    this.updateCollapsingFloors();
     this.updateCores();
-    this.updateShieldPickup();
-    this.updateDrone();
+    this.updateShieldPickups();
+    this.updateTurrets();
     this.updateBoss();
 
     if (input.fire) this.fireWeapon(input);
+
+    this.updateExit();
 
     return this.events;
   }
@@ -297,6 +345,15 @@ export class CampaignWorld {
     }
   }
 
+  private turretDef(id: string): TurretDef {
+    return this.level.turrets.find((t) => t.id === id)!;
+  }
+
+  private playerTile(): { tx: number; ty: number } {
+    const p = this.state.player;
+    return { tx: Math.floor(p.x / TILE), ty: Math.floor(p.y / TILE) };
+  }
+
   /** Lo scatto parte qui, non dentro applyMovement: applyMovement
    *  esce subito quando non c'è input di movimento, e uno scatto
    *  richiesto da fermo deve comunque partire. */
@@ -309,15 +366,8 @@ export class CampaignWorld {
     if (!move.hasDash) return;
 
     // Direzione: quella in cui si sta andando; da fermi, quella in cui
-    // si guarda. Uno scatto che non parte perché il pollice non era
-    // sul joystick si legge come un comando ignorato, non come una
-    // regola.
-    //
-    // input.aimAngle e non p.angle: questo metodo gira *prima* di
-    // applyMovement, che è dove p.angle viene aggiornato, quindi
-    // leggere p.angle farebbe partire lo scatto nella direzione del
-    // tick precedente. Su un giocatore che sta girando sono 16 ms di
-    // ritardo su un gesto che ne dura 170.
+    // si guarda. input.aimAngle e non p.angle: questo metodo gira
+    // *prima* di applyMovement, che è dove p.angle viene aggiornato.
     const fx = Math.cos(input.aimAngle);
     const fy = Math.sin(input.aimAngle);
     const rx = -Math.sin(input.aimAngle);
@@ -336,9 +386,6 @@ export class CampaignWorld {
     p.dashDirX = dx;
     p.dashDirY = dy;
     p.dashTimer = DASH_DURATION_MS;
-    // Il cooldown parte adesso e non alla fine dello scatto: è la
-    // cadenza tra uno scatto e il successivo a essere progettata
-    // (DASH_COOLDOWN_MS), non la pausa dopo.
     p.dashCooldown = move.dashCooldownMs;
     this.events.push({ type: 'dashStarted' });
   }
@@ -379,8 +426,7 @@ export class CampaignWorld {
 
     const stats = weaponStatsFor(this.state.unlockedNodes);
     const move = movementStatsFor(this.state.unlockedNodes);
-    const speed =
-      PLAYER_SPEED * move.speedMult * (input.ads ? stats.adsMoveMult : 1);
+    const speed = PLAYER_SPEED * move.speedMult * (input.ads ? stats.adsMoveMult : 1);
     campMoveEntity(this.isSolid, p, vx * speed, vy * speed);
   }
 
@@ -388,14 +434,17 @@ export class CampaignWorld {
    *  room (e.g. retreating from the boss) must not lose progress. */
   private updateCheckpoint(): void {
     const p = this.state.player;
-    const room = roomForTx(Math.floor(p.x / TILE));
-    if (ROOM_ORDER[room] > ROOM_ORDER[this.state.checkpoint.room]) {
+    const room = roomAtTx(this.level, Math.floor(p.x / TILE));
+    if (roomOrder(this.level, room) > roomOrder(this.level, this.state.checkpoint.room)) {
       this.state.checkpoint = { room, x: p.x, y: p.y, angle: p.angle };
       this.events.push({ type: 'roomEntered', room });
-      // Paid once per profile: otherwise leaving to the menu and
-      // walking back in would be a stable XP loop.
-      if (!this.state.roomsAwarded.includes(room)) {
-        this.state.roomsAwarded.push(room);
+      // Pagato una volta per profilo, e la chiave porta il livello:
+      // altrimenti due livelli con una stanza omonima si
+      // annullerebbero a vicenda, e uscire al menu per rientrare
+      // sarebbe un ciclo di XP stabile.
+      const key = `${this.level.id}/${room}`;
+      if (!this.state.roomsAwarded.includes(key)) {
+        this.state.roomsAwarded.push(key);
         this.grantXp(XP_ROOM_ENTER);
       }
       this.refillShieldOnRoomEnter();
@@ -403,16 +452,14 @@ export class CampaignWorld {
   }
 
   /** Riserva di Bordo. Ricarica solo uno scudo *già raccolto*: senza
-   *  quella condizione il nodo consegnerebbe uno scudo entrando in
-   *  corridoio, cioè due stanze prima del punto in cui lo scudo si
-   *  trova, e renderebbe inutile andarlo a prendere. Così invece paga
-   *  proprio a chi ha fatto la deviazione — ed è nel Molo, all'ultima
-   *  stanza, che la ricarica conta davvero.
+   *  quella condizione il nodo consegnerebbe uno scudo prima ancora
+   *  del punto in cui lo scudo si trova, e renderebbe inutile andarlo
+   *  a prendere.
    *
    *  Non è sfruttabile in loop: i checkpoint avanzano soltanto, quindi
    *  tornare indietro e rientrare non conta come stanza nuova. */
   private refillShieldOnRoomEnter(): void {
-    if (!this.state.shield.collected) return;
+    if (!this.state.shields.some((s) => s.collected)) return;
     if (!refillsShieldOnRoomEnter(this.state.unlockedNodes)) return;
     const capacity = shieldCapacity(this.state.unlockedNodes);
     const p = this.state.player;
@@ -421,24 +468,90 @@ export class CampaignWorld {
     this.events.push({ type: 'shieldRefilled', charges: p.shieldCharges });
   }
 
-  private updateDoor(): void {
-    const d = this.state.door;
-    if (d.closed) return;
+  private updateDoors(): void {
+    for (const d of this.state.doors) {
+      if (d.closed) continue;
+      const def = this.level.doors.find((x) => x.id === d.id)!;
 
-    if (!d.armed) {
-      const tx = Math.floor(this.state.player.x / TILE);
-      if (tx >= DOOR_SENSOR_TX) {
-        d.armed = true;
-        d.closeTimer = DOOR_CLOSE_DELAY_MS;
+      if (!d.armed) {
+        if (Math.floor(this.state.player.x / TILE) >= def.sensorTx) {
+          d.armed = true;
+          d.closeTimer = def.delayMs;
+        }
+        continue;
       }
-      return;
+
+      d.closeTimer -= TICK_MS;
+      if (d.closeTimer <= 0) {
+        d.closed = true;
+        d.armed = false;
+        this.events.push({ type: 'doorSealed', id: d.id });
+      }
+    }
+  }
+
+  /** Gas/EMP. Dentro la nube l'accecamento si ricarica a ogni tick;
+   *  fuori scende. Il risultato è che entrare acceca subito e uscire
+   *  lascia una coda, senza bisogno di ricordare quando si è entrati. */
+  private updateGas(): void {
+    const p = this.state.player;
+    const { tx, ty } = this.playerTile();
+    const inGas = this.level.gasZones.some((z) =>
+      z.tiles.some((t) => t.tx === tx && t.ty === ty),
+    );
+
+    const wasBlind = p.empMs > 0;
+    if (inGas) {
+      const zone = this.level.gasZones.find((z) =>
+        z.tiles.some((t) => t.tx === tx && t.ty === ty),
+      )!;
+      p.empMs = zone.lingerMs;
+    } else if (p.empMs > 0) {
+      p.empMs = Math.max(0, p.empMs - TICK_MS);
     }
 
-    d.closeTimer -= TICK_MS;
-    if (d.closeTimer <= 0) {
-      d.closed = true;
-      d.armed = false;
-      this.events.push({ type: 'doorSealed' });
+    if (!wasBlind && p.empMs > 0) this.events.push({ type: 'gasEntered' });
+    if (wasBlind && p.empMs <= 0) this.events.push({ type: 'gasCleared' });
+  }
+
+  /** Pavimento che cede. Il contatore sale solo mentre ci si sta
+   *  sopra e si azzera appena si esce: il pozzo va attraversato, non
+   *  attraversato a rate. */
+  private updateCollapsingFloors(): void {
+    const { tx, ty } = this.playerTile();
+
+    for (const f of this.state.collapsingFloors) {
+      const def = this.level.collapsingFloors.find((x) => x.id === f.id)!;
+
+      if (f.collapsed) {
+        f.resetTimer -= TICK_MS;
+        if (f.resetTimer <= 0) {
+          f.collapsed = false;
+          f.standingMs = 0;
+        }
+        continue;
+      }
+
+      const standing = def.tiles.some((t) => t.tx === tx && t.ty === ty);
+      if (!standing) {
+        f.standingMs = 0;
+        continue;
+      }
+
+      f.standingMs += TICK_MS;
+      if (f.standingMs >= def.holdMs) {
+        f.collapsed = true;
+        f.resetTimer = def.resetMs;
+        f.standingMs = 0;
+        const landing = centreOf(def.landing.tx, def.landing.ty);
+        const p = this.state.player;
+        p.x = landing.x;
+        p.y = landing.y;
+        // Lo scatto in corso va annullato, o trascinerebbe il
+        // giocatore fuori dal punto di atterraggio appena impostato.
+        p.dashTimer = 0;
+        this.events.push({ type: 'floorCollapsed', id: f.id });
+      }
     }
   }
 
@@ -455,14 +568,15 @@ export class CampaignWorld {
     }
   }
 
-  private updateShieldPickup(): void {
-    const shield = this.state.shield;
-    if (shield.collected) return;
+  private updateShieldPickups(): void {
     const p = this.state.player;
-    if (Math.hypot(p.x - SHIELD_X, p.y - SHIELD_Y) <= SHIELD_PICKUP_RADIUS) {
-      shield.collected = true;
-      p.shieldCharges = shieldCapacity(this.state.unlockedNodes);
-      this.events.push({ type: 'shieldPickup', charges: p.shieldCharges });
+    for (const s of this.state.shields) {
+      if (s.collected) continue;
+      if (Math.hypot(p.x - s.x, p.y - s.y) <= SHIELD_PICKUP_RADIUS) {
+        s.collected = true;
+        p.shieldCharges = shieldCapacity(this.state.unlockedNodes);
+        this.events.push({ type: 'shieldPickup', charges: p.shieldCharges });
+      }
     }
   }
 
@@ -470,7 +584,7 @@ export class CampaignWorld {
    *  charge instead, if any are left. Tactical and disposable, unlike
    *  the skill tree: see GDD.md, "Potenziamenti vs progressione
    *  permanente". */
-  private damagePlayer(cause: 'drone' | 'boss'): void {
+  private damagePlayer(cause: 'turret' | 'boss'): void {
     const p = this.state.player;
     if (p.shieldCharges > 0) {
       p.shieldCharges--;
@@ -480,48 +594,51 @@ export class CampaignWorld {
     this.killPlayer(cause);
   }
 
-  private updateDrone(): void {
-    const drone = this.state.drone;
-    if (!drone.alive) return;
-
+  private updateTurrets(): void {
     const p = this.state.player;
-    const los = campHasLOS(
-      this.getTile,
-      DRONE_X,
-      DRONE_Y,
-      p.x,
-      p.y,
-      CAMP_MAP_W,
-      CAMP_MAP_H,
-    );
 
-    if (!los) {
-      drone.reactionTimer = DRONE_REACTION_MS;
-    } else if (drone.reactionTimer > 0) {
-      drone.reactionTimer = Math.max(0, drone.reactionTimer - TICK_MS);
-    }
-    if (drone.fireCooldown > 0) {
-      drone.fireCooldown = Math.max(0, drone.fireCooldown - TICK_MS);
-    }
+    for (const t of this.state.turrets) {
+      if (!t.alive) continue;
+      const def = this.turretDef(t.id);
+      const { x, y } = centreOf(def.tx, def.ty);
 
-    // Trattenere il colpo invece di sprecarlo: è il comportamento che
-    // il lockout da respawn aveva già, e lo scatto si limita a
-    // entrare nella stessa condizione. Contro il drone lo Scatto
-    // Evasivo compra quindi l'attraversamento, non 1.8 s di
-    // impunità — la vera contromossa resta rompergli la linea di
-    // vista, che è quello che il drone è lì per insegnare.
-    if (los && drone.reactionTimer <= 0 && drone.fireCooldown <= 0 && !this.invulnerable) {
-      drone.fireCooldown = DRONE_FIRE_COOLDOWN_MS;
-      this.damagePlayer('drone');
+      const los = campHasLOS(
+        this.getTile,
+        x,
+        y,
+        p.x,
+        p.y,
+        this.level.width,
+        this.level.height,
+      );
+
+      if (!los) t.reactionTimer = def.reactionMs;
+      else if (t.reactionTimer > 0) {
+        t.reactionTimer = Math.max(0, t.reactionTimer - TICK_MS);
+      }
+      // Il cooldown scende sempre, anche senza linea di vista: è
+      // quello che rende lo sfasamento del fuoco incrociato un ritmo
+      // stabile invece di qualcosa che dipende da dove guarda il
+      // giocatore.
+      if (t.fireCooldown > 0) t.fireCooldown = Math.max(0, t.fireCooldown - TICK_MS);
+
+      // Trattenere il colpo invece di sprecarlo: è il comportamento
+      // che il lockout da respawn aveva già, e lo scatto si limita a
+      // entrare nella stessa condizione.
+      if (los && t.reactionTimer <= 0 && t.fireCooldown <= 0 && !this.invulnerable) {
+        t.fireCooldown = def.cooldownMs;
+        this.damagePlayer('turret');
+      }
     }
   }
 
   private updateBoss(): void {
     const boss = this.state.boss;
-    if (boss.phase === 'defeated') return;
+    if (!boss || boss.phase === 'defeated') return;
+    const def = this.level.boss!;
     // The fight does not start until the player has actually reached
-    // the Molo — a stray tick before that must not burn the timer.
-    if (this.state.checkpoint.room !== 'molo') return;
+    // the boss room — a stray tick before that must not burn the timer.
+    if (this.state.checkpoint.room !== def.room) return;
 
     const p = this.state.player;
 
@@ -533,7 +650,7 @@ export class CampaignWorld {
           boss.phase = 'telegraph';
           boss.phaseTimer = this.enraged ? BOSS_TELEGRAPH_ENRAGED_MS : BOSS_TELEGRAPH_MS;
           // La raffica si decide qui, una volta: se la Sentinella si
-          // altera a meta' raffica, la raffica in corso resta quella
+          // altera a metà raffica, la raffica in corso resta quella
           // che il giocatore ha visto iniziare.
           boss.chargesLeft = this.enraged ? BOSS_ENRAGED_CHARGES : 1;
         }
@@ -577,9 +694,9 @@ export class CampaignWorld {
         if (boss.phaseTimer <= 0) {
           boss.chargesLeft = Math.max(0, boss.chargesLeft - 1);
           boss.phase = 'recover';
-          // Dentro la raffica la pausa e' breve — le due cariche
+          // Dentro la raffica la pausa è breve — le due cariche
           // devono leggersi come una sola sequenza. Quella dopo
-          // l'ultima e' la piu' lunga dello scontro: e' il premio.
+          // l'ultima è la più lunga dello scontro: è il premio.
           boss.phaseTimer =
             boss.chargesLeft > 0
               ? BOSS_VOLLEY_RECOVER_MS
@@ -608,14 +725,36 @@ export class CampaignWorld {
   }
 
   private turnBossToward(x: number, y: number): void {
-    const boss = this.state.boss;
+    const boss = this.state.boss!;
     const target = Math.atan2(y - boss.y, x - boss.x);
     const diff = angleDelta(boss.angle, target);
-    if (Math.abs(diff) <= BOSS_TURN_RATE) {
-      boss.angle = target;
-    } else {
-      boss.angle += Math.sign(diff) * BOSS_TURN_RATE;
+    if (Math.abs(diff) <= BOSS_TURN_RATE) boss.angle = target;
+    else boss.angle += Math.sign(diff) * BOSS_TURN_RATE;
+  }
+
+  /** L'uscita chiude un livello senza boss. Controllata in coda al
+   *  tick, dopo il fuoco: un colpo sparato nell'istante in cui si
+   *  entra nell'uscita deve comunque valere. */
+  private updateExit(): void {
+    if (this.state.outcome !== 'playing') return;
+    const exit = this.level.exit;
+    if (!exit) return;
+    const p = this.state.player;
+    const { x, y } = centreOf(exit.tx, exit.ty);
+    if (Math.hypot(p.x - x, p.y - y) > exit.radius) return;
+    this.completeLevel();
+  }
+
+  private completeLevel(): void {
+    if (!this.state.completedLevels.includes(this.level.id)) {
+      this.state.completedLevels.push(this.level.id);
     }
+    this.state.outcome = this.level.next === null ? 'victory' : 'levelComplete';
+    this.events.push({
+      type: 'levelCompleted',
+      levelId: this.level.id,
+      next: this.level.next,
+    });
   }
 
   private fireWeapon(input: CampaignInput): void {
@@ -631,71 +770,84 @@ export class CampaignWorld {
       p.y,
       input.aimAngle,
       Infinity,
-      CAMP_MAP_W,
-      CAMP_MAP_H,
+      this.level.width,
+      this.level.height,
     );
+
     // Which target the shot reaches is decided by distance and walls,
     // never by which room the shooter is standing in. Gating on the
-    // room looked equivalent — the drone only lives in Magazzino, the
-    // boss only in Molo — but a player standing *on* a doorway tile
-    // belongs to the room behind them, so shots taken while peeking
-    // through the Molo threshold silently did nothing.
+    // room looked equivalent, but a player standing *on* a doorway
+    // tile belongs to the room behind them, so shots taken while
+    // peeking through a threshold silently did nothing.
+    let best: { dist: number; turretId: string | null } | null = null;
+
+    for (const t of this.state.turrets) {
+      if (!t.alive) continue;
+      const def = this.turretDef(t.id);
+      const { x, y } = centreOf(def.tx, def.ty);
+      const d = distanceAlongRayToCircle(p.x, p.y, input.aimAngle, x, y, TURRET_RADIUS);
+      if (d === null || d > wall.dist) continue;
+      if (!best || d < best.dist) best = { dist: d, turretId: t.id };
+    }
+
     const boss = this.state.boss;
-    const droneDist = this.state.drone.alive
-      ? distanceAlongRayToCircle(
-          p.x,
-          p.y,
-          input.aimAngle,
-          DRONE_X,
-          DRONE_Y,
-          DRONE_RADIUS,
-        )
-      : null;
-    const bossDist =
-      boss.phase !== 'defeated'
-        ? distanceAlongRayToCircle(p.x, p.y, input.aimAngle, boss.x, boss.y, BOSS_RADIUS)
-        : null;
+    if (boss && boss.phase !== 'defeated') {
+      const d = distanceAlongRayToCircle(
+        p.x,
+        p.y,
+        input.aimAngle,
+        boss.x,
+        boss.y,
+        BOSS_RADIUS,
+      );
+      // Bersaglio più vicino vince: non si spara attraverso una
+      // turret per arrivare al boss.
+      if (d !== null && d <= wall.dist && (!best || d < best.dist)) {
+        best = { dist: d, turretId: null };
+      }
+    }
 
-    const droneHit = droneDist !== null && droneDist <= wall.dist;
-    const bossHit = bossDist !== null && bossDist <= wall.dist;
-    // Nearest target wins, so you cannot shoot through one to reach
-    // the other.
-    const hitsDroneFirst = droneHit && (!bossHit || droneDist! <= bossDist!);
+    if (!best) return;
 
-    if (hitsDroneFirst) {
-      this.state.drone.alive = false;
-      this.events.push({ type: 'droneDown' });
-      this.grantXp(XP_DRONE_DOWN);
+    if (best.turretId !== null) {
+      const t = this.state.turrets.find((x) => x.id === best!.turretId)!;
+      t.alive = false;
+      this.events.push({ type: 'turretDown', id: t.id, kind: this.turretDef(t.id).kind });
+      this.grantXp(XP_TURRET_DOWN);
       return;
     }
 
-    if (bossHit) {
-      const dmg = resolveBossHit(
-        boss.x,
-        boss.y,
-        boss.angle,
-        boss.phase,
-        p.x,
-        p.y,
-        hasGrazeDamage(this.state.unlockedNodes),
-      );
-      if (dmg > 0) {
-        const wasEnraged = this.enraged;
-        boss.damageTaken += dmg;
-        this.events.push({ type: 'bossHit', damage: dmg, phase: boss.phase });
-        if (!wasEnraged && this.enraged) this.events.push({ type: 'bossEnraged' });
-        this.grantXp(dmg >= 1 ? XP_BOSS_HIT_SOLID : XP_BOSS_HIT_GRAZE);
-        if (boss.damageTaken >= BOSS_HITS_TO_DEFEAT) {
-          boss.phase = 'defeated';
-          this.state.outcome = 'victory';
-          this.events.push({ type: 'bossDefeated' });
-          this.grantXp(XP_BOSS_DEFEAT);
-        }
-      }
+    this.hitBoss(p.x, p.y);
+  }
+
+  private hitBoss(shooterX: number, shooterY: number): void {
+    const boss = this.state.boss!;
+    const dmg = resolveBossHit(
+      boss.x,
+      boss.y,
+      boss.angle,
+      boss.phase,
+      shooterX,
+      shooterY,
+      hasGrazeDamage(this.state.unlockedNodes),
+    );
+    if (dmg <= 0) return;
+
+    const wasEnraged = this.enraged;
+    boss.damageTaken += dmg;
+    this.events.push({ type: 'bossHit', damage: dmg, phase: boss.phase });
+    if (!wasEnraged && this.enraged) this.events.push({ type: 'bossEnraged' });
+    this.grantXp(dmg >= 1 ? XP_BOSS_HIT_SOLID : XP_BOSS_HIT_GRAZE);
+
+    if (boss.damageTaken >= BOSS_HITS_TO_DEFEAT) {
+      boss.phase = 'defeated';
+      this.events.push({ type: 'bossDefeated' });
+      this.grantXp(XP_BOSS_DEFEAT);
+      this.completeLevel();
     }
   }
 
-  private killPlayer(cause: 'drone' | 'boss'): void {
+  private killPlayer(cause: 'turret' | 'boss'): void {
     const p = this.state.player;
     const cp = this.state.checkpoint;
 
@@ -708,35 +860,57 @@ export class CampaignWorld {
     // fuori dal checkpoint appena ripristinato.
     p.dashTimer = 0;
     p.dashCooldown = 0;
+    // Il respawn schiarisce le idee, ma va *annunciato*: azzerare
+    // empMs in silenzio lascerebbe chi ascolta gli eventi convinto che
+    // il giocatore sia ancora cieco, perché il gasCleared di
+    // updateGas si accorge solo delle transizioni che vede lui.
+    if (p.empMs > 0) {
+      p.empMs = 0;
+      this.events.push({ type: 'gasCleared' });
+    }
 
-    // "Nemici della stanza resettati" (GDD.md section 9, modalità
-    // Tutorial): only the hazards belonging to the room the checkpoint
-    // sits in need resetting — earlier rooms are already resolved.
-    if (cp.room === 'attracco' || cp.room === 'corridoio') {
-      this.state.door.armed = false;
-      this.state.door.closed = false;
-      this.state.door.closeTimer = 0;
+    // "Nemici della stanza resettati" (GDD.md sezione 9, modalità
+    // Tutorial). Con i trabocchetti come dato, la regola si applica
+    // sola: ogni cosa dichiara a che stanza appartiene, e si resetta
+    // solo ciò che sta nella stanza del checkpoint. Aggiungere un
+    // trabocchetto a un livello non richiede di toccare questo
+    // metodo — che è esattamente il motivo per cui `room` esiste
+    // nelle definizioni.
+    for (const d of this.state.doors) {
+      if (this.level.doors.find((x) => x.id === d.id)!.room !== cp.room) continue;
+      d.armed = false;
+      d.closed = false;
+      d.closeTimer = 0;
     }
-    if (cp.room === 'magazzino') {
-      this.state.drone.alive = true;
-      this.state.drone.reactionTimer = DRONE_REACTION_MS;
-      this.state.drone.fireCooldown = 0;
-      this.state.shield.collected = false;
+    for (const t of this.state.turrets) {
+      const def = this.turretDef(t.id);
+      if (def.room !== cp.room) continue;
+      t.alive = true;
+      t.reactionTimer = def.reactionMs;
+      t.fireCooldown = def.phaseMs;
     }
-    if (cp.room === 'molo') {
+    for (const f of this.state.collapsingFloors) {
+      if (this.level.collapsingFloors.find((x) => x.id === f.id)!.room !== cp.room) continue;
+      f.collapsed = false;
+      f.standingMs = 0;
+      f.resetTimer = 0;
+    }
+    if (this.state.boss && this.level.boss!.room === cp.room) {
       const boss = this.state.boss;
+      const home = centreOf(this.level.boss!.tx, this.level.boss!.ty);
       boss.phase = 'guard';
       boss.phaseTimer = BOSS_GUARD_MS;
       boss.damageTaken = 0;
       boss.chargesLeft = 0;
-      boss.x = BOSS_START_X;
-      boss.y = BOSS_START_Y;
+      boss.x = home.x;
+      boss.y = home.y;
       boss.angle = Math.PI;
-      // The shield sits in the room before this one, but a boss
-      // attempt is exactly when a spent shield is worth backtracking
-      // for — leave it collectable again rather than gone for good.
-      this.state.shield.collected = false;
     }
+    // Lo scudo torna raccoglibile ovunque stia, non solo nella stanza
+    // del checkpoint: sta quasi sempre *prima* della minaccia che lo
+    // rende utile, e un tentativo al boss è esattamente quando vale
+    // la pena tornare a prenderlo.
+    for (const s of this.state.shields) s.collected = false;
 
     this.events.push({ type: 'playerDied', cause });
   }

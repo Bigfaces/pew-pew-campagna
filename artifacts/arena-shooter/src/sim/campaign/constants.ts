@@ -14,80 +14,58 @@ import {
   TILE,
 } from '../constants';
 
-export type RoomId = 'attracco' | 'corridoio' | 'magazzino' | 'molo';
-
-/** Forward order of the rooms — used to make checkpoints only ever
- *  advance, never move backward when the player retreats. */
-export const ROOM_ORDER: Record<RoomId, number> = {
-  attracco: 0,
-  corridoio: 1,
-  magazzino: 2,
-  molo: 3,
-};
-
-/** Which room a player tile-column belongs to. Column ranges mirror
- *  the layout in map.ts. */
-export function roomForTx(tx: number): RoomId {
-  if (tx <= 5) return 'attracco';
-  if (tx <= 11) return 'corridoio';
-  if (tx <= 16) return 'magazzino';
-  return 'molo';
-}
-
 // ---- Player start / respawn ----
-export const START_TX = 2;
-export const START_TY = 5;
-export const START_X = (START_TX + 0.5) * TILE;
-export const START_Y = (START_TY + 0.5) * TILE;
-
-/** Brief lockout after a checkpoint respawn so the drone or a boss
+/** Brief lockout after a checkpoint respawn so a turret or a boss
  *  charge already in flight cannot kill the player a second time on
  *  the same tick it sent them back. Mirrors the Arena's own
  *  SPAWN_PROTECTION. */
 export const RESPAWN_INVULN_MS = 800;
 
-// ---- Timed door trap (corridoio) ----
-/** First corridor tile-column: crossing it arms the timer. */
-export const DOOR_SENSOR_TX = 7;
-/** Tiles that turn solid once the timer runs out. */
-export const DOOR_TILES: readonly { tx: number; ty: number }[] = [
-  { tx: 9, ty: 4 },
-  { tx: 9, ty: 5 },
-  { tx: 9, ty: 6 },
-];
+// ---- Trabocchetti ----
+// I numeri; *dove* stanno i trabocchetti è dato del livello
+// (levels.ts), non di questo file. La distinzione conta: questi si
+// ritarano una volta e valgono per tutto l'atto, le posizioni si
+// disegnano livello per livello.
+
+/** Porta stagna a tempo: quanto passa dal sensore alla chiusura. */
 export const DOOR_CLOSE_DELAY_MS = 3500;
 
-// ---- Drone (Magazzino) ----
-export const DRONE_TX = 13;
-export const DRONE_TY = 3;
-export const DRONE_X = (DRONE_TX + 0.5) * TILE;
-export const DRONE_Y = (DRONE_TY + 0.5) * TILE;
-export const DRONE_RADIUS = ENTITY_RADIUS;
-/** Delay between acquiring line of sight and firing — the "linea di
- *  mira visibile prima di sparare" the GDD calls for. */
-export const DRONE_REACTION_MS = 500;
-export const DRONE_FIRE_COOLDOWN_MS = 1800;
+/** Turret (e il drone, che ne è un caso particolare): linea di vista
+ *  da tenere prima di sparare. È il "tempo di reazione leggibile" del
+ *  GDD — ciò che rende la minaccia superabile invece che subita. */
+export const TURRET_REACTION_MS = 500;
+export const TURRET_COOLDOWN_MS = 1800;
+export const TURRET_RADIUS = ENTITY_RADIUS;
 
-// ---- Cores ----
+/** Pavimento che cede: quanto si resta sopra prima del crollo, e
+ *  quanto ci mette a tornare calpestabile.
+ *
+ *  Non è un tempo di reazione: è la traversata più un margine.
+ *  Attraversare il pozzo dei Condotti camminando dritti costa 900 ms
+ *  esatti (misurato simulando, non stimato: PLAYER_SPEED copre
+ *  ~132 px/s e il pavimento è largo quattro tile). La prima taratura
+ *  metteva la soglia proprio a 900 e il pavimento cedeva *sempre*,
+ *  anche a chi non si fermava — cioè non era una scelta, era un muro
+ *  con l'aria di una scelta.
+ *
+ *  1200 ms lascia ~300 ms di margine: si passa camminando, si passa
+ *  correggendo la mira al volo, non si passa fermandosi. Fermarsi in
+ *  mezzo al pozzo è esattamente l'errore che la trappola deve punire,
+ *  e l'unico. */
+export const COLLAPSE_HOLD_MS = 1200;
+export const COLLAPSE_RESET_MS = 2500;
+
+/** Gas/EMP: quanto dura l'accecamento dopo essere usciti dalla nube.
+ *  Una coda, non un interruttore — uscire dal gas e riavere subito
+ *  tutto renderebbe la nube un fastidio da attraversare invece che una
+ *  zona da cui si esce disorientati. */
+export const GAS_LINGER_MS = 1600;
+
+/** Quanto vicino bisogna essere all'uscita perché il livello finisca. */
+export const EXIT_RADIUS = 26;
+
+// ---- Raccoglibili ----
 export const CORE_PICKUP_RADIUS = 20;
-export interface CoreDef {
-  id: string;
-  tx: number;
-  ty: number;
-}
-export const CORE_DEFS: readonly CoreDef[] = [
-  { id: 'corridoio-nicchia', tx: 8, ty: 3 },
-  { id: 'magazzino', tx: 14, ty: 7 },
-];
-
-// ---- Potenziamento tattico: scudo (Magazzino, prima del Molo) ----
-// Distinto di proposito dai core: non dà esperienza, non è una scelta
-// permanente — assorbe un solo colpo e si consuma. Vedi GDD.md,
-// sezione "Potenziamenti vs progressione permanente".
-export const SHIELD_TX = 15;
-export const SHIELD_TY = 7;
-export const SHIELD_X = (SHIELD_TX + 0.5) * TILE;
-export const SHIELD_Y = (SHIELD_TY + 0.5) * TILE;
 export const SHIELD_PICKUP_RADIUS = CORE_PICKUP_RADIUS;
 
 // ---- Esperienza e livelli ----
@@ -99,7 +77,9 @@ export const SHIELD_PICKUP_RADIUS = CORE_PICKUP_RADIUS;
 // progrediscono entrambi, invece di premiare solo la raccolta.
 export const XP_ROOM_ENTER = 15;
 export const XP_CORE = 20;
-export const XP_DRONE_DOWN = 30;
+/** Vale per qualsiasi turret abbattuta, drone compreso: erano la
+ *  stessa entità anche prima che lo dicesse il codice. */
+export const XP_TURRET_DOWN = 30;
 export const XP_BOSS_HIT_SOLID = 25;
 export const XP_BOSS_HIT_GRAZE = 12;
 export const XP_BOSS_DEFEAT = 150;
@@ -125,7 +105,7 @@ export const XP_BOSS_DEFEAT = 150;
  *  verifica `balance:campaign`, che le ricalcola invece di fidarsi di
  *  questo commento. */
 export const LEVEL_XP_THRESHOLDS: readonly number[] = [
-  0, 40, 75, 110, 150, 210, 280, 360, 450, 560, 690,
+  0, 35, 70, 110, 155, 205, 260, 320, 385, 455, 560,
 ];
 
 export function levelForXp(xp: number): number {
@@ -323,10 +303,7 @@ export const SHIELD_CHARGES_UPGRADED = 2;
 
 
 // ---- Boss: Sentinella del Molo ----
-export const BOSS_TX = 18;
-export const BOSS_TY = 5;
-export const BOSS_START_X = (BOSS_TX + 0.5) * TILE;
-export const BOSS_START_Y = (BOSS_TY + 0.5) * TILE;
+// Dove sta lo dice il livello (levels.ts); qui c'è solo com'è fatta.
 export const BOSS_RADIUS = ENTITY_RADIUS * 2;
 
 export const BOSS_GUARD_MS = 2600;
