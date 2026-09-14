@@ -307,7 +307,9 @@ describe('Custode del Reattore', () => {
       }
     }
     expect(defeated).toBe(true);
-    expect(world.state.outcome).toBe('victory');
+    // Il Nucleo chiude l'Atto II ma apre il III: è un passaggio, non la
+    // fine della campagna.
+    expect(world.state.outcome).toBe('levelComplete');
   });
 
   it('alterato diventa più avaro, non più veloce', () => {

@@ -25,9 +25,20 @@ export interface TilePos {
   ty: number;
 }
 
-/** Una stanza è un intervallo di colonne. I livelli sono lineari
- *  (GDD sezione 3), quindi la colonna basta a dire dove sei: niente
- *  poligoni, niente test di appartenenza a volumi arbitrari. */
+/** Una stanza è un rettangolo di tile.
+ *
+ *  Fino all'Atto II era solo un intervallo di colonne, perché tutti i
+ *  livelli erano corridoi da sinistra a destra: la colonna bastava a
+ *  dire dove sei. Ma quella semplificazione *era* la linearità, scritta
+ *  dentro il modello dati — e l'Atto III chiede esplicitamente
+ *  "geometria che rompe le simmetrie viste finora" (GDD sezione 2).
+ *  Con le stanze a colonne non si poteva fare: due stanze affiancate in
+ *  verticale sarebbero state la stessa stanza.
+ *
+ *  I limiti verticali restano facoltativi, e la loro assenza vuol dire
+ *  "tutta l'altezza". Così i sei livelli lineari non hanno dovuto
+ *  cambiare di una riga: un corridoio è un caso particolare di
+ *  rettangolo, non un modello diverso. */
 export interface RoomDef {
   id: string;
   /** Etichetta mostrata nella HUD. */
@@ -35,6 +46,9 @@ export interface RoomDef {
   /** Estremi inclusi, in colonne di tile. */
   fromTx: number;
   toTx: number;
+  /** Estremi inclusi in righe. Assenti = tutta l'altezza della mappa. */
+  fromTy?: number;
+  toTy?: number;
 }
 
 /** Porta stagna a tempo (GDD sezione 4). */
@@ -158,12 +172,13 @@ export interface ShieldPickupDef {
   ty: number;
 }
 
-/** Due boss, due macchine a stati. La Sentinella insegue e si scopre
+/** Tre boss, tre macchine a stati. La Sentinella insegue e si scopre
  *  caricando; il Custode non si muove e si scopre fra una
- *  manipolazione e l'altra. Non hanno niente in comune oltre al fatto
- *  di avere fasi, quindi `kind` sceglie quale logica gira invece di
- *  parametrizzarne una sola fino a farla sembrare entrambe. */
-export type BossKind = 'sentinella' | 'custode';
+ *  manipolazione e l'altra; ARBITER attraversa tre fasi che riusano
+ *  entrambi. Non hanno abbastanza in comune per una macchina sola,
+ *  quindi `kind` sceglie quale logica gira invece di parametrizzarne
+ *  una fino a farla sembrare tutte e tre. */
+export type BossKind = 'sentinella' | 'custode' | 'arbiter';
 
 export interface BossDef {
   id: string;
@@ -171,6 +186,10 @@ export interface BossDef {
   tx: number;
   ty: number;
   room: string;
+  /** Solo per ARBITER: le turret che fanno da moduli. Finché una di
+   *  queste è viva, il corpo è invulnerabile — è la prima fase, e
+   *  riusa le turret invece di inventare una barriera. */
+  moduleTurretIds?: readonly string[];
 }
 
 /** L'uscita di un livello senza boss. Raggiungerla chiude il livello:
@@ -219,12 +238,24 @@ export function tileAt(level: LevelDef, tx: number, ty: number): number {
   return level.tiles[ty]![tx]!;
 }
 
-/** In quale stanza cade una colonna. L'ultima stanza fa da default:
- *  una colonna oltre l'ultimo intervallo dichiarato appartiene alla
- *  fine del livello, non a "nessun posto". */
-export function roomAtTx(level: LevelDef, tx: number): string {
+function roomContains(level: LevelDef, r: RoomDef, tx: number, ty: number): boolean {
+  if (tx < r.fromTx || tx > r.toTx) return false;
+  const y0 = r.fromTy ?? 0;
+  const y1 = r.toTy ?? level.height - 1;
+  return ty >= y0 && ty <= y1;
+}
+
+/** In quale stanza cade un tile.
+ *
+ *  Vince la prima che lo contiene, quindi l'ordine della lista è anche
+ *  l'ordine di precedenza — utile quando una stanza piccola sta dentro
+ *  il rettangolo di una grande. Il fallback è l'ultima stanza: un tile
+ *  fuori da ogni rettangolo dichiarato appartiene alla fine del
+ *  livello, non a "nessun posto", o il checkpoint tornerebbe indietro
+ *  attraversando un angolo non mappato. */
+export function roomAt(level: LevelDef, tx: number, ty: number): string {
   for (const r of level.rooms) {
-    if (tx >= r.fromTx && tx <= r.toTx) return r.id;
+    if (roomContains(level, r, tx, ty)) return r.id;
   }
   return tx < level.rooms[0]!.fromTx
     ? level.rooms[0]!.id

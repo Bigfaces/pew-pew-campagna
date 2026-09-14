@@ -29,6 +29,13 @@ export type BossPhase =
   | 'invert'
   | 'tell'
   | 'exposed'
+  // ARBITER: i suoi tre atti. `modules` è la prima fase (i moduli
+  // ancora in piedi); poi riusa le fasi della Sentinella per la
+  // caccia, e `core*` per il finale a tempo.
+  | 'modules'
+  | 'coreOpening'
+  | 'coreOpen'
+  | 'coreSealed'
   | 'defeated';
 
 export interface CampaignInput {
@@ -162,8 +169,17 @@ export interface BossState {
   damageTaken: number;
   chargeDirX: number;
   chargeDirY: number;
-  /** Cariche ancora da fare nella raffica in corso. */
+  /** Cariche ancora da fare nella raffica in corso. Per il Custode fa
+   *  da contatore del ciclo, per alternare le due manipolazioni. */
   chargesLeft: number;
+  /** Solo ARBITER: quale dei tre atti sta giocando. Separato da
+   *  `phase` perché la fase di caccia *è* quella della Sentinella —
+   *  stessi nomi, stessa logica — e serviva un posto per dire "siamo
+   *  ancora nella caccia" senza toccarli. */
+  stage: 1 | 2 | 3;
+  /** Solo ARBITER: danni incassati nella fase in corso. `damageTaken`
+   *  resta il totale, che è quello che la HUD mostra. */
+  stageDamage: number;
 }
 
 export interface Checkpoint {
@@ -269,6 +285,8 @@ export type CampaignEvent =
   | { type: 'bossExposed' }
   | { type: 'bossHit'; damage: number; phase: BossPhase }
   | { type: 'bossEnraged' }
+  | { type: 'bossStage'; stage: 2 | 3 }
+  | { type: 'bossCoreSealed' }
   | { type: 'bossDefeated' }
   | { type: 'levelCompleted'; levelId: string; next: string | null }
   | { type: 'playerDied'; cause: 'turret' | 'boss' };

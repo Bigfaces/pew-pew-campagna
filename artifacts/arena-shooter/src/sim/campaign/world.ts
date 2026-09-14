@@ -44,6 +44,13 @@ import {
   BOSS_TELEGRAPH_MS,
   BOSS_TURN_RATE,
   BOSS_VOLLEY_RECOVER_MS,
+  ARBITER_CORE_HITS,
+  ARBITER_CORE_MANIPULATION_MS,
+  ARBITER_CORE_TELL_MS,
+  ARBITER_CORE_WINDOW_MS,
+  ARBITER_HITS_TO_DEFEAT,
+  ARBITER_HUNT_HITS,
+  ARBITER_RADIUS,
   BLACKOUT_LINGER_MS,
   CHASM_GRACE_MS,
   CORE_PICKUP_RADIUS,
@@ -69,9 +76,10 @@ import {
   levelForXp,
 } from './constants';
 import {
-  roomAtTx,
+  roomAt,
   roomOrder,
   tileAt,
+  type BossKind,
   type LevelDef,
   type TurretDef,
 } from './levelTypes';
@@ -92,6 +100,7 @@ import {
 import {
   CAMPAIGN_PROFILE_VERSION,
   emptyCampaignInput,
+  type BossPhase,
   type CampaignEvent,
   type CampaignInput,
   type CampaignProfile,
@@ -109,6 +118,14 @@ function angleDelta(from: number, to: number): number {
 
 function centreOf(tx: number, ty: number): { x: number; y: number } {
   return { x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE };
+}
+
+/** Da dove parte ciascun boss. ARBITER comincia dietro i suoi moduli,
+ *  il Custode manipolando, la Sentinella in guardia. */
+function initialBossPhase(kind: BossKind): BossPhase {
+  if (kind === 'custode') return 'blackout';
+  if (kind === 'arbiter') return 'modules';
+  return 'guard';
 }
 
 /** How much damage a hit on the boss's hurtbox actually does, given
@@ -175,7 +192,7 @@ export class CampaignWorld {
       tick: 0,
       levelId: level.id,
       checkpoint: {
-        room: roomAtTx(level, level.spawn.tx),
+        room: roomAt(level, level.spawn.tx, level.spawn.ty),
         x: spawn.x,
         y: spawn.y,
         angle: 0,
@@ -242,13 +259,15 @@ export class CampaignWorld {
         ? {
             ...centreOf(level.boss.tx, level.boss.ty),
             angle: Math.PI,
-            phase: level.boss.kind === 'custode' ? 'blackout' : 'guard',
+            phase: initialBossPhase(level.boss.kind),
             phaseTimer:
               level.boss.kind === 'custode' ? CUSTODE_MANIPULATION_MS : BOSS_GUARD_MS,
             damageTaken: 0,
             chargeDirX: 0,
             chargeDirY: 0,
             chargesLeft: 0,
+            stage: 1,
+            stageDamage: 0,
           }
         : null,
       outcome: 'playing',
@@ -293,9 +312,14 @@ export class CampaignWorld {
 
   /** Colpi necessari per il boss di questo livello. */
   get bossHitsToDefeat(): number {
-    return this.level.boss?.kind === 'custode'
-      ? CUSTODE_HITS_TO_DEFEAT
-      : BOSS_HITS_TO_DEFEAT;
+    switch (this.level.boss?.kind) {
+      case 'custode':
+        return CUSTODE_HITS_TO_DEFEAT;
+      case 'arbiter':
+        return ARBITER_HITS_TO_DEFEAT;
+      default:
+        return BOSS_HITS_TO_DEFEAT;
+    }
   }
 
   /** Il giocatore non può essere colpito adesso. Due sorgenti, una
@@ -489,7 +513,7 @@ export class CampaignWorld {
    *  room (e.g. retreating from the boss) must not lose progress. */
   private updateCheckpoint(): void {
     const p = this.state.player;
-    const room = roomAtTx(this.level, Math.floor(p.x / TILE));
+    const room = roomAt(this.level, Math.floor(p.x / TILE), Math.floor(p.y / TILE));
     if (roomOrder(this.level, room) > roomOrder(this.level, this.state.checkpoint.room)) {
       this.state.checkpoint = { room, x: p.x, y: p.y, angle: p.angle };
       this.events.push({ type: 'roomEntered', room });
@@ -766,7 +790,81 @@ export class CampaignWorld {
       this.updateCustode();
       return;
     }
+    if (def.kind === 'arbiter') {
+      this.updateArbiter();
+      return;
+    }
     this.updateSentinella();
+  }
+
+  /** ARBITER, in tre atti.
+   *
+   *  Nessuno dei tre è una macchina nuova: sono quelle che il gioco ha
+   *  già insegnato, rimesse in fila. Per questo il metodo è corto e
+   *  delega — se avesse dovuto riscrivere carica e finestre sarebbe
+   *  stato il segno che le due macchine precedenti non erano
+   *  riusabili, cioè che erano scritte male.
+   *
+   *  1. `modules` — il corpo è intoccabile finché una delle turret
+   *     modulo respira. È il corridoio a fuoco incrociato dell'Atto I,
+   *     stavolta in cerchio attorno a te.
+   *  2. caccia — la macchina della Sentinella, identica: guardia,
+   *     telegrafo, carica, cono posteriore. Il giocatore la riconosce
+   *     e sa già cosa fare, che è il punto di un test finale.
+   *  3. `core*` — il Custode: manipolazione, preavviso, finestra. Solo
+   *     che qui mancarla non costa una pausa, costa tornare alla
+   *     caccia. */
+  private updateArbiter(): void {
+    const boss = this.state.boss!;
+
+    if (boss.stage === 1) {
+      // I moduli sono turret vere: la fase finisce quando finiscono
+      // loro, non a tempo.
+      if (this.arbiterModulesAlive() > 0) return;
+      boss.stage = 2;
+      boss.stageDamage = 0;
+      boss.phase = 'guard';
+      boss.phaseTimer = BOSS_GUARD_MS;
+      this.events.push({ type: 'bossStage', stage: 2 });
+      return;
+    }
+
+    if (boss.stage === 2) {
+      this.updateSentinella();
+      return;
+    }
+
+    boss.phaseTimer -= TICK_MS;
+    if (boss.phaseTimer > 0) return;
+
+    switch (boss.phase) {
+      case 'coreSealed':
+        boss.phase = 'coreOpening';
+        boss.phaseTimer = ARBITER_CORE_TELL_MS;
+        break;
+      case 'coreOpening':
+        boss.phase = 'coreOpen';
+        boss.phaseTimer = ARBITER_CORE_WINDOW_MS;
+        this.events.push({ type: 'bossExposed' });
+        break;
+      default:
+        // Finestra mancata: si richiude e riparte la caccia. Non è una
+        // punizione arbitraria — è dover riguadagnare quello che si
+        // era guadagnato, che è l'unica posta che abbia senso alzare
+        // per un boss finale.
+        boss.stage = 2;
+        boss.stageDamage = 0;
+        boss.phase = 'guard';
+        boss.phaseTimer = BOSS_GUARD_MS;
+        this.events.push({ type: 'bossCoreSealed' });
+        break;
+    }
+  }
+
+  /** Quanti moduli di ARBITER sono ancora in piedi. */
+  private arbiterModulesAlive(): number {
+    const ids = this.level.boss?.moduleTurretIds ?? [];
+    return this.state.turrets.filter((t) => t.alive && ids.includes(t.id)).length;
   }
 
   /** Custode del Reattore. Non insegue e non si muove: spegne le luci,
@@ -814,6 +912,10 @@ export class CampaignWorld {
     }
   }
 
+  /** La macchina della Sentinella. Girata anche da ARBITER nella sua
+   *  fase di caccia — la stessa, non una copia: se fossero due, la
+   *  prima correzione al comportamento della carica ne aggiusterebbe
+   *  una sola. */
   private updateSentinella(): void {
     const boss = this.state.boss!;
     const p = this.state.player;
@@ -974,7 +1076,11 @@ export class CampaignWorld {
         input.aimAngle,
         boss.x,
         boss.y,
-        this.level.boss!.kind === 'custode' ? CUSTODE_RADIUS : BOSS_RADIUS,
+        this.level.boss!.kind === 'custode'
+          ? CUSTODE_RADIUS
+          : this.level.boss!.kind === 'arbiter'
+            ? ARBITER_RADIUS
+            : BOSS_RADIUS,
       );
       // Bersaglio più vicino vince: non si spara attraverso una
       // turret per arrivare al boss.
@@ -1003,29 +1109,67 @@ export class CampaignWorld {
     // colpisce *quando* (la finestra, da qualsiasi angolo). Chiedere
     // al Custode un arco posteriore lo renderebbe una Sentinella che
     // non si muove, cioè più facile invece che diversa.
-    const dmg =
-      this.level.boss!.kind === 'custode'
-        ? boss.phase === 'exposed'
-          ? 1
-          : 0
-        : resolveBossHit(
-            boss.x,
-            boss.y,
-            boss.angle,
-            boss.phase,
-            shooterX,
-            shooterY,
-            hasGrazeDamage(this.state.unlockedNodes),
-          );
+    const kind = this.level.boss!.kind;
+    const rearHit = (): number =>
+      resolveBossHit(
+        boss.x,
+        boss.y,
+        boss.angle,
+        boss.phase,
+        shooterX,
+        shooterY,
+        hasGrazeDamage(this.state.unlockedNodes),
+      );
+
+    let dmg: number;
+    if (kind === 'custode') {
+      dmg = boss.phase === 'exposed' ? 1 : 0;
+    } else if (kind === 'arbiter') {
+      // Una regola per atto, e sono le due già conosciute: nella
+      // caccia vale il cono posteriore della Sentinella, nel finale la
+      // finestra del Custode. Nella prima fase il corpo è intoccabile
+      // e basta — i moduli si colpiscono come turret, non come boss.
+      if (boss.stage === 2) dmg = rearHit();
+      else if (boss.stage === 3) dmg = boss.phase === 'coreOpen' ? 1 : 0;
+      else dmg = 0;
+    } else {
+      dmg = rearHit();
+    }
     if (dmg <= 0) return;
 
     const wasEnraged = this.enraged;
     boss.damageTaken += dmg;
+    boss.stageDamage += dmg;
     this.events.push({ type: 'bossHit', damage: dmg, phase: boss.phase });
     if (!wasEnraged && this.enraged) this.events.push({ type: 'bossEnraged' });
     this.grantXp(dmg >= 1 ? XP_BOSS_HIT_SOLID : XP_BOSS_HIT_GRAZE);
 
-    if (boss.damageTaken >= this.bossHitsToDefeat) {
+    // ARBITER passa alla terza fase quando la caccia è finita, non
+    // quando il totale arriva a una soglia: i due conteggi divergono
+    // ogni volta che una finestra mancata lo riporta indietro.
+    if (
+      kind === 'arbiter' &&
+      boss.stage === 2 &&
+      boss.stageDamage >= ARBITER_HUNT_HITS &&
+      boss.damageTaken < this.bossHitsToDefeat
+    ) {
+      boss.stage = 3;
+      boss.stageDamage = 0;
+      boss.phase = 'coreSealed';
+      boss.phaseTimer = ARBITER_CORE_MANIPULATION_MS;
+      this.events.push({ type: 'bossStage', stage: 3 });
+      return;
+    }
+
+    if (kind === 'arbiter' && boss.stage === 3 && boss.stageDamage >= ARBITER_CORE_HITS) {
+      boss.phase = 'defeated';
+      this.events.push({ type: 'bossDefeated' });
+      this.grantXp(XP_BOSS_DEFEAT);
+      this.completeLevel();
+      return;
+    }
+
+    if (kind !== 'arbiter' && boss.damageTaken >= this.bossHitsToDefeat) {
       boss.phase = 'defeated';
       this.events.push({ type: 'bossDefeated' });
       this.grantXp(XP_BOSS_DEFEAT);
@@ -1093,11 +1237,13 @@ export class CampaignWorld {
     if (this.state.boss && this.level.boss!.room === cp.room) {
       const boss = this.state.boss;
       const home = centreOf(this.level.boss!.tx, this.level.boss!.ty);
-      const custode = this.level.boss!.kind === 'custode';
-      boss.phase = custode ? 'blackout' : 'guard';
-      boss.phaseTimer = custode ? CUSTODE_MANIPULATION_MS : BOSS_GUARD_MS;
+      const kind = this.level.boss!.kind;
+      boss.phase = initialBossPhase(kind);
+      boss.phaseTimer = kind === 'custode' ? CUSTODE_MANIPULATION_MS : BOSS_GUARD_MS;
       boss.damageTaken = 0;
       boss.chargesLeft = 0;
+      boss.stage = 1;
+      boss.stageDamage = 0;
       boss.x = home.x;
       boss.y = home.y;
       boss.angle = Math.PI;

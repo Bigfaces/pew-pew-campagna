@@ -112,6 +112,9 @@ export interface CampaignHudSnapshot {
   /** Come si chiama il boss di questo livello: la HUD non può più
    *  scrivere "SENTINELLA" in duro, ce n'è più d'uno. */
   bossName: string;
+  /** Solo per ARBITER, che di fasi ne ha tre: per gli altri due null,
+   *  perché "fase 1/1" non è un'informazione. */
+  bossStage: number | null;
   bossPhase: string;
   bossDamageTaken: number;
   bossHitsToDefeat: number;
@@ -124,6 +127,12 @@ export interface CampaignGameOptions {
 }
 
 const HUD_INTERVAL = 120;
+
+const BOSS_NAME: Record<string, string> = {
+  sentinella: 'SENTINELLA',
+  custode: 'CUSTODE',
+  arbiter: 'ARBITER',
+};
 
 export class CampaignGame {
   private canvas: HTMLCanvasElement;
@@ -644,6 +653,15 @@ export class CampaignGame {
         case 'bossExposed':
           this.audio.callout(1);
           break;
+        case 'bossStage':
+          this.audio.callout(1);
+          this.fx.shake(14);
+          this.raise(`ARBITER — FASE ${ev.stage}`, '', '#ffd166');
+          break;
+        case 'bossCoreSealed':
+          this.audio.impact(this.world.state.player.x, this.world.state.player.y);
+          this.raise('NUCLEO RICHIUSO', 'la caccia riparte', '#ff7a2f');
+          break;
         case 'levelCompleted':
           this.finishLevel(ev.next);
           break;
@@ -935,7 +953,8 @@ export class CampaignGame {
         return { armed: true, closeTimerMs: soonest.closeTimer };
       })(),
       bossActive: s.boss !== null && s.checkpoint.room === this.world.level.boss?.room,
-      bossName: this.world.level.boss?.kind === 'custode' ? 'CUSTODE' : 'SENTINELLA',
+      bossName: BOSS_NAME[this.world.level.boss?.kind ?? 'sentinella'],
+      bossStage: this.world.level.boss?.kind === 'arbiter' ? (s.boss?.stage ?? 1) : null,
       bossPhase: s.boss?.phase ?? 'defeated',
       bossDamageTaken: s.boss?.damageTaken ?? 0,
       bossHitsToDefeat: this.world.bossHitsToDefeat,

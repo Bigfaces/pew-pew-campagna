@@ -69,6 +69,12 @@ const ON_FIRST: Record<string, string> = {
     'Su e giù erano una convenzione. L’ho revocata. Dimmi come procede.',
   bossExposed:
     'Il Custode si è aperto. Dura poco. Come quasi tutto, qui.',
+  // Atto III. ARBITER non commenta più quello che fai: commenta se
+  // stesso. È l'ultima cosa rimasta da catalogare.
+  bossStage:
+    'Una fase è finita. Ne ho altre due. Poi non avrò più niente da mostrarti.',
+  bossCoreSealed:
+    'Richiuso. Non era distrazione, era un intervallo. Ricominciamo dal principio.',
 };
 
 /** Traduce gli eventi della simulazione in una battuta, se ce n'è una
@@ -120,6 +126,8 @@ export class ArbiterVoice {
       case 'bossExposed':
       case 'gasEntered':
       case 'levelCompleted':
+      case 'bossStage':
+      case 'bossCoreSealed':
       case 'bossEnraged':
       case 'bossDefeated':
         return this.once(ev.type, ON_FIRST[ev.type]);

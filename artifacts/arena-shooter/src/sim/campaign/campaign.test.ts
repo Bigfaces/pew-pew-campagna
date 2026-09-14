@@ -12,7 +12,9 @@ import { TICK_MS, TILE } from '../constants';
 import {
   BOSS_ENRAGED_CHARGES,
   BOSS_ENRAGE_AT,
+  ARBITER_HITS_TO_DEFEAT,
   BOSS_HITS_TO_DEFEAT,
+  CUSTODE_HITS_TO_DEFEAT,
   DOOR_CLOSE_DELAY_MS,
   TURRET_COOLDOWN_MS,
   TURRET_REACTION_MS,
@@ -47,8 +49,8 @@ import {
   shieldOf,
   turretOf,
 } from './testSupport';
-import { ACT_ONE, LEVEL_ATTRACCO } from './levels';
-import { roomAtTx } from './levelTypes';
+import { ACT_ONE, ALL_LEVELS, LEVEL_ATTRACCO } from './levels';
+import { roomAt } from './levelTypes';
 import { CampaignWorld } from './world';
 
 /** Lo scudo dell'Attracco, letto dal livello: se si sposta, i test
@@ -119,8 +121,8 @@ describe('esperienza e livelli', () => {
    *  dalla definizione invece che scritta a mano: una lista di tappe
    *  copiata racconta l'atto che c'era quando è stata scritta, e mente
    *  in silenzio dal primo livello che cambia. */
-  function levelXp(level: (typeof ACT_ONE)[number], thorough: boolean): number {
-    const spawnRoom = roomAtTx(level, level.spawn.tx);
+  function levelXp(level: (typeof ALL_LEVELS)[number], thorough: boolean): number {
+    const spawnRoom = roomAt(level, level.spawn.tx, level.spawn.ty);
     let xp = level.rooms.filter((r) => r.id !== spawnRoom).length * XP_ROOM_ENTER;
     if (thorough) {
       xp += level.cores.length * XP_CORE + level.turrets.length * XP_TURRET_DOWN;
@@ -128,49 +130,68 @@ describe('esperienza e livelli', () => {
     return xp;
   }
 
+  /** XP di un boss, per il tipo giusto. */
+  function bossXp(level: (typeof ALL_LEVELS)[number]): number {
+    if (!level.boss) return 0;
+    const hits =
+      level.boss.kind === 'custode'
+        ? CUSTODE_HITS_TO_DEFEAT
+        : level.boss.kind === 'arbiter'
+          ? ARBITER_HITS_TO_DEFEAT
+          : BOSS_HITS_TO_DEFEAT;
+    return hits * XP_BOSS_HIT_SOLID + XP_BOSS_DEFEAT;
+  }
+
   /** La curva deve restare spendibile *durante* la partita: la prima
    *  versione concedeva l'ultimo punto solo insieme al bonus di
    *  vittoria, cioè su un nodo ormai inutilizzabile.
    *
-   *  Con un solo ramo l'asticella era "tutti i nodi prima del boss".
-   *  Con quattro rami e tre livelli quella soglia sarebbe sbagliata al
-   *  contrario: un albero comprabile per intero prima dello scontro
-   *  finale non fa scegliere niente. Quello che deve restare vero è
-   *  che chi esplora possa *specializzarsi* — riempire almeno un ramo
-   *  completo prima di entrare nel Molo. */
-  it('affords a full branch before the final fight, exploring everything', () => {
-    const preBoss = ACT_ONE.filter((l) => l.boss === null).reduce(
-      (sum, l) => sum + levelXp(l, true),
+   *  Con un ramo solo l'asticella era "tutti i nodi prima del boss".
+   *  Con quattro rami e nove livelli sarebbe sbagliata al contrario:
+   *  un albero comprabile per intero prima dello scontro finale non fa
+   *  scegliere niente. Quello che deve restare vero è che ci si possa
+   *  *specializzare* presto — riempire un ramo intero già entro la
+   *  fine del primo atto. */
+  it('affords a full branch by the end of the first act, exploring everything', () => {
+    const throughActOne = ACT_ONE.reduce(
+      (sum, l) => sum + levelXp(l, true) + bossXp(l),
       0,
     );
-    const points = levelForXp(preBoss) - 1;
+    const points = levelForXp(throughActOne) - 1;
     const biggestBranch = Math.max(...SKILL_TREE.map((b) => b.nodes.length));
     expect(points).toBeGreaterThanOrEqual(biggestBranch);
   });
 
-  /** L'albero deve aprirsi lungo tutto l'atto, non tutto in fondo:
-   *  ogni livello porta almeno un punto nuovo anche a chi tira dritto
-   *  senza raccogliere né ripulire niente. */
-  it('grants at least one new point in every level of the act, even rushing', () => {
+  /** Chi esplora e ripulisce deve guadagnare qualcosa in *ogni*
+   *  livello: nove livelli e nessuno che non paghi. */
+  it('grants at least one new point in every level, exploring', () => {
     let xp = 0;
     let previous = 0;
-    for (const level of ACT_ONE) {
-      xp += levelXp(level, false);
+    for (const level of ALL_LEVELS) {
+      xp += levelXp(level, true) + bossXp(level);
       const points = levelForXp(xp) - 1;
       expect(points, `dopo ${level.name}`).toBeGreaterThan(previous);
       previous = points;
     }
   });
 
-  /** L'altro lato dello stesso vincolo: chi tira dritto deve comunque
-   *  guadagnare punti *mentre* combatte, non soltanto a partita
-   *  finita. */
-  it('still earns spendable points mid-fight when skipping cores and turrets', () => {
-    const roomsOnly = ACT_ONE.reduce((sum, l) => sum + levelXp(l, false), 0);
-    // Due colpi, non tre: il terzo uccide il boss e chiude l'atto,
-    // quindi un punto che arrivasse lì non sarebbe più spendibile.
-    const beforeKillingBlow = roomsOnly + (BOSS_HITS_TO_DEFEAT - 1) * XP_BOSS_HIT_SOLID;
-    expect(levelForXp(beforeKillingBlow) - 1).toBeGreaterThan(levelForXp(roomsOnly) - 1);
+  /** L'altra metà: a chi tira dritto senza raccogliere né ripulire
+   *  niente l'albero resta molto più vuoto. Non è una punizione — è il
+   *  premio dell'esplorazione visto dall'altro lato, e senza questo
+   *  divario esplorare non pagherebbe.
+   *
+   *  Una tabella sola non può essere fitta in basso per chi corre e
+   *  larga in alto per chi cerca: chiedere a entrambi lo stesso ritmo
+   *  vorrebbe dire rinunciare al divario. */
+  it('leaves the tree much emptier for a player who rushes', () => {
+    const thorough = ALL_LEVELS.reduce(
+      (sum, l) => sum + levelXp(l, true) + bossXp(l),
+      0,
+    );
+    const rushed = ALL_LEVELS.reduce((sum, l) => sum + levelXp(l, false) + bossXp(l), 0);
+    expect(levelForXp(rushed) - 1).toBeLessThan(levelForXp(thorough) - 1);
+    // E chi esplora arriva in fondo con l'albero pieno.
+    expect(levelForXp(thorough) - 1).toBe(ALL_SKILL_NODES.length);
   });
 
   /** Nessun punto deve restare senza un nodo su cui finire: la tabella

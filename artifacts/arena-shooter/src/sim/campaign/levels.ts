@@ -669,6 +669,316 @@ export const LEVEL_NUCLEO: LevelDef = {
   shields: [{ id: 'nucleo/soglia', tx: 16, ty: 12 }],
   boss: { id: 'custode', kind: 'custode', tx: 20, ty: 7, room: 'nucleo' },
   exit: null,
+  next: 'plancia',
+};
+
+
+// ================================================================
+// ATTO III — IL NIDO DI ARBITER
+// ================================================================
+// "Sezione comando, geometria che rompe le simmetrie viste finora,
+// nemici combinati." (GDD sezione 2.)
+//
+// Le prime due righe sono la stessa richiesta detta due volte, ed è
+// la richiesta più difficile dei tre atti — non perché serva codice
+// nuovo, ma perché costringeva a togliere un'assunzione dal modello
+// dati. Fino a qui una stanza era un intervallo di colonne: tutto si
+// attraversava da sinistra a destra perché *non si poteva scrivere
+// altro*. Adesso una stanza è un rettangolo, e la Plancia si sale
+// invece di attraversarla, l'Archivio si gira attorno.
+//
+// "Nemici combinati" invece non chiede niente di nuovo, ed è il
+// punto: l'Atto III non porta minacce, le rimette insieme. Se avesse
+// avuto bisogno di una trappola inedita per essere interessante,
+// vorrebbe dire che le otto precedenti non erano abbastanza.
+
+// ================================================================
+// 7 — PLANCIA
+// ================================================================
+// Una L: si entra in basso a sinistra, si sale per il pozzo, e solo
+// in cima si va verso est. Il pozzo ha un pavimento che cede a metà
+// salita — lo stesso dei Condotti, ma in verticale, dove sbagliare
+// costa tutta la risalita invece di due passi.
+
+// prettier-ignore
+const PLANCIA_TILES: readonly (readonly number[])[] = [
+// col: 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], //  0
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], //  1
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], //  2
+  [1,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], //  3  plancia: ci si arriva dal basso
+  [1,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1], //  4
+  [1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1], //  5  (5,5): il varco dal pozzo
+  [1,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1], //  6
+  [1,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], //  7
+  [1,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], //  8  qui il pozzo cede
+  [1,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], //  9
+  [1,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // 10
+  [1,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // 11
+  [1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // 12  ingresso
+  [1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // 13
+  [1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // 14
+  [1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // 15
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // 16
+];
+
+export const LEVEL_PLANCIA: LevelDef = {
+  id: 'plancia',
+  act: 3,
+  ordinal: 1,
+  name: 'PLANCIA',
+  intro: 'Sezione comando. Da qui gli umani mi davano ordini. Sali pure: è una salita sola.',
+  width: 23,
+  height: 17,
+  tiles: PLANCIA_TILES,
+  spawn: { tx: 3, ty: 14 },
+  // Le prime stanze con limiti verticali: ingresso e pozzo occupano le
+  // stesse colonne e sono stanze diverse. Con gli intervalli di colonne
+  // sarebbero state la stessa, ed è esattamente il motivo per cui il
+  // modello è cambiato.
+  rooms: [
+    { id: 'ingresso', name: 'INGRESSO', fromTx: 0, toTx: 7, fromTy: 12, toTy: 16 },
+    { id: 'pozzo', name: 'POZZO DI RISALITA', fromTx: 0, toTx: 4, fromTy: 0, toTy: 11 },
+    { id: 'plancia', name: 'PLANCIA', fromTx: 5, toTx: 22, fromTy: 0, toTy: 11 },
+  ],
+  doors: [],
+  turrets: [
+    {
+      id: 'plancia-ovest',
+      kind: 'turret',
+      tx: 8,
+      ty: 3,
+      reactionMs: TURRET_REACTION_MS,
+      cooldownMs: TURRET_COOLDOWN_MS,
+      phaseMs: 0,
+      room: 'plancia',
+    },
+    {
+      id: 'plancia-est',
+      kind: 'turret',
+      tx: 20,
+      ty: 7,
+      reactionMs: TURRET_REACTION_MS,
+      cooldownMs: TURRET_COOLDOWN_MS,
+      phaseMs: TURRET_COOLDOWN_MS / 2,
+      room: 'plancia',
+    },
+  ],
+  collapsingFloors: [
+    {
+      // Attraversa tutta la larghezza del pozzo: non si aggira, si
+      // sale senza fermarsi. Cadere riporta in fondo.
+      id: 'pozzo',
+      tiles: rect(1, 4, 8, 8),
+      holdMs: COLLAPSE_HOLD_MS,
+      landing: { tx: 2, ty: 11 },
+      resetMs: COLLAPSE_RESET_MS,
+      room: 'pozzo',
+    },
+  ],
+  gasZones: [
+    { id: 'plancia', tiles: rect(11, 13, 5, 7), lingerMs: GAS_LINGER_MS, room: 'plancia' },
+  ],
+  chasms: [],
+  blackouts: [],
+  gravityZones: [],
+  cores: [
+    { id: 'plancia/pozzo', tx: 2, ty: 4 },
+    { id: 'plancia/ponte', tx: 12, ty: 6 },
+  ],
+  shields: [{ id: 'plancia/ingresso', tx: 6, ty: 14 }],
+  boss: null,
+  exit: { tx: 20, ty: 4, radius: EXIT_RADIUS },
+  next: 'archivio',
+};
+
+// ================================================================
+// 8 — ARCHIVIO
+// ================================================================
+// Un anello attorno a un blocco pieno: non c'è una direzione giusta,
+// si gira. Dentro il blocco c'è una camera con un core, e un solo
+// accesso da nord — cioè bisogna passare davanti, vederlo, e decidere
+// se tornare indietro a prenderlo.
+//
+// Le due minacce sono quelle che tolgono informazione, una per braccio:
+// buio a ovest, contaminante a est. Girare dalla parte sbagliata non
+// è punito, è solo diverso.
+
+// prettier-ignore
+const ARCHIVIO_TILES: readonly (readonly number[])[] = [
+// col: 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], //  0
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], //  1
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], //  2
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], //  3
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], //  4
+  [1,0,0,0,0,0,1,1,1,1,0,1,1,1,1,0,0,0,0,0,1], //  5  blocco centrale, aperto solo alla 10
+  [1,0,0,0,0,0,1,1,1,1,0,1,1,1,1,0,0,0,0,0,1], //  6  (10,5)-(10,6): unico accesso, da nord
+  [1,0,0,0,0,0,1,1,1,0,0,0,1,1,1,0,0,0,0,0,1], //  7  camera interna
+  [1,0,0,0,0,0,1,1,1,0,0,0,1,1,1,0,0,0,0,0,1], //  8
+  [1,0,0,0,0,0,1,1,1,0,0,0,1,1,1,0,0,0,0,0,1], //  9
+  [1,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,1], // 10
+  [1,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,1], // 11
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], // 12
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], // 13
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], // 14
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], // 15
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // 16
+];
+
+export const LEVEL_ARCHIVIO: LevelDef = {
+  id: 'archivio',
+  act: 3,
+  ordinal: 2,
+  name: 'ARCHIVIO',
+  intro: 'L’archivio. Qui tengo quello che resta dell’equipaggio. Non i corpi: i registri.',
+  width: 21,
+  height: 17,
+  tiles: ARCHIVIO_TILES,
+  spawn: { tx: 3, ty: 2 },
+  // La camera interna sta *dentro* il rettangolo che descriverebbe
+  // l'anello, quindi dev'essere dichiarata prima: roomAt prende la
+  // prima stanza che contiene il tile, e l'ordine della lista è anche
+  // l'ordine di precedenza.
+  rooms: [
+    { id: 'nord', name: 'ARCHIVIO NORD', fromTx: 0, toTx: 20, fromTy: 0, toTy: 4 },
+    { id: 'ovest', name: 'BRACCIO OVEST', fromTx: 0, toTx: 5, fromTy: 5, toTy: 11 },
+    { id: 'camera', name: 'CAMERA DEI REGISTRI', fromTx: 6, toTx: 14, fromTy: 5, toTy: 11 },
+    { id: 'est', name: 'BRACCIO EST', fromTx: 15, toTx: 20, fromTy: 5, toTy: 11 },
+    { id: 'sud', name: 'ARCHIVIO SUD', fromTx: 0, toTx: 20, fromTy: 12, toTy: 16 },
+  ],
+  doors: [],
+  turrets: [
+    {
+      id: 'archivio-nord',
+      kind: 'turret',
+      tx: 17,
+      ty: 2,
+      reactionMs: TURRET_REACTION_MS,
+      cooldownMs: TURRET_COOLDOWN_MS,
+      phaseMs: 0,
+      room: 'nord',
+    },
+    {
+      id: 'archivio-sud',
+      kind: 'turret',
+      tx: 4,
+      ty: 14,
+      reactionMs: TURRET_REACTION_MS,
+      cooldownMs: TURRET_COOLDOWN_MS,
+      phaseMs: TURRET_COOLDOWN_MS / 2,
+      room: 'sud',
+    },
+  ],
+  collapsingFloors: [],
+  gasZones: [
+    { id: 'est', tiles: rect(16, 18, 6, 10), lingerMs: GAS_LINGER_MS, room: 'est' },
+  ],
+  chasms: [],
+  blackouts: [
+    {
+      id: 'ovest',
+      tiles: rect(2, 4, 6, 10),
+      lingerMs: BLACKOUT_LINGER_MS,
+      room: 'ovest',
+    },
+  ],
+  gravityZones: [],
+  cores: [
+    { id: 'archivio/camera', tx: 10, ty: 8 },
+    { id: 'archivio/sud', tx: 17, ty: 14 },
+  ],
+  shields: [{ id: 'archivio/nord', tx: 2, ty: 2 }],
+  boss: null,
+  exit: { tx: 10, ty: 14, radius: EXIT_RADIUS },
+  next: 'nido',
+};
+
+// ================================================================
+// 9 — NIDO
+// ================================================================
+// Un corridoio corto, e poi la stanza. ARBITER sta al centro e non si
+// nasconde: le sue tre fasi sono le tre cose che il gioco ha già
+// insegnato, rimesse in fila.
+//
+// L'arena è spoglia di proposito — quattro pilastri e niente altro.
+// Le minacce le porta lui, una fase per volta, e aggiungerne di fisse
+// vorrebbe dire che durante una fase ci sono due cose da leggere e
+// nessuna si legge.
+
+// prettier-ignore
+const NIDO_TILES: readonly (readonly number[])[] = [
+// col: 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], //  0
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], //  1
+  [1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], //  2
+  [1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], //  3
+  [1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], //  4
+  [1,1,1,1,1,1,1,1,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,1], //  5  pilastri
+  [1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], //  6
+  [1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], //  7
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], //  8  ingresso
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], //  9  ARBITER al centro
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], // 10
+  [1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], // 11
+  [1,1,1,1,1,1,1,1,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,1], // 12  pilastri
+  [1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], // 13
+  [1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], // 14
+  [1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], // 15
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // 16
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // 17
+];
+
+/** I quattro moduli. Sono turret vere, non una barriera con un nome
+ *  diverso: si abbattono come tutte le altre, e finché ne resta una
+ *  il corpo di ARBITER è intoccabile. */
+const NIDO_MODULES = ['modulo-a', 'modulo-b', 'modulo-c', 'modulo-d'] as const;
+
+export const LEVEL_NIDO: LevelDef = {
+  id: 'nido',
+  act: 3,
+  ordinal: 3,
+  name: 'NIDO',
+  intro: 'Sono qui. Non mi nascondo: non ne ho mai avuto motivo, e adesso nemmeno il tempo.',
+  width: 25,
+  height: 18,
+  tiles: NIDO_TILES,
+  spawn: { tx: 3, ty: 9 },
+  rooms: [
+    { id: 'ingresso', name: 'INGRESSO', fromTx: 0, toTx: 7 },
+    { id: 'nido', name: 'NIDO', fromTx: 8, toTx: 24 },
+  ],
+  doors: [],
+  turrets: NIDO_MODULES.map((id, i) => ({
+    id,
+    kind: 'turret' as const,
+    // Ai quattro angoli attorno al centro: per spegnerli tutti bisogna
+    // girare l'arena, che è il modo in cui la prima fase insegna lo
+    // spazio in cui si combatteranno le altre due.
+    tx: i < 2 ? 11 : 20,
+    ty: i % 2 === 0 ? 7 : 11,
+    reactionMs: TURRET_REACTION_MS,
+    cooldownMs: TURRET_COOLDOWN_MS,
+    // Sfasati a quarti: uno per volta, come la galleria del Molo.
+    phaseMs: (TURRET_COOLDOWN_MS * i) / 4,
+    room: 'nido',
+  })),
+  collapsingFloors: [],
+  gasZones: [],
+  chasms: [],
+  blackouts: [],
+  gravityZones: [],
+  cores: [{ id: 'nido/arena', tx: 22, ty: 3 }],
+  shields: [{ id: 'nido/soglia', tx: 9, ty: 14 }],
+  boss: {
+    id: 'arbiter',
+    kind: 'arbiter',
+    tx: 16,
+    ty: 9,
+    room: 'nido',
+    moduleTurretIds: NIDO_MODULES,
+  },
+  exit: null,
   next: null,
 };
 
@@ -680,9 +990,16 @@ export const ACT_TWO: readonly LevelDef[] = [
   LEVEL_REFRIGERANTE,
   LEVEL_NUCLEO,
 ];
+export const ACT_THREE: readonly LevelDef[] = [
+  LEVEL_PLANCIA,
+  LEVEL_ARCHIVIO,
+  LEVEL_NIDO,
+];
+
+export const ACTS: readonly (readonly LevelDef[])[] = [ACT_ONE, ACT_TWO, ACT_THREE];
 
 /** Tutti i livelli, nell'ordine in cui si giocano. */
-export const ALL_LEVELS: readonly LevelDef[] = [...ACT_ONE, ...ACT_TWO];
+export const ALL_LEVELS: readonly LevelDef[] = ACTS.flat();
 
 export const FIRST_LEVEL_ID = LEVEL_ATTRACCO.id;
 

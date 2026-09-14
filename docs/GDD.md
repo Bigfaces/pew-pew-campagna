@@ -59,6 +59,15 @@ già usato in Arena, niente doppiaggio registrato).
 - Riuso diretto di `sim/` (tick fissi, PRNG seedato) e `render/` (stesso
   motore raycast): la campagna aggiunge *contenuto* (mappe, entità, stati),
   non un nuovo motore.
+- **Livelli lineari, tranne dove non lo sono.** Gli Atti I e II sono
+  corridoi da sinistra a destra. L'Atto III no — il GDD gli chiede
+  "geometria che rompe le simmetrie viste finora" — e per poterlo scrivere
+  è servito togliere un'assunzione dal modello dati: una stanza era un
+  *intervallo di colonne*, cioè la linearità cablata nella struttura.
+  Adesso è un rettangolo, e i limiti verticali sono facoltativi: assenti
+  vuol dire "tutta l'altezza". Sei livelli su nove non hanno dovuto
+  cambiare una riga, perché un corridoio è un caso particolare di
+  rettangolo e non un modello diverso.
 - **Un livello è un dato, non un modulo.** Fino allo Sprint 1 la mappa era
   un file e le entità erano costanti: funzionava finché il livello era uno.
   Adesso una `LevelDef` descrive griglia, stanze, trabocchetti,
@@ -164,10 +173,29 @@ subirla passivamente), e **niente bullet-hell** — coerente col ritmo
    Il preavviso non è un regalo: senza, colpire nella finestra sarebbe
    questione di trovarsi già girati dalla parte giusta per caso, cioè
    fortuna invece di lettura.
-3. **ARBITER** (finale, 3 fasi) — corpo modulare: fase 1 a distanza (turret
-   multiple da disattivare una a una), fase 2 ravvicinata (mobilità e
-   schivata), fase 3 "nucleo" scoperto con tempo limitato. Ogni fase riusa
-   una minaccia vista in atti precedenti, come test finale.
+3. **ARBITER** (finale, 3 fasi) — corpo modulare. Le tre fasi non sono tre
+   macchine nuove: sono le tre che il gioco ha già insegnato, rimesse in
+   fila.
+
+   1. **Moduli.** Quattro turret gli girano attorno, sfasate a quarti. Il
+      corpo è intoccabile finché ne resta una viva. Sono turret vere, non
+      una barriera con un altro nome: si abbattono come tutte le altre, e
+      girare l'arena per spegnerle insegna lo spazio in cui si
+      combatteranno le altre due fasi. È il corridoio a fuoco incrociato
+      dell'Atto I, stavolta in cerchio.
+   2. **Caccia.** La macchina della Sentinella, identica — non una copia:
+      gira *lo stesso* metodo. Guardia, telegrafo, carica, cono
+      posteriore. Il giocatore la riconosce e sa già cosa fare, che è
+      esattamente il punto di un test finale.
+   3. **Nucleo.** Il Custode: manipolazione, preavviso, finestra. Solo che
+      qui mancare la finestra non costa una pausa — richiude il nucleo e
+      riporta alla caccia. Non si perde vita, si perde il terreno
+      guadagnato, che è l'unica posta che abbia senso alzare per un boss
+      finale.
+
+   `damageTaken` (il totale, quello che la HUD mostra) e il progresso di
+   fase divergono ogni volta che una finestra viene mancata. È voluto: il
+   primo dice quanto gli hai fatto, il secondo quanto ti manca *adesso*.
 
 ## 6. Skill tree e potenziamenti armi
 
@@ -243,10 +271,15 @@ ramo per volta, e mandare a cercare un nodo fuori schermata sarebbe una
 trappola.
 
 **Quanto ci vuole a riempirlo.** Quattordici nodi, quindici livelli:
-nessun punto resta senza un nodo su cui finire. L'Atto I paga il primo
-anello (dieci punti), l'Atto II il secondo; chi esplora arriva a 3 → 6 →
-10 → 11 → 12 → 14 punti a fine di ciascun livello, chi tira dritto a
-1 → 2 → 7 → 8 → 9 → 10 — cioè ogni livello paga qualcosa a chiunque. Le due cose tirano in
+nessun punto resta senza un nodo su cui finire. La curva è tarata su chi
+esplora e ripulisce, che guadagna qualcosa in ognuno dei nove livelli
+(2 → 3 → 5 → 6 → 7 → 9 → 10 → 12 → 14) e arriva in fondo con l'albero
+pieno; chi tira dritto chiude con 8 nodi su 14.
+
+Quella differenza è il premio dell'esplorazione visto dall'altro lato, ed
+è deliberato che una tabella sola non possa essere fitta in basso per chi
+corre e larga in alto per chi cerca: chiedere a entrambi lo stesso ritmo
+vorrebbe dire rinunciare al divario. Le due cose tirano in
 direzioni opposte di proposito: un albero comprabile tutto subito non è un
 albero, e uno che non lascia scegliere niente al primo run non è una
 progressione. Sono invarianti verificate da `pnpm run balance:campaign`,
@@ -340,7 +373,7 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
 4. Narrativa: battute di ARBITER *(fatto per la slice, sezione 10)*; testi
    tra un livello e l'altro ancora da scrivere.
 5. Atto II *(fatto)* — Il Nucleo Anulare, tre livelli e il Custode.
-6. Atto III, bilanciamento con il tool esteso.
+6. Atto III *(fatto)* — Il Nido di ARBITER, tre livelli e il boss finale.
 
 ## 9. Decisioni dal briefing
 
@@ -371,40 +404,54 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
 di scriverne nove. Il loop ha retto, e la slice è diventata il primo dei
 tre livelli dell'atto.*
 
-**Stato: Atti I e II completi e giocabili.** Sei livelli concatenati —
-Attracco, Condotti, Molo, Anello Esterno, Condotte del Refrigerante,
-Nucleo — raggiungibili da "CAMPAGNA (BETA)" nel menu principale, con
-controlli touch oltre a tastiera/mouse, ottica e progressione salvata in
-locale. Tutti e otto i trabocchetti della sezione 4 esistono, i due boss
-hanno le loro seconde fasi (sezione 5), ARBITER commenta il run e
-nell'Atto II comincia a parlare al giocatore invece che catalogarlo, e lo
-skill tree ha due anelli: quattro rami, quattordici nodi, quattro
-prerequisiti (sezione 6).
+**Stato: campagna completa.** Nove livelli concatenati in tre atti —
+Attracco, Condotti, Molo · Anello Esterno, Condotte del Refrigerante,
+Nucleo · Plancia, Archivio, Nido — raggiungibili da "CAMPAGNA (BETA)" nel
+menu principale, con controlli touch oltre a tastiera/mouse, ottica e
+progressione salvata in locale. Tutti e otto i trabocchetti della sezione
+4 esistono, i tre boss hanno le loro fasi (sezione 5), ARBITER commenta il
+run — nell'Atto II comincia a parlare al giocatore invece che catalogarlo,
+nel III parla di sé — e lo skill tree ha due anelli: quattro rami,
+quattordici nodi, quattro prerequisiti (sezione 6).
 
-**L'astrazione ha retto.** L'Atto II era il banco di prova dell'idea che un
-livello sia solo un dato, e la risposta è netta: i tre livelli nuovi sono
-tre oggetti in `levels.ts` e non hanno richiesto una riga in
-`CampaignWorld`. Quello che *ha* richiesto codice sono state le meccaniche
-nuove — passerelle, buio, gravità, il Custode — che è esattamente la
-divisione che si voleva: aggiungere un livello è dato, aggiungere un tipo
-di minaccia è lavoro, e si paga una volta sola.
+**Cosa ha retto e cosa no, atto per atto.** L'idea che un livello sia solo
+un dato è stata messa alla prova due volte, e le due risposte sono
+diverse in un modo istruttivo.
 
-Resta l'Atto III (sezione 2), che secondo il GDD deve ricombinare le
-minacce viste invece di aggiungerne: se è vero, dovrebbe essere quasi
-tutto dato.
+L'Atto II non ha richiesto una riga in `CampaignWorld` per i suoi tre
+livelli: sono tre oggetti in `levels.ts`. Il codice l'hanno richiesto le
+*meccaniche* nuove — passerelle, buio, gravità, il Custode — che è la
+divisione che si voleva.
+
+L'Atto III ha richiesto una modifica al modello: le stanze erano
+intervalli di colonne, e quella semplificazione *era* la linearità.
+Chiedere una geometria non lineare senza toccarla era impossibile. La
+modifica è stata piccola e i sei livelli precedenti non sono cambiati,
+ma vale la pena dirlo chiaro: l'astrazione reggeva finché i livelli si
+somigliavano. Il primo che non somigliava agli altri ha trovato il punto
+in cui il modello faceva un'assunzione invece di una descrizione.
+
+ARBITER invece non ha richiesto niente di strutturale, ed era il test
+vero: le sue tre fasi girano le macchine della Sentinella e del Custode,
+non loro imitazioni. Se avesse dovuto riscriverle sarebbe stato il segno
+che erano scritte male.
 
 Obiettivo: un loop giocabile end-to-end, per validare le meccaniche prima di
 scrivere tutto l'Atto I. Scope fissato dal briefing:
 
-- **Livelli:** sei, lineari, di 3-4 stanze ciascuno (riuso del raycaster
+- **Livelli:** nove, di 3-5 stanze ciascuno (riuso del raycaster
   esistente, nessuna mappa enorme). Raggiungere l'uscita di un livello
   apre il successivo; l'ultimo livello di ogni atto finisce col boss
-  invece che con un'uscita.
-- **Trabocchetti:** tutti e otto della sezione 4, distribuiti sui sei
-  livelli.
-- **Boss:** Sentinella del Molo alla fine dell'Atto I, Custode del
-  Reattore alla fine del II. Vulnerabilità posizionale il primo, temporale
-  il secondo; entrambi con una seconda fase a metà danni (sezione 5).
+  invece che con un'uscita. I primi sei sono lineari, quelli dell'Atto III
+  no: la Plancia si sale, l'Archivio si gira attorno.
+- **Trabocchetti:** tutti e otto della sezione 4, distribuiti sui nove
+  livelli. L'Atto III non ne aggiunge: li ricombina, che è quello che il
+  GDD gli chiede. Se avesse avuto bisogno di una trappola inedita per
+  essere interessante, vorrebbe dire che le otto precedenti non erano
+  abbastanza.
+- **Boss:** Sentinella del Molo (Atto I), Custode del Reattore (II),
+  ARBITER (III). Vulnerabilità posizionale il primo, temporale il secondo,
+  entrambe più i moduli il terzo (sezione 5).
 - **Morte:** checkpoint di stanza (regola "Tutorial" sopra).
 - **Skill tree:** quattro rami su due anelli (sezione 6), quattordici
   nodi, sbloccabili con punti abilità guadagnati salendo di livello

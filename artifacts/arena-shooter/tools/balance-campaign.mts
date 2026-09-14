@@ -20,6 +20,7 @@ import {
   BOSS_ENRAGE_AT,
   BOSS_GUARD_ENRAGED_MS,
   BOSS_GUARD_MS,
+  ARBITER_HITS_TO_DEFEAT,
   BOSS_HITS_TO_DEFEAT,
   BOSS_RECOVER_ENRAGED_MS,
   CUSTODE_EXPOSED_ENRAGED_MS,
@@ -41,8 +42,8 @@ import {
   XP_TURRET_DOWN,
   levelForXp,
 } from '../src/sim/campaign/constants';
-import { ACT_ONE, ACT_TWO, ALL_LEVELS } from '../src/sim/campaign/levels';
-import { roomAtTx } from '../src/sim/campaign/levelTypes';
+import { ACTS, ALL_LEVELS } from '../src/sim/campaign/levels';
+import { roomAt } from '../src/sim/campaign/levelTypes';
 
 const NODES = ALL_SKILL_NODES.length;
 const BIGGEST_BRANCH = Math.max(...SKILL_TREE.map((b) => b.nodes.length));
@@ -66,7 +67,7 @@ interface Stop {
  *  soltanto. */
 function stopsFor(level: (typeof ALL_LEVELS)[number], thorough: boolean): Stop[] {
   const stops: Stop[] = [];
-  const spawnRoom = roomAtTx(level, level.spawn.tx);
+  const spawnRoom = roomAt(level, level.spawn.tx, level.spawn.ty);
 
   // Le stanze pagano il bonus d'ingresso, tranne quella di partenza:
   // in quella non si "entra".
@@ -84,7 +85,11 @@ function stopsFor(level: (typeof ALL_LEVELS)[number], thorough: boolean): Stop[]
   }
   if (level.boss) {
     const hits =
-      level.boss.kind === 'custode' ? CUSTODE_HITS_TO_DEFEAT : BOSS_HITS_TO_DEFEAT;
+      level.boss.kind === 'custode'
+        ? CUSTODE_HITS_TO_DEFEAT
+        : level.boss.kind === 'arbiter'
+          ? ARBITER_HITS_TO_DEFEAT
+          : BOSS_HITS_TO_DEFEAT;
     for (let i = 1; i <= hits; i++) {
       const kills = i === hits;
       stops.push({
@@ -136,7 +141,7 @@ function walkAct(label: string, thorough: boolean, verbose: boolean): Walk {
 }
 
 console.log('CAMPAGNA — BILANCIAMENTO');
-console.log(`\nAtti: ${ACT_ONE.length} + ${ACT_TWO.length} livelli`);
+console.log(`\nAtti: ${ACTS.map((a) => a.length).join(' + ')} livelli`);
 console.log(`\nSoglie di livello: ${LEVEL_XP_THRESHOLDS.join(', ')}`);
 console.log(`Nodi sbloccabili: ${NODES}`);
 for (const b of SKILL_TREE) console.log(`  ${b.name.padEnd(16)} ${b.nodes.length} nodi`);
@@ -149,7 +154,7 @@ const rushed = walkAct('Tira dritto (niente core, niente turret)', false, false)
 function pointsPerAct(w: Walk): number[] {
   const out: number[] = [];
   let seen = 0;
-  for (const act of [ACT_ONE, ACT_TWO]) {
+  for (const act of ACTS) {
     seen += act.length;
     out.push(w.perLevel[seen - 1]!);
   }
@@ -172,18 +177,25 @@ console.log(
 );
 
 console.log(
-  `\n  1b. Il primo anello dell'albero si compra nell'Atto I, il secondo\n` +
-    `      nell'Atto II\n` +
+  `\n  1b. L'albero si riempie lungo tutta la campagna, non dentro un atto\n` +
     `     punti a fine atto, esplorando: ${pointsPerAct(thorough).join(' → ')} su ${NODES}`,
 );
 
+// Due invarianti, non una. La prima stesura chiedeva a *entrambi* i
+// profili di guadagnare un punto in ogni livello, e con tre atti non
+// si può: una tabella sola non può essere fitta in basso per chi tira
+// dritto e larga in alto per chi esplora. La domanda giusta non è se
+// paghino tutti e due allo stesso ritmo — è se esplorare paghi.
 console.log(
-  `\n  2. L'albero si apre lungo tutta la campagna, non tutto in fondo\n` +
-    `     punti a fine livello, esplorando: ${thorough.perLevel.join(' → ')} → ${
-      gainsEveryLevel(thorough) ? 'SÌ' : 'NO'
-    }\n` +
-    `     punti a fine livello, tirando dritto: ${rushed.perLevel.join(' → ')} → ${
-      gainsEveryLevel(rushed) ? 'SÌ' : 'NO'
+  `\n  2a. Chi esplora guadagna qualcosa in ogni livello\n` +
+    `     ${thorough.perLevel.join(' → ')} → ${gainsEveryLevel(thorough) ? 'SÌ' : 'NO'}`,
+);
+
+console.log(
+  `\n  2b. Chi tira dritto arriva in fondo con molto meno albero\n` +
+    `     ${rushed.perLevel.join(' → ')}\n` +
+    `     ${pointsAt(rushed.xp)} nodi contro ${pointsAt(thorough.xp)} → ${
+      pointsAt(rushed.xp) < pointsAt(thorough.xp) ? 'SÌ' : 'NO'
     }`,
 );
 

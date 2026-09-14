@@ -18,9 +18,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { TICK_MS, TILE } from '../constants';
+import { ARBITER_CORE_HITS, ARBITER_HITS_TO_DEFEAT } from './constants';
 import { COLLAPSE_HOLD_MS, GAS_LINGER_MS, TURRET_COOLDOWN_MS } from './constants';
 import { ACT_ONE, ACT_TWO, ALL_LEVELS, LEVEL_CONDOTTI, levelById } from './levels';
-import { roomAtTx, tileAt, type LevelDef, type TilePos } from './levelTypes';
+import { roomAt, tileAt, type LevelDef, type TilePos } from './levelTypes';
 import { campHasLOS } from './raycast';
 import { centre, condotti } from './testSupport';
 import { emptyCampaignInput, type CampaignInput } from './types';
@@ -123,14 +124,37 @@ describe('campagna — struttura delle mappe', () => {
         }
       });
 
-      it('le stanze coprono ogni colonna una volta sola, in ordine', () => {
-        let expectedFrom = 0;
-        for (const room of level.rooms) {
-          expect(room.fromTx, room.id).toBe(expectedFrom);
-          expect(room.toTx).toBeGreaterThanOrEqual(room.fromTx);
-          expectedFrom = room.toTx + 1;
+      it('ogni tile calpestabile appartiene a una stanza dichiarata', () => {
+        // Con le stanze a intervalli di colonne bastava controllare che
+        // gli intervalli coprissero la larghezza. Coi rettangoli quella
+        // verifica non dice più niente — due stanze possono affiancarsi
+        // in verticale — mentre la proprietà che conta è sempre stata
+        // questa: nessun pezzo di pavimento fuori da ogni stanza, o il
+        // checkpoint ci passerebbe sopra senza sapere dove si trova.
+        for (let ty = 0; ty < level.height; ty++) {
+          for (let tx = 0; tx < level.width; tx++) {
+            if (tileAt(level, tx, ty) !== 0) continue;
+            const id = roomAt(level, tx, ty);
+            expect(
+              level.rooms.some((r) => r.id === id),
+              `tile (${tx},${ty})`,
+            ).toBe(true);
+          }
         }
-        expect(expectedFrom).toBe(level.width);
+      });
+
+      it('nessuna stanza dichiarata è vuota', () => {
+        // Una stanza senza pavimento è un'etichetta che il giocatore non
+        // vedrà mai, e più probabilmente un rettangolo sbagliato.
+        for (const room of level.rooms) {
+          let floors = 0;
+          for (let ty = room.fromTy ?? 0; ty <= (room.toTy ?? level.height - 1); ty++) {
+            for (let tx = room.fromTx; tx <= room.toTx; tx++) {
+              if (tileAt(level, tx, ty) === 0) floors++;
+            }
+          }
+          expect(floors, `stanza ${room.id}`).toBeGreaterThan(0);
+        }
       });
 
       it('ogni entità sta su un tile calpestabile', () => {
@@ -192,12 +216,6 @@ describe('campagna — struttura delle mappe', () => {
         }
       });
 
-      it('le stanze sono attribuite alle colonne senza buchi', () => {
-        for (let tx = 0; tx < level.width; tx++) {
-          const id = roomAtTx(level, tx);
-          expect(level.rooms.some((r) => r.id === id), `colonna ${tx}`).toBe(true);
-        }
-      });
     });
   }
 
@@ -481,20 +499,24 @@ describe('passaggio di livello', () => {
   });
 
   it('chiudere l’ultimo livello della campagna è una vittoria, non un passaggio', () => {
-    const world = new CampaignWorld(levelById('nucleo'));
+    const world = new CampaignWorld(levelById('nido'));
     const boss = world.state.boss!;
-    world.state.checkpoint = { room: 'nucleo', x: boss.x - 60, y: boss.y, angle: 0 };
-    // Il Custode si colpisce quando è scoperto, da qualsiasi angolo.
-    boss.phase = 'exposed';
-    boss.phaseTimer = 5000;
-    boss.damageTaken = 99;
-    world.state.player.x = boss.x - 60;
+    world.state.checkpoint = { room: 'nido', x: boss.x - 90, y: boss.y, angle: 0 };
+    world.state.player.x = boss.x - 90;
     world.state.player.y = boss.y;
+
+    // ARBITER si finisce nella terza fase, col nucleo aperto: un colpo
+    // dal davanti mentre è sigillato non lo scalfisce.
+    boss.stage = 3;
+    boss.phase = 'coreOpen';
+    boss.phaseTimer = 5000;
+    boss.stageDamage = ARBITER_CORE_HITS - 1;
+    boss.damageTaken = ARBITER_HITS_TO_DEFEAT - 1;
 
     const events = world.step(input({ aimAngle: 0, fire: true }));
     expect(events.some((e) => e.type === 'bossDefeated')).toBe(true);
     const done = events.find((e) => e.type === 'levelCompleted');
-    expect(done).toMatchObject({ levelId: 'nucleo', next: null });
+    expect(done).toMatchObject({ levelId: 'nido', next: null });
     expect(world.state.outcome).toBe('victory');
   });
 });
@@ -663,6 +685,7 @@ describe('attraversabilità', () => {
   for (const [levelId, room] of [
     ['molo', 'molo'],
     ['nucleo', 'nucleo'],
+    ['nido', 'nido'],
   ] as const) {
     it(`si arriva alla stanza del boss di ${levelId}`, () => {
       const level = levelById(levelId);

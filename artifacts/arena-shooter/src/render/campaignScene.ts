@@ -207,6 +207,12 @@ const BOSS_PHASE_COLOR: Record<BossPhase, string> = {
   invert: '#6a4a90',
   tell: '#ffb020',
   exposed: '#ff5c3b',
+  // ARBITER: bianco freddo dietro i moduli, poi i colori delle due
+  // macchine che riusa, poi l'ambra della finestra finale.
+  modules: '#cfd8e8',
+  coreSealed: '#6a7a9a',
+  coreOpening: '#ffb020',
+  coreOpen: '#ffd166',
   defeated: '#3d6b4a',
 };
 
@@ -272,6 +278,90 @@ function drawCustode(
     ctx.fill();
   }
 
+  ctx.restore();
+}
+
+/** ARBITER. Il disegno racconta le tre fasi: gli anelli dei moduli
+ *  ancora vivi, il corpo che diventa un cingolato quando comincia a
+ *  cacciare, il nucleo che si apre alla fine. */
+function drawArbiter(
+  ctx: CanvasRenderingContext2D,
+  screenX: number,
+  floorY: number,
+  tileH: number,
+  cam: CameraView,
+  boss: BossState,
+  modulesAlive: number,
+  nowMs: number,
+): void {
+  const color = BOSS_PHASE_COLOR[boss.phase];
+  const h = tileH * 1.7;
+  const w = tileH * 0.6;
+  const top = floorY - h;
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1.5, tileH * 0.045);
+
+  // Corpo: sempre lo stesso profilo, così è riconoscibile fra una
+  // fase e l'altra. Cambia cosa gli gira attorno.
+  ctx.strokeRect(screenX - w / 2, top, w, h);
+  ctx.beginPath();
+  ctx.moveTo(screenX - w / 2, top + h * 0.25);
+  ctx.lineTo(screenX + w / 2, top + h * 0.25);
+  ctx.moveTo(screenX - w / 2, top + h * 0.75);
+  ctx.lineTo(screenX + w / 2, top + h * 0.75);
+  ctx.stroke();
+
+  if (boss.stage === 1) {
+    // Un anello per modulo ancora in piedi: si vede a colpo d'occhio
+    // quanto manca, senza leggere la HUD.
+    for (let i = 0; i < modulesAlive; i++) {
+      const spin = nowMs * 0.0016 + (i * Math.PI * 2) / Math.max(1, modulesAlive);
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+      ctx.ellipse(
+        screenX,
+        top + h * 0.5,
+        w * (1.1 + i * 0.22),
+        w * 0.3,
+        spin,
+        0,
+        Math.PI * 2,
+      );
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (boss.stage === 2) {
+    // In caccia mostra lo scudo frontale, come la Sentinella: è lo
+    // stesso indizio per la stessa regola.
+    const toCam = Math.atan2(cam.y - boss.y, cam.x - boss.x);
+    const facing = Math.cos(toCam - boss.angle);
+    ctx.globalAlpha = facing > 0 ? 0.9 : 0.25;
+    ctx.beginPath();
+    ctx.arc(screenX, top + h * 0.5, w * 0.95, -0.9, 0.9);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  // Terza fase: il nucleo. Chiuso è una scheggia, aperto è un sole.
+  const open = boss.phase === 'coreOpen';
+  const r = tileH * (open ? 0.26 : 0.08) * (open ? 1 + Math.sin(nowMs * 0.018) * 0.1 : 1);
+  ctx.globalAlpha = open ? 0.95 : 0.55;
+  ctx.fillStyle = open ? '#ffd166' : color;
+  ctx.beginPath();
+  ctx.arc(screenX, top + h * 0.5, r, 0, Math.PI * 2);
+  ctx.fill();
+  if (open) {
+    ctx.globalAlpha = 0.28;
+    ctx.beginPath();
+    ctx.arc(screenX, top + h * 0.5, r * 2.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.restore();
 }
 
@@ -573,12 +663,18 @@ export function renderCampaignScenery(
 
   const boss = state.boss;
   if (boss) {
-    const custode = level.boss?.kind === 'custode';
+    const kind = level.boss?.kind;
+    const modulesAlive = (level.boss?.moduleTurretIds ?? []).filter((id) =>
+      state.turrets.some((t) => t.id === id && t.alive),
+    ).length;
     push(boss.x, boss.y, 0.5, (screenX, _y, tileH, perp) => {
       const floorY = heightToScreenY(vp, fx, perp, 0);
-      return custode
-        ? () => drawCustode(ctx, screenX, floorY, tileH, boss, nowMs)
-        : () => drawBoss(ctx, screenX, floorY, tileH, cam, boss, hasGraze, enraged, nowMs);
+      if (kind === 'custode') return () => drawCustode(ctx, screenX, floorY, tileH, boss, nowMs);
+      if (kind === 'arbiter') {
+        return () =>
+          drawArbiter(ctx, screenX, floorY, tileH, cam, boss, modulesAlive, nowMs);
+      }
+      return () => drawBoss(ctx, screenX, floorY, tileH, cam, boss, hasGraze, enraged, nowMs);
     });
   }
 

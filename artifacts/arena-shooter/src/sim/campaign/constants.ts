@@ -141,11 +141,12 @@ export const XP_BOSS_DEFEAT = 150;
  *  verifica `balance:campaign`, che le ricalcola invece di fidarsi di
  *  questo commento. */
 export const LEVEL_XP_THRESHOLDS: readonly number[] = [
-  // Atto I: i primi dieci punti, cioè il primo anello dell'albero.
-  0, 35, 70, 110, 155, 205, 260, 320, 385, 430, 560,
-  // Atto II: i quattro del secondo anello, uno per atto-livello più
-  // quello che arriva col Custode.
-  760, 900, 1080, 1280,
+  // Tarata sul percorso di chi esplora e ripulisce: un punto o due per
+  // livello, dal primo all'ultimo, e il quattordicesimo che arriva col
+  // colpo finale. Le cifre esatte le ricalcola `balance:campaign`
+  // camminando i livelli veri — questa lista è il risultato, non la
+  // premessa.
+  0, 40, 90, 210, 430, 580, 720, 880, 1080, 1260, 1420, 1520, 1610, 1800, 2000,
 ];
 
 export function levelForXp(xp: number): number {
@@ -429,6 +430,34 @@ export const CUSTODE_ENRAGE_AT = CUSTODE_HITS_TO_DEFEAT / 2;
 export const CUSTODE_EXPOSED_ENRAGED_MS = 1000;
 export const CUSTODE_MANIPULATION_ENRAGED_MS = 5000;
 export const CUSTODE_RADIUS = ENTITY_RADIUS * 2;
+
+// ---- Boss finale: ARBITER (fine Atto III) ----
+// "Corpo modulare: fase 1 a distanza (turret multiple da disattivare
+// una a una), fase 2 ravvicinata (mobilità e schivata), fase 3 nucleo
+// scoperto con tempo limitato. Ogni fase riusa una minaccia vista in
+// atti precedenti, come test finale." (GDD sezione 5.)
+//
+// Le tre fasi non sono tre macchine nuove: sono le tre che il gioco ha
+// già insegnato, rimesse in fila. La prima è il corridoio a fuoco
+// incrociato (Atto I); la seconda è la Sentinella, con la stessa
+// logica di carica e lo stesso cono posteriore (Atto I); la terza è il
+// Custode, finestre e manipolazioni (Atto II). Il test finale è
+// saperle riconoscere, non impararne una quarta.
+
+/** Colpi sul retro per chiudere la fase di caccia. */
+export const ARBITER_HUNT_HITS = 3;
+/** Colpi nel nucleo per finirlo. */
+export const ARBITER_CORE_HITS = 3;
+export const ARBITER_HITS_TO_DEFEAT = ARBITER_HUNT_HITS + ARBITER_CORE_HITS;
+
+/** Quanto resta scoperto il nucleo prima di richiudersi. Il tempo
+ *  limitato della sezione 5: mancare la finestra non è una punizione,
+ *  è tornare alla fase di caccia e doversela riguadagnare. */
+export const ARBITER_CORE_WINDOW_MS = 5200;
+/** Manipolazione fra una finestra e l'altra, nella terza fase. */
+export const ARBITER_CORE_MANIPULATION_MS = 3200;
+export const ARBITER_CORE_TELL_MS = 700;
+export const ARBITER_RADIUS = ENTITY_RADIUS * 2;
 
 // ---- Seconda fase: la Sentinella alterata ----
 // Un solo pattern ripetuto per tutto lo scontro si impara in due cicli

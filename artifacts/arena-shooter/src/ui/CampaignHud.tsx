@@ -18,6 +18,11 @@ const BOSS_PHASE_LABEL: Record<string, string> = {
   invert: 'CAPOVOLGE',
   tell: 'SI APRE',
   exposed: 'SCOPERTO',
+  // ARBITER
+  modules: 'MODULI ATTIVI',
+  coreSealed: 'NUCLEO SIGILLATO',
+  coreOpening: 'NUCLEO IN APERTURA',
+  coreOpen: 'NUCLEO SCOPERTO',
   defeated: 'ABBATTUTO',
 };
 
@@ -147,7 +152,8 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
             style={snap.bossEnraged ? { color: '#ff7a2f', borderColor: '#ff7a2f' } : undefined}
           >
             {snap.bossName}
-            {snap.bossEnraged ? ' ALTERAT' + (snap.bossName === 'SENTINELLA' ? 'A' : 'O') : ''} —{' '}
+            {snap.bossEnraged ? ' ALTERAT' + (snap.bossName === 'SENTINELLA' ? 'A' : 'O') : ''}
+            {snap.bossStage !== null && ` · FASE ${snap.bossStage}/3`} —{' '}
             {BOSS_PHASE_LABEL[snap.bossPhase] ?? snap.bossPhase} · {snap.bossDamageTaken}/
             {snap.bossHitsToDefeat}
           </div>
