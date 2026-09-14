@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest';
 
 import { TICK_MS, TILE } from '../constants';
 import { COLLAPSE_HOLD_MS, GAS_LINGER_MS, TURRET_COOLDOWN_MS } from './constants';
-import { ACT_ONE, LEVEL_CONDOTTI, levelById } from './levels';
+import { ACT_ONE, ACT_TWO, ALL_LEVELS, LEVEL_CONDOTTI, levelById } from './levels';
 import { roomAtTx, tileAt, type LevelDef, type TilePos } from './levelTypes';
 import { campHasLOS } from './raycast';
 import { centre, condotti } from './testSupport';
@@ -33,7 +33,7 @@ function input(over: Partial<CampaignInput> = {}): CampaignInput {
 /** Tutti i tile raggiungibili a piedi dallo spawn, in ampiezza. È la
  *  domanda che conta su una mappa: non "è scritta bene" ma "ci si
  *  cammina". */
-function reachable(level: LevelDef): Set<string> {
+function reachable(level: LevelDef, blocked?: ReadonlySet<string>): Set<string> {
   const seen = new Set<string>();
   const queue: TilePos[] = [level.spawn];
   seen.add(`${level.spawn.tx},${level.spawn.ty}`);
@@ -51,6 +51,7 @@ function reachable(level: LevelDef): Set<string> {
       const key = `${nx},${ny}`;
       if (seen.has(key)) continue;
       if (tileAt(level, nx, ny) !== 0) continue;
+      if (blocked?.has(key)) continue;
       seen.add(key);
       queue.push({ tx: nx, ty: ny });
     }
@@ -58,16 +59,44 @@ function reachable(level: LevelDef): Set<string> {
   return seen;
 }
 
-describe('Atto I — struttura delle mappe', () => {
-  it('ha tre livelli, numerati in ordine e concatenati fino alla fine', () => {
-    expect(ACT_ONE.map((l) => l.ordinal)).toEqual([1, 2, 3]);
-    expect(ACT_ONE[0]!.next).toBe(ACT_ONE[1]!.id);
-    expect(ACT_ONE[1]!.next).toBe(ACT_ONE[2]!.id);
-    // L'ultimo chiude l'atto: nessun livello dopo, e il boss al posto
-    // dell'uscita.
-    expect(ACT_ONE[2]!.next).toBeNull();
-    expect(ACT_ONE[2]!.exit).toBeNull();
-    expect(ACT_ONE[2]!.boss).not.toBeNull();
+describe('campagna — struttura delle mappe', () => {
+  it('ogni atto ha tre livelli numerati in ordine, e la catena non si spezza', () => {
+    for (const act of [ACT_ONE, ACT_TWO]) {
+      expect(act.map((l) => l.ordinal)).toEqual([1, 2, 3]);
+      expect(new Set(act.map((l) => l.act)).size).toBe(1);
+      // L'ultimo livello di un atto chiude con un boss invece che con
+      // un'uscita, ma non chiude la campagna finché c'è un atto dopo.
+      expect(act[2]!.exit).toBeNull();
+      expect(act[2]!.boss).not.toBeNull();
+    }
+
+    // La catena attraversa gli atti: ogni livello punta al successivo,
+    // e solo l'ultimo in assoluto non punta a niente.
+    for (let i = 0; i < ALL_LEVELS.length - 1; i++) {
+      expect(ALL_LEVELS[i]!.next, ALL_LEVELS[i]!.id).toBe(ALL_LEVELS[i + 1]!.id);
+    }
+    expect(ALL_LEVELS[ALL_LEVELS.length - 1]!.next).toBeNull();
+  });
+
+  it('ogni voragine ha una strada alternativa a piedi', () => {
+    // Le passerelle sono l'unico punto in cui un nodo dell'albero
+    // cambia la geometria di un livello. Un nodo facoltativo non può
+    // diventare un requisito di sblocco, quindi la fine del livello
+    // deve restare raggiungibile anche trattando ogni voragine come
+    // invalicabile.
+    for (const level of ALL_LEVELS) {
+      if (level.chasms.length === 0) continue;
+      const blocked = new Set<string>();
+      for (const c of level.chasms) {
+        for (const t of c.tiles) blocked.add(`${t.tx},${t.ty}`);
+      }
+      const seen = reachable(level, blocked);
+      const target = level.exit ?? level.boss!;
+      expect(
+        seen.has(`${target.tx},${target.ty}`),
+        `${level.name}: senza lo Scatto non si arriva alla fine`,
+      ).toBe(true);
+    }
   });
 
   it('un livello senza boss ha sempre un’uscita, e viceversa', () => {
@@ -79,8 +108,8 @@ describe('Atto I — struttura delle mappe', () => {
     }
   });
 
-  for (const level of ACT_ONE) {
-    describe(`${level.ordinal} — ${level.name}`, () => {
+  for (const level of ALL_LEVELS) {
+    describe(`${level.act}.${level.ordinal} — ${level.name}`, () => {
       it('la griglia ha le dimensioni dichiarate ed è chiusa dai muri', () => {
         expect(level.tiles.length).toBe(level.height);
         for (const row of level.tiles) expect(row.length).toBe(level.width);
@@ -171,6 +200,34 @@ describe('Atto I — struttura delle mappe', () => {
       });
     });
   }
+
+  it('se una turret ti vede, tu vedi lei', () => {
+    // La linea di vista deve essere simmetrica, o esistono punti in cui
+    // si viene colpiti da qualcosa a cui non si può rispondere. Il DDA
+    // che rade uno spigolo può decidere diversamente a seconda di dove
+    // parte: su queste sei mappe c'erano nove coppie così, quattro
+    // delle quali a sfavore del giocatore. Il controllo è esaustivo —
+    // ogni turret contro ogni tile calpestabile — perché una manciata
+    // di casi su tremila non si trova giocando.
+    for (const level of ALL_LEVELS) {
+      const get = (tx: number, ty: number): number => tileAt(level, tx, ty);
+      for (let ty = 0; ty < level.height; ty++) {
+        for (let tx = 0; tx < level.width; tx++) {
+          if (get(tx, ty) !== 0) continue;
+          const px = (tx + 0.5) * TILE;
+          const py = (ty + 0.5) * TILE;
+          for (const t of level.turrets) {
+            const sx = (t.tx + 0.5) * TILE;
+            const sy = (t.ty + 0.5) * TILE;
+            expect(
+              campHasLOS(get, sx, sy, px, py, level.width, level.height),
+              `${level.id} ${t.id} → (${tx},${ty})`,
+            ).toBe(campHasLOS(get, px, py, sx, sy, level.width, level.height));
+          }
+        }
+      }
+    }
+  });
 
   it('un id di livello sconosciuto ricade sul primo invece di esplodere', () => {
     // Un profilo salvato può nominare un livello che non esiste più.
@@ -423,22 +480,21 @@ describe('passaggio di livello', () => {
     expect(next.state.player.shieldCharges).toBe(0);
   });
 
-  it('chiudere l’ultimo livello è una vittoria, non un passaggio', () => {
-    const world = new CampaignWorld(levelById('molo'));
+  it('chiudere l’ultimo livello della campagna è una vittoria, non un passaggio', () => {
+    const world = new CampaignWorld(levelById('nucleo'));
     const boss = world.state.boss!;
-    world.state.checkpoint = { room: 'molo', x: boss.x - 60, y: boss.y, angle: 0 };
-    boss.phase = 'charge';
+    world.state.checkpoint = { room: 'nucleo', x: boss.x - 60, y: boss.y, angle: 0 };
+    // Il Custode si colpisce quando è scoperto, da qualsiasi angolo.
+    boss.phase = 'exposed';
+    boss.phaseTimer = 5000;
     boss.damageTaken = 99;
     world.state.player.x = boss.x - 60;
     world.state.player.y = boss.y;
-    // Alle spalle del boss, che guarda a ovest per default.
-    boss.angle = 0;
-    world.state.player.x = boss.x - 60;
 
     const events = world.step(input({ aimAngle: 0, fire: true }));
     expect(events.some((e) => e.type === 'bossDefeated')).toBe(true);
     const done = events.find((e) => e.type === 'levelCompleted');
-    expect(done).toMatchObject({ levelId: 'molo', next: null });
+    expect(done).toMatchObject({ levelId: 'nucleo', next: null });
     expect(world.state.outcome).toBe('victory');
   });
 });
@@ -470,12 +526,23 @@ interface BotRun {
 /** Direzione del prossimo passo verso `goal`, calcolata in ampiezza
  *  sulla mappa viva (porte sigillate comprese). Serve al bot per
  *  girare gli angoli: la chicane della galleria è fatta apposta per
- *  spezzare la linea retta. */
+ *  spezzare la linea retta.
+ *
+ *  Le voragini contano come invalicabili, perché il bot non usa lo
+ *  Scatto. Non è una semplificazione: è *il punto*. Se il bot arriva
+ *  in fondo aggirandole, allora la strada alternativa a piedi esiste
+ *  davvero e il nodo Scatto è rimasto una scorciatoia invece di
+ *  diventare un requisito. Senza questo, il bot cadeva nel vuoto e ci
+ *  ricadeva in eterno — zero morti e zero progressi. */
 function stepToward(
   world: CampaignWorld,
   level: LevelDef,
   goal: TilePos,
 ): number | null {
+  const voids = new Set<string>();
+  for (const c of level.chasms) {
+    for (const t of c.tiles) voids.add(`${t.tx},${t.ty}`);
+  }
   const from = {
     tx: Math.floor(world.state.player.x / TILE),
     ty: Math.floor(world.state.player.y / TILE),
@@ -501,6 +568,7 @@ function stepToward(
       const key = `${nx},${ny}`;
       if (dist.has(key)) continue;
       if (world.getTile(nx, ny) !== 0) continue;
+      if (voids.has(key)) continue;
       dist.set(key, d + 1);
       queue.push({ tx: nx, ty: ny });
     }
@@ -576,7 +644,7 @@ function botCross(
 }
 
 describe('attraversabilità', () => {
-  for (const level of ACT_ONE.filter((l) => l.exit !== null)) {
+  for (const level of ALL_LEVELS.filter((l) => l.exit !== null)) {
     it(`${level.name} si attraversa sparando alle turret e camminando`, () => {
       const run = botCross(level);
       expect(run.completed, `morti: ${run.deaths}`).toBe(true);
@@ -587,14 +655,20 @@ describe('attraversabilità', () => {
     });
   }
 
-  it('la galleria del Molo si attraversa fino alla stanza del boss', () => {
-    // Il terzo livello non ha uscita: finisce col boss, che il bot non
-    // sa combattere (richiede di girargli dietro durante la carica).
-    // Quello che si può verificare è che la galleria — cioè il pezzo
-    // di level design nuovo — si superi.
-    const level = levelById('molo');
-    const run = botCross(level, 90, (w) => w.state.checkpoint.room === 'molo');
-    expect(run.completed, `morti: ${run.deaths}`).toBe(true);
-    expect(run.deaths).toBeLessThan(6);
-  });
+  // I livelli con boss non hanno uscita: finiscono col boss, che il bot
+  // non sa combattere (l'uno chiede di girargli dietro durante la
+  // carica, l'altro di aspettare la finestra). Quello che si verifica è
+  // che si arrivi alla sua stanza — cioè che il level design nuovo,
+  // galleria e anticamera, si superi.
+  for (const [levelId, room] of [
+    ['molo', 'molo'],
+    ['nucleo', 'nucleo'],
+  ] as const) {
+    it(`si arriva alla stanza del boss di ${levelId}`, () => {
+      const level = levelById(levelId);
+      const run = botCross(level, 90, (w) => w.state.checkpoint.room === room);
+      expect(run.completed, `morti: ${run.deaths}`).toBe(true);
+      expect(run.deaths).toBeLessThan(6);
+    });
+  }
 });

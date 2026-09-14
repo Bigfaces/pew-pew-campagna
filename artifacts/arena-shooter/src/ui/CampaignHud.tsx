@@ -8,12 +8,20 @@ import { prereqMet } from '../sim/campaign/skills';
 import type { CampaignHudSnapshot } from '../game/campaignGame';
 
 const BOSS_PHASE_LABEL: Record<string, string> = {
+  // Sentinella
   guard: 'IN GUARDIA',
   telegraph: 'SI PREPARA',
   charge: 'CARICA',
   recover: 'SCOPERTA',
-  defeated: 'ABBATTUTA',
+  // Custode
+  blackout: 'SPEGNE LE LUCI',
+  invert: 'CAPOVOLGE',
+  tell: 'SI APRE',
+  exposed: 'SCOPERTO',
+  defeated: 'ABBATTUTO',
 };
+
+const ACT_LABEL: Record<number, string> = { 1: 'I', 2: 'II', 3: 'III' };
 
 /** 0..1 progress through the current level's XP band. `null` next
  *  threshold means the top of the table — shown as a full bar rather
@@ -125,7 +133,8 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
             esattamente il modo in cui una stanza nuova finirebbe per
             chiamarsi `undefined`. */}
         <div className="hud-clock">
-          {snap.levelOrdinal}/{snap.levelCount} · {snap.room}
+          {ACT_LABEL[snap.levelAct] ?? snap.levelAct} · {snap.levelOrdinal}/
+          {snap.levelCount} · {snap.room}
         </div>
         {snap.door.armed && (
           <div className="hud-clock" data-urgent>
@@ -137,7 +146,8 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
             className="hud-clock"
             style={snap.bossEnraged ? { color: '#ff7a2f', borderColor: '#ff7a2f' } : undefined}
           >
-            SENTINELLA{snap.bossEnraged ? ' ALTERATA' : ''} —{' '}
+            {snap.bossName}
+            {snap.bossEnraged ? ' ALTERAT' + (snap.bossName === 'SENTINELLA' ? 'A' : 'O') : ''} —{' '}
             {BOSS_PHASE_LABEL[snap.bossPhase] ?? snap.bossPhase} · {snap.bossDamageTaken}/
             {snap.bossHitsToDefeat}
           </div>
@@ -163,6 +173,16 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
         {snap.blinded && (
           <div className="hud-clock" style={{ color: '#9bff8c', borderColor: '#9bff8c' }}>
             SENSORI CIECHI
+          </div>
+        )}
+        {snap.dark && (
+          <div className="hud-clock" style={{ color: '#8fa8d8', borderColor: '#8fa8d8' }}>
+            BUIO
+          </div>
+        )}
+        {snap.gravityInverted && (
+          <div className="hud-clock" style={{ color: '#b07adf', borderColor: '#b07adf' }}>
+            GRAVITÀ INVERTITA
           </div>
         )}
         {snap.muted && <div className="hud-muted">AUDIO MUTO · M</div>}
@@ -266,9 +286,11 @@ export function CampaignEndScreen({
     <div className="overlay">
       <div className="panel">
         <h1 className="title" style={{ fontSize: 34 }}>
-          SENTINELLA ABBATTUTA
+          {snap.bossName} ABBATTUT{snap.bossName === 'SENTINELLA' ? 'A' : 'O'}
         </h1>
-        <p className="subtitle">IL MOLO È LIBERO — FINE DELLA VERTICAL SLICE</p>
+        <p className="subtitle">
+          FINE DELL’ATTO {ACT_LABEL[snap.levelAct] ?? snap.levelAct}
+        </p>
         <p className="hint">
           Livello {snap.level} · {snap.xp} XP · Core raccolti: {snap.coresCollected} · Nodi
           sbloccati: {snap.unlockedNodes.length} / {ALL_SKILL_NODES.length}

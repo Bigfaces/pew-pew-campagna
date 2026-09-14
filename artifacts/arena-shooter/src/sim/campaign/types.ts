@@ -15,7 +15,21 @@
 
 export type RoomId = string;
 
-export type BossPhase = 'guard' | 'telegraph' | 'charge' | 'recover' | 'defeated';
+/** Le fasi della Sentinella e quelle del Custode in un tipo solo. Non
+ *  si mescolano mai — ogni boss gira la sua macchina — ma tenerle
+ *  separate vorrebbe dire due tipi di BossState quasi identici, e la
+ *  HUD dovrebbe sapere quale sta guardando per leggerne la fase. */
+export type BossPhase =
+  | 'guard'
+  | 'telegraph'
+  | 'charge'
+  | 'recover'
+  // Custode: manipola l'ambiente, poi si scopre.
+  | 'blackout'
+  | 'invert'
+  | 'tell'
+  | 'exposed'
+  | 'defeated';
 
 export interface CampaignInput {
   /** Movement intent in entity-local space: +1 forward, -1 back. */
@@ -68,9 +82,19 @@ export interface CampaignPlayer {
   /** Direzione dello scatto in corso, congelata all'avvio. */
   dashDirX: number;
   dashDirY: number;
+  /** px/tick dello scatto in corso, congelata anch'essa: il nodo
+   *  Slancio la alza, e leggerla dai nodi a ogni tick vorrebbe dire
+   *  che sbloccarlo *durante* uno scatto lo accelererebbe a metà. */
+  dashSpeed: number;
   /** ms di accecamento residuo dal gas: niente minimappa, niente
    *  ottica. Non fa danno — toglie informazione. */
   empMs: number;
+  /** ms di buio residuo. Come empMs ma toglie la *vista*, non i
+   *  sensori: al buio la minimappa resta, ed è il punto. */
+  darkMs: number;
+  /** Il mondo è capovolto: la vista si ribalta e lo strafe si
+   *  specchia (a meno del nodo Ancoraggio). */
+  gravityFlipped: boolean;
 }
 
 export interface DoorState {
@@ -91,6 +115,14 @@ export interface TurretState {
    *  whenever line of sight is lost. */
   reactionTimer: number;
   fireCooldown: number;
+}
+
+/** Le passerelle non hanno stato proprio: il vuoto è sempre vuoto.
+ *  Quello che varia è da quanto il giocatore ci sta sopra, e quello sta
+ *  sul giocatore perché è uno solo. */
+export interface ChasmState {
+  id: string;
+  hoverMs: number;
 }
 
 export interface CollapsingFloorState {
@@ -192,6 +224,7 @@ export interface CampaignState {
   doors: DoorState[];
   turrets: TurretState[];
   collapsingFloors: CollapsingFloorState[];
+  chasms: ChasmState[];
   cores: CoreState[];
   shields: ShieldPickupState[];
   coresCollected: number;
@@ -227,8 +260,13 @@ export type CampaignEvent =
   | { type: 'dashStarted' }
   | { type: 'turretDown'; id: string; kind: 'drone' | 'turret' }
   | { type: 'floorCollapsed'; id: string }
+  | { type: 'fellIntoChasm'; id: string }
   | { type: 'gasEntered' }
   | { type: 'gasCleared' }
+  | { type: 'blackoutEntered' }
+  | { type: 'blackoutCleared' }
+  | { type: 'gravityFlipped'; inverted: boolean }
+  | { type: 'bossExposed' }
   | { type: 'bossHit'; damage: number; phase: BossPhase }
   | { type: 'bossEnraged' }
   | { type: 'bossDefeated' }

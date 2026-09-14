@@ -61,6 +61,34 @@ export const COLLAPSE_RESET_MS = 2500;
  *  zona da cui si esce disorientati. */
 export const GAS_LINGER_MS = 1600;
 
+/** Passerelle sospese: quanto si può restare sul vuoto prima di
+ *  cadere.
+ *
+ *  180 ms divide i tre modi di passare su un tile di vuoto:
+ *    camminando          ~242 ms  → si cade
+ *    con Passo Lungo     ~206 ms  → si cade lo stesso
+ *    in scatto            ~97 ms  → si passa
+ *  e su due tile:
+ *    in scatto           ~194 ms  → si cade
+ *    con Slancio         ~129 ms  → si passa
+ *
+ *  Cioè: le passerelle strette chiedono lo Scatto, quelle larghe anche
+ *  lo Slancio, e camminare non basta mai — nemmeno col nodo della
+ *  velocità, che altrimenti avrebbe reso lo Scatto facoltativo per
+ *  sbaglio.
+ *
+ *  È l'unico punto del gioco in cui un nodo dell'albero cambia la
+ *  *geometria* di un livello e non una statistica, e proprio per
+ *  questo ogni voragine deve avere una strada alternativa a piedi: un
+ *  nodo facoltativo non può essere l'unico modo di finire un livello.
+ *  Lo verifica levels.test.ts. */
+export const CHASM_GRACE_MS = 180;
+
+/** Blackout: quanto resta buio dopo esserne usciti. Più corto della
+ *  coda del gas — il buio si attraversa, il contaminante ti resta
+ *  addosso. */
+export const BLACKOUT_LINGER_MS = 700;
+
 /** Quanto vicino bisogna essere all'uscita perché il livello finisca. */
 export const EXIT_RADIUS = 26;
 
@@ -86,7 +114,8 @@ export const XP_BOSS_DEFEAT = 150;
 
 /** XP cumulativa richiesta per raggiungere il livello (indice + 1).
  *
- *  Undici livelli, cioè dieci punti: esattamente i nodi dell'albero.
+ *  Quindici livelli, cioè quattordici punti: esattamente i nodi
+ *  dell'albero.
  *  Un livello oltre l'ultimo nodo darebbe punti da spendere su niente
  *  — è lo stesso motivo per cui la tabella si fermava a quattro
  *  quando il ramo costruito era solo Precisione.
@@ -97,6 +126,13 @@ export const XP_BOSS_DEFEAT = 150;
  *  — un punto guadagnato a partita finita, su un nodo che non si
  *  poteva più usare), e quel vincolo non è cambiato.
  *
+ *  La nona soglia è scesa da 455 a 430 per una ragione sola, e la
+ *  ragione l'ha trovata `balance:campaign`: chi attraversa la campagna
+ *  senza raccogliere né ripulire niente guadagnava un punto in ogni
+ *  livello tranne il quinto, dove restava fermo. Un livello che non
+ *  paga nessuno è un livello che non conta, e dal codice non si
+ *  vedeva.
+ *
  *  Quelle nuove invece accettano di proposito che un run solo non
  *  basti: dieci nodi comprabili tutti alla prima partita non sarebbero
  *  un albero, sarebbero una lista che si riempie da sola. Il primo run
@@ -105,7 +141,11 @@ export const XP_BOSS_DEFEAT = 150;
  *  verifica `balance:campaign`, che le ricalcola invece di fidarsi di
  *  questo commento. */
 export const LEVEL_XP_THRESHOLDS: readonly number[] = [
-  0, 35, 70, 110, 155, 205, 260, 320, 385, 455, 560,
+  // Atto I: i primi dieci punti, cioè il primo anello dell'albero.
+  0, 35, 70, 110, 155, 205, 260, 320, 385, 430, 560,
+  // Atto II: i quattro del secondo anello, uno per atto-livello più
+  // quello che arriva col Custode.
+  760, 900, 1080, 1280,
 ];
 
 export function levelForXp(xp: number): number {
@@ -156,7 +196,12 @@ export type SkillNodeId =
   | 'piastra-aggiuntiva'
   | 'riserva-di-bordo'
   | 'scanner-di-settore'
-  | 'lettura-termica';
+  | 'lettura-termica'
+  // Secondo anello, aperto dall'Atto II.
+  | 'mira-stabile'
+  | 'slancio'
+  | 'ancoraggio'
+  | 'sensori-inerziali';
 
 export interface SkillNodeDef {
   id: SkillNodeId;
@@ -206,6 +251,13 @@ export const SKILL_TREE: readonly SkillBranchDef[] = [
         name: 'Danno di Striscio',
         desc: 'Mezzo danno anche fuori dal cono posteriore del boss.',
       },
+      {
+        id: 'mira-stabile',
+        cost: NODE_COST,
+        name: 'Mira Stabile',
+        desc: "L'ottica regge anche nel gas e a gravità invertita.",
+        requires: 'aggancio-ottico',
+      },
     ],
   },
   {
@@ -232,6 +284,13 @@ export const SKILL_TREE: readonly SkillBranchDef[] = [
         desc: 'Durante lo scatto sei intoccabile: la carica si attraversa.',
         requires: 'scatto',
       },
+      {
+        id: 'slancio',
+        cost: NODE_COST,
+        name: 'Slancio',
+        desc: 'Scatto più lungo: le passerelle più larghe diventano passabili.',
+        requires: 'scatto',
+      },
     ],
   },
   {
@@ -250,6 +309,13 @@ export const SKILL_TREE: readonly SkillBranchDef[] = [
         cost: NODE_COST,
         name: 'Riserva di Bordo',
         desc: 'Entrare in una stanza nuova ricarica lo scudo.',
+      },
+      {
+        id: 'ancoraggio',
+        cost: NODE_COST,
+        name: 'Ancoraggio',
+        desc: 'La gravità invertita non ti specchia più i comandi.',
+        requires: 'riserva-di-bordo',
       },
     ],
   },
@@ -270,6 +336,13 @@ export const SKILL_TREE: readonly SkillBranchDef[] = [
         name: 'Lettura Termica',
         desc: 'La minimappa segna anche droni, boss, core e scudo.',
         requires: 'scanner-di-settore',
+      },
+      {
+        id: 'sensori-inerziali',
+        cost: NODE_COST,
+        name: 'Sensori Inerziali',
+        desc: 'Lo scanner regge anche dentro il contaminante.',
+        requires: 'lettura-termica',
       },
     ],
   },
@@ -301,6 +374,17 @@ export const NODE_PASSO_LUNGO_MULT = 1.18;
 export const SHIELD_CHARGES_BASE = 1;
 export const SHIELD_CHARGES_UPGRADED = 2;
 
+// Secondo anello (Atto II)
+/** Slancio: moltiplica la *velocità* dello scatto, non la durata.
+ *
+ *  Sembrava uguale e non lo è. Sul vuoto non conta quanto dura lo
+ *  scatto, conta quanti millisecondi si passano sospesi: allungare la
+ *  durata fa arrivare più lontano ma non più in fretta, quindi una
+ *  passerella larga resterebbe impossibile lo stesso. Alzando la
+ *  velocità si guadagnano tutte e due le cose insieme — più distanza
+ *  *e* meno tempo sul vuoto. */
+export const NODE_SLANCIO_SPEED_MULT = 1.5;
+
 
 // ---- Boss: Sentinella del Molo ----
 // Dove sta lo dice il livello (levels.ts); qui c'è solo com'è fatta.
@@ -320,6 +404,31 @@ export const BOSS_TURN_RATE = 0.05;
  *  small integer count of exposed hits, not a generic HP bar — see
  *  GDD.md section 6. */
 export const BOSS_HITS_TO_DEFEAT = 3;
+
+// ---- Boss: Custode del Reattore (fine Atto II) ----
+// Non insegue: "manipola l'ambiente" (GDD sezione 5). Alterna
+// blackout e inversione di gravità, e fra una manipolazione e
+// l'altra resta scoperto per una finestra breve.
+//
+// Il contrasto con la Sentinella è il punto: lì la finestra si
+// *crea* (farlo mancare, girargli dietro) ed è posizionale — solo il
+// retro. Qui la finestra *arriva* ed è temporale — da qualsiasi
+// angolo, ma solo adesso. Due boss che si battono allo stesso modo
+// sarebbero un boss solo con due skin.
+export const CUSTODE_MANIPULATION_MS = 4200;
+/** La finestra vulnerabile. Corta, ma raggiungibile da ovunque: non
+ *  c'è da guadagnare una posizione, c'è da essere pronti. */
+export const CUSTODE_EXPOSED_MS = 1500;
+/** Pausa fra la fine di una manipolazione e l'inizio della finestra:
+ *  il preavviso. Senza, la finestra sarebbe una sorpresa invece di un
+ *  appuntamento. */
+export const CUSTODE_TELL_MS = 700;
+export const CUSTODE_HITS_TO_DEFEAT = 4;
+/** Da metà danni accorcia la finestra e allunga le manipolazioni. */
+export const CUSTODE_ENRAGE_AT = CUSTODE_HITS_TO_DEFEAT / 2;
+export const CUSTODE_EXPOSED_ENRAGED_MS = 1000;
+export const CUSTODE_MANIPULATION_ENRAGED_MS = 5000;
+export const CUSTODE_RADIUS = ENTITY_RADIUS * 2;
 
 // ---- Seconda fase: la Sentinella alterata ----
 // Un solo pattern ripetuto per tutto lo scontro si impara in due cicli

@@ -44,7 +44,17 @@ import {
   BOSS_TELEGRAPH_MS,
   BOSS_TURN_RATE,
   BOSS_VOLLEY_RECOVER_MS,
+  BLACKOUT_LINGER_MS,
+  CHASM_GRACE_MS,
   CORE_PICKUP_RADIUS,
+  CUSTODE_ENRAGE_AT,
+  CUSTODE_EXPOSED_ENRAGED_MS,
+  CUSTODE_EXPOSED_MS,
+  CUSTODE_HITS_TO_DEFEAT,
+  CUSTODE_MANIPULATION_ENRAGED_MS,
+  CUSTODE_MANIPULATION_MS,
+  CUSTODE_RADIUS,
+  CUSTODE_TELL_MS,
   DASH_DURATION_MS,
   DASH_SPEED,
   RESPAWN_INVULN_MS,
@@ -71,6 +81,7 @@ import {
   hasGrazeDamage,
   isValidNode,
   movementStatsFor,
+  resistsGravityFlip,
   nodeCost,
   pointsSpent,
   prereqMet,
@@ -181,7 +192,10 @@ export class CampaignWorld {
         dashCooldown: 0,
         dashDirX: 0,
         dashDirY: 0,
+        dashSpeed: DASH_SPEED,
         empMs: 0,
+        darkMs: 0,
+        gravityFlipped: false,
       },
       doors: level.doors.map((d) => ({
         id: d.id,
@@ -204,6 +218,7 @@ export class CampaignWorld {
         collapsed: false,
         resetTimer: 0,
       })),
+      chasms: level.chasms.map((c) => ({ id: c.id, hoverMs: 0 })),
       cores: level.cores.map((d) => ({
         id: d.id,
         ...centreOf(d.tx, d.ty),
@@ -227,8 +242,9 @@ export class CampaignWorld {
         ? {
             ...centreOf(level.boss.tx, level.boss.ty),
             angle: Math.PI,
-            phase: 'guard',
-            phaseTimer: BOSS_GUARD_MS,
+            phase: level.boss.kind === 'custode' ? 'blackout' : 'guard',
+            phaseTimer:
+              level.boss.kind === 'custode' ? CUSTODE_MANIPULATION_MS : BOSS_GUARD_MS,
             damageTaken: 0,
             chargeDirX: 0,
             chargeDirY: 0,
@@ -248,12 +264,38 @@ export class CampaignWorld {
    *  che azzera il danno (vedi killPlayer). */
   get enraged(): boolean {
     const boss = this.state.boss;
-    return boss !== null && boss.damageTaken >= BOSS_ENRAGE_AT;
+    if (boss === null) return false;
+    const at = this.level.boss!.kind === 'custode' ? CUSTODE_ENRAGE_AT : BOSS_ENRAGE_AT;
+    return boss.damageTaken >= at;
   }
 
   /** Minimappa e ottica sono fuori uso: il gas le ha spente. */
   get blinded(): boolean {
     return this.state.player.empMs > 0;
+  }
+
+  /** Non si vede: blackout di settore, o il Custode che ha spento le
+   *  luci. Al buio i sensori restano — è l'opposto del gas, e il
+   *  motivo per cui le due trappole non sono la stessa. */
+  get darkness(): number {
+    const boss = this.state.boss;
+    const fromBoss = boss !== null && boss.phase === 'blackout' ? 1 : 0;
+    return Math.max(
+      fromBoss,
+      Math.min(1, this.state.player.darkMs / BLACKOUT_LINGER_MS),
+    );
+  }
+
+  /** Il mondo è capovolto. */
+  get gravityInverted(): boolean {
+    return this.state.player.gravityFlipped;
+  }
+
+  /** Colpi necessari per il boss di questo livello. */
+  get bossHitsToDefeat(): number {
+    return this.level.boss?.kind === 'custode'
+      ? CUSTODE_HITS_TO_DEFEAT
+      : BOSS_HITS_TO_DEFEAT;
   }
 
   /** Il giocatore non può essere colpito adesso. Due sorgenti, una
@@ -301,11 +343,17 @@ export class CampaignWorld {
     this.updateCheckpoint();
     this.updateDoors();
     this.updateGas();
+    this.updateBlackout();
     this.updateCollapsingFloors();
+    this.updateChasms();
     this.updateCores();
     this.updateShieldPickups();
     this.updateTurrets();
     this.updateBoss();
+    // Dopo il boss, non prima: il Custode capovolge la stanza come
+    // fase, e leggere la gravità prima di aggiornarlo la lascerebbe
+    // indietro di un tick rispetto a ciò che il giocatore vede.
+    this.updateGravity();
 
     if (input.fire) this.fireWeapon(input);
 
@@ -386,6 +434,7 @@ export class CampaignWorld {
     p.dashDirX = dx;
     p.dashDirY = dy;
     p.dashTimer = DASH_DURATION_MS;
+    p.dashSpeed = move.dashSpeed;
     p.dashCooldown = move.dashCooldownMs;
     this.events.push({ type: 'dashStarted' });
   }
@@ -400,7 +449,7 @@ export class CampaignWorld {
     // strappo da puntare *prima*, e da temporizzare.
     if (p.dashTimer > 0) {
       p.dashTimer = Math.max(0, p.dashTimer - TICK_MS);
-      campMoveEntity(this.isSolid, p, p.dashDirX * DASH_SPEED, p.dashDirY * DASH_SPEED);
+      campMoveEntity(this.isSolid, p, p.dashDirX * p.dashSpeed, p.dashDirY * p.dashSpeed);
       return;
     }
 
@@ -415,8 +464,14 @@ export class CampaignWorld {
     const rx = -Math.sin(p.angle);
     const ry = Math.cos(p.angle);
 
-    let vx = fx * forward + rx * strafe * STRAFE_MULT;
-    let vy = fy * forward + ry * strafe * STRAFE_MULT;
+    // A gravità invertita lo strafe si specchia insieme al mondo: la
+    // vista è capovolta, quindi "destra" è dall'altra parte. Il nodo
+    // Ancoraggio toglie proprio questo, e lascia solo il ribaltamento
+    // visivo.
+    const mirror =
+      p.gravityFlipped && !resistsGravityFlip(this.state.unlockedNodes) ? -1 : 1;
+    let vx = fx * forward + rx * strafe * mirror * STRAFE_MULT;
+    let vy = fy * forward + ry * strafe * mirror * STRAFE_MULT;
 
     const len = Math.hypot(vx, vy);
     if (len > 1) {
@@ -512,6 +567,73 @@ export class CampaignWorld {
 
     if (!wasBlind && p.empMs > 0) this.events.push({ type: 'gasEntered' });
     if (wasBlind && p.empMs <= 0) this.events.push({ type: 'gasCleared' });
+  }
+
+  /** Blackout. Stessa forma del gas — dentro si ricarica, fuori
+   *  scende — ma quello che toglie è la vista, non i sensori. */
+  private updateBlackout(): void {
+    const p = this.state.player;
+    const { tx, ty } = this.playerTile();
+    const zone = this.level.blackouts.find((z) =>
+      z.tiles.some((t) => t.tx === tx && t.ty === ty),
+    );
+
+    const wasDark = p.darkMs > 0;
+    if (zone) p.darkMs = zone.lingerMs;
+    else if (p.darkMs > 0) p.darkMs = Math.max(0, p.darkMs - TICK_MS);
+
+    if (!wasDark && p.darkMs > 0) this.events.push({ type: 'blackoutEntered' });
+    if (wasDark && p.darkMs <= 0) this.events.push({ type: 'blackoutCleared' });
+  }
+
+  /** Gravità alterata. Un interruttore, non una coda: uscire dal
+   *  settore rimette il mondo dritto all'istante, perché restare
+   *  capovolti fuori dalla zona che lo spiega sarebbe solo confusione
+   *  senza causa visibile.
+   *
+   *  Il Custode la usa anche lui, e vince sul settore: durante la sua
+   *  fase di inversione tutta l'arena è capovolta. */
+  private updateGravity(): void {
+    const p = this.state.player;
+    const { tx, ty } = this.playerTile();
+    const inZone = this.level.gravityZones.some((z) =>
+      z.tiles.some((t) => t.tx === tx && t.ty === ty),
+    );
+    const fromBoss = this.state.boss?.phase === 'invert';
+    const next = inZone || fromBoss === true;
+
+    if (next !== p.gravityFlipped) {
+      p.gravityFlipped = next;
+      this.events.push({ type: 'gravityFlipped', inverted: next });
+    }
+  }
+
+  /** Passerelle sospese. Si cade restando sul vuoto più di graceMs:
+   *  camminare non basta, scattare sì. Il contatore vive sulla
+   *  voragine e non sul giocatore solo per poterlo ispezionare nei
+   *  test; il giocatore è uno, quindi non può esserne sopra due. */
+  private updateChasms(): void {
+    const { tx, ty } = this.playerTile();
+    const p = this.state.player;
+
+    for (const c of this.state.chasms) {
+      const def = this.level.chasms.find((x) => x.id === c.id)!;
+      const over = def.tiles.some((t) => t.tx === tx && t.ty === ty);
+      if (!over) {
+        c.hoverMs = 0;
+        continue;
+      }
+
+      c.hoverMs += TICK_MS;
+      if (c.hoverMs < def.graceMs) continue;
+
+      c.hoverMs = 0;
+      const landing = centreOf(def.landing.tx, def.landing.ty);
+      p.x = landing.x;
+      p.y = landing.y;
+      p.dashTimer = 0;
+      this.events.push({ type: 'fellIntoChasm', id: c.id });
+    }
   }
 
   /** Pavimento che cede. Il contatore sale solo mentre ci si sta
@@ -640,6 +762,60 @@ export class CampaignWorld {
     // the boss room — a stray tick before that must not burn the timer.
     if (this.state.checkpoint.room !== def.room) return;
 
+    if (def.kind === 'custode') {
+      this.updateCustode();
+      return;
+    }
+    this.updateSentinella();
+  }
+
+  /** Custode del Reattore. Non insegue e non si muove: spegne le luci,
+   *  capovolge la stanza, e fra una manipolazione e l'altra resta
+   *  scoperto.
+   *
+   *  Il ciclo è manipolazione → preavviso → finestra → manipolazione
+   *  successiva, alternando buio e inversione. Il preavviso esiste
+   *  perché la finestra sia un appuntamento e non una sorpresa: senza,
+   *  colpirlo sarebbe questione di essere già girati dalla parte
+   *  giusta per caso.
+   *
+   *  Da metà danni non accelera — allunga le manipolazioni e accorcia
+   *  la finestra. La Sentinella alterata diventa più aggressiva; il
+   *  Custode alterato diventa più *avaro*, che è la sua idea di
+   *  minaccia. */
+  private updateCustode(): void {
+    const boss = this.state.boss!;
+    boss.phaseTimer -= TICK_MS;
+    if (boss.phaseTimer > 0) return;
+
+    const manipulation = this.enraged
+      ? CUSTODE_MANIPULATION_ENRAGED_MS
+      : CUSTODE_MANIPULATION_MS;
+
+    switch (boss.phase) {
+      case 'blackout':
+      case 'invert':
+        boss.phase = 'tell';
+        boss.phaseTimer = CUSTODE_TELL_MS;
+        break;
+      case 'tell':
+        boss.phase = 'exposed';
+        boss.phaseTimer = this.enraged ? CUSTODE_EXPOSED_ENRAGED_MS : CUSTODE_EXPOSED_MS;
+        this.events.push({ type: 'bossExposed' });
+        break;
+      default:
+        // Dopo la finestra riparte, alternando le due manipolazioni:
+        // `chargesLeft` fa da contatore del ciclo, riusato invece di
+        // aggiungere un campo che solo questo boss userebbe.
+        boss.chargesLeft++;
+        boss.phase = boss.chargesLeft % 2 === 1 ? 'invert' : 'blackout';
+        boss.phaseTimer = manipulation;
+        break;
+    }
+  }
+
+  private updateSentinella(): void {
+    const boss = this.state.boss!;
     const p = this.state.player;
 
     switch (boss.phase) {
@@ -798,7 +974,7 @@ export class CampaignWorld {
         input.aimAngle,
         boss.x,
         boss.y,
-        BOSS_RADIUS,
+        this.level.boss!.kind === 'custode' ? CUSTODE_RADIUS : BOSS_RADIUS,
       );
       // Bersaglio più vicino vince: non si spara attraverso una
       // turret per arrivare al boss.
@@ -822,15 +998,25 @@ export class CampaignWorld {
 
   private hitBoss(shooterX: number, shooterY: number): void {
     const boss = this.state.boss!;
-    const dmg = resolveBossHit(
-      boss.x,
-      boss.y,
-      boss.angle,
-      boss.phase,
-      shooterX,
-      shooterY,
-      hasGrazeDamage(this.state.unlockedNodes),
-    );
+    // Due boss, due regole di vulnerabilità. La Sentinella si colpisce
+    // dove *stai* (il cono posteriore, mentre carica); il Custode si
+    // colpisce *quando* (la finestra, da qualsiasi angolo). Chiedere
+    // al Custode un arco posteriore lo renderebbe una Sentinella che
+    // non si muove, cioè più facile invece che diversa.
+    const dmg =
+      this.level.boss!.kind === 'custode'
+        ? boss.phase === 'exposed'
+          ? 1
+          : 0
+        : resolveBossHit(
+            boss.x,
+            boss.y,
+            boss.angle,
+            boss.phase,
+            shooterX,
+            shooterY,
+            hasGrazeDamage(this.state.unlockedNodes),
+          );
     if (dmg <= 0) return;
 
     const wasEnraged = this.enraged;
@@ -839,7 +1025,7 @@ export class CampaignWorld {
     if (!wasEnraged && this.enraged) this.events.push({ type: 'bossEnraged' });
     this.grantXp(dmg >= 1 ? XP_BOSS_HIT_SOLID : XP_BOSS_HIT_GRAZE);
 
-    if (boss.damageTaken >= BOSS_HITS_TO_DEFEAT) {
+    if (boss.damageTaken >= this.bossHitsToDefeat) {
       boss.phase = 'defeated';
       this.events.push({ type: 'bossDefeated' });
       this.grantXp(XP_BOSS_DEFEAT);
@@ -868,6 +1054,15 @@ export class CampaignWorld {
       p.empMs = 0;
       this.events.push({ type: 'gasCleared' });
     }
+    if (p.darkMs > 0) {
+      p.darkMs = 0;
+      this.events.push({ type: 'blackoutCleared' });
+    }
+    if (p.gravityFlipped) {
+      p.gravityFlipped = false;
+      this.events.push({ type: 'gravityFlipped', inverted: false });
+    }
+    for (const c of this.state.chasms) c.hoverMs = 0;
 
     // "Nemici della stanza resettati" (GDD.md sezione 9, modalità
     // Tutorial). Con i trabocchetti come dato, la regola si applica
@@ -898,8 +1093,9 @@ export class CampaignWorld {
     if (this.state.boss && this.level.boss!.room === cp.room) {
       const boss = this.state.boss;
       const home = centreOf(this.level.boss!.tx, this.level.boss!.ty);
-      boss.phase = 'guard';
-      boss.phaseTimer = BOSS_GUARD_MS;
+      const custode = this.level.boss!.kind === 'custode';
+      boss.phase = custode ? 'blackout' : 'guard';
+      boss.phaseTimer = custode ? CUSTODE_MANIPULATION_MS : BOSS_GUARD_MS;
       boss.damageTaken = 0;
       boss.chargesLeft = 0;
       boss.x = home.x;

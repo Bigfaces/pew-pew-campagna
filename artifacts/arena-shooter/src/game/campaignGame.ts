@@ -13,6 +13,7 @@ import {
   renderCampaignMinimap,
   renderCampaignScenery,
   renderCampaignWalls,
+  renderDarkness,
   renderGasVeil,
 } from '../render/campaignScene';
 import { CameraFx, computeViewport, type Viewport } from '../render/camera';
@@ -41,13 +42,15 @@ import {
   GAS_LINGER_MS,
   xpForNextLevel,
 } from '../sim/campaign/constants';
-import { ACT_ONE, FIRST_LEVEL_ID, levelById } from '../sim/campaign/levels';
+import { ALL_LEVELS, FIRST_LEVEL_ID, levelById } from '../sim/campaign/levels';
 import { roomName } from '../sim/campaign/levelTypes';
 import {
   hasContacts,
   hasGrazeDamage,
   hasMinimap,
   movementStatsFor,
+  scannerResistsGas,
+  scopeResistsInterference,
   weaponStatsFor,
 } from '../sim/campaign/skills';
 import type { CampaignEvent, CampaignInput, RoomId } from '../sim/campaign/types';
@@ -70,8 +73,16 @@ export interface CampaignHudSnapshot {
    *  etichette scritta a mano. */
   room: string;
   levelName: string;
+  levelAct: number;
   levelOrdinal: number;
+  /** Quanti livelli ha *questo* atto, non l'intera campagna: il
+   *  giocatore conta i passi dentro l'atto in cui si trova. */
   levelCount: number;
+  /** Il gas ha spento i sensori; il buio ha spento la vista. Sono due
+   *  cose diverse e la HUD le mostra separate, perché al buio lo
+   *  scanner è proprio ciò che ti salva. */
+  dark: boolean;
+  gravityInverted: boolean;
   /** Il gas ha spento minimappa e ottica. */
   blinded: boolean;
   coresCollected: number;
@@ -98,6 +109,9 @@ export interface CampaignHudSnapshot {
   unlockedNodes: string[];
   door: { armed: boolean; closeTimerMs: number };
   bossActive: boolean;
+  /** Come si chiama il boss di questo livello: la HUD non può più
+   *  scrivere "SENTINELLA" in duro, ce n'è più d'uno. */
+  bossName: string;
   bossPhase: string;
   bossDamageTaken: number;
   bossHitsToDefeat: number;
@@ -609,6 +623,27 @@ export class CampaignGame {
         case 'gasEntered':
           this.raise('CONTAMINANTE', 'niente scanner, niente ottica', '#9bff8c');
           break;
+        case 'fellIntoChasm':
+          this.audio.death();
+          this.fx.shake(22);
+          this.raise('SEI CADUTO', '', '#8899bb');
+          // Il vuoto teletrasporta: la camera va risincronizzata come
+          // dopo una morte, o resta puntata dove si stava andando.
+          this.prevX = this.world.state.player.x;
+          this.prevY = this.world.state.player.y;
+          break;
+        case 'blackoutEntered':
+          this.raise('BLACKOUT DI SETTORE', 'lo scanner regge', '#7788aa');
+          break;
+        case 'gravityFlipped':
+          if (ev.inverted) {
+            this.audio.callout(1);
+            this.raise('GRAVITÀ INVERTITA', '', '#b07adf');
+          }
+          break;
+        case 'bossExposed':
+          this.audio.callout(1);
+          break;
         case 'levelCompleted':
           this.finishLevel(ev.next);
           break;
@@ -691,10 +726,14 @@ export class CampaignGame {
     // is exactly this number, so an unlocked node is felt as a faster
     // sight picture rather than read off a menu.
     const stats = weaponStatsFor(this.world.state.unlockedNodes);
-    // Il gas spegne anche l'ottica: "disattiva minimappa o HUD ottico"
-    // (GDD sezione 4). Si abbassa da sé invece di ignorare il tasto,
-    // così il giocatore vede *perché* non sta più mirando.
-    const wantAds = this.adsHeld && this.phase === 'playing' && !this.world.blinded;
+    // Il gas spegne l'ottica ("disattiva minimappa o HUD ottico", GDD
+    // sezione 4), e a testa in giù non si tiene la mira. Si abbassa da
+    // sé invece di ignorare il tasto, così il giocatore vede *perché*
+    // non sta più mirando. Mira Stabile toglie entrambe le cose.
+    const interference =
+      (this.world.blinded || this.world.gravityInverted) &&
+      !scopeResistsInterference(this.world.state.unlockedNodes);
+    const wantAds = this.adsHeld && this.phase === 'playing' && !interference;
     const prevAds = this.adsT;
     const rate = frameDt / stats.adsTransitionMs;
     this.adsT = wantAds ? Math.min(1, this.adsT + rate) : Math.max(0, this.adsT - rate);
@@ -735,6 +774,18 @@ export class CampaignGame {
     this.audio.updateListener(cam.x, cam.y, cam.angle);
 
     const now = performance.now();
+
+    // Gravità invertita: si ribalta il *mondo*, non l'interfaccia. Un
+    // solo flip verticale attorno a tutto il disegno della scena —
+    // muri, billboard, decalcomanie — mentre HUD e mirino restano
+    // dritti, perché sono attaccati al casco e non alla stanza.
+    const flipped = world.gravityInverted;
+    ctx.save();
+    if (flipped) {
+      ctx.translate(0, vp.height);
+      ctx.scale(1, -1);
+    }
+
     renderBackdrop(ctx, vp, fx);
     renderCampaignWalls(
       ctx,
@@ -759,9 +810,13 @@ export class CampaignGame {
       now,
     );
 
-    // Il velo va sopra il mondo e sotto l'interfaccia: acceca quello
-    // che si guarda, non quello che si legge.
+    // I veli vanno sopra il mondo e sotto l'interfaccia: accecano
+    // quello che si guarda, non quello che si legge. Ancora dentro il
+    // flip, così al buio l'alone resta centrato sulla scena.
     renderGasVeil(ctx, vp, world.state.player.empMs / GAS_LINGER_MS, now);
+    renderDarkness(ctx, vp, world.darkness);
+
+    ctx.restore();
 
     renderScope(
       ctx,
@@ -781,7 +836,13 @@ export class CampaignGame {
     // controllo sta qui e non dentro il renderer perché "avere il
     // nodo" e "poterlo usare adesso" sono due domande diverse, e la
     // seconda è una regola di gioco.
-    if (hasMinimap(world.state.unlockedNodes) && !world.blinded) {
+    // Il gas spegne lo scanner, il buio no: è la differenza fra le due
+    // trappole, ed è anche il momento in cui Percezione si ripaga. Il
+    // nodo Sensori Inerziali toglie pure il primo dei due.
+    const scannerUp =
+      hasMinimap(world.state.unlockedNodes) &&
+      (!world.blinded || scannerResistsGas(world.state.unlockedNodes));
+    if (scannerUp) {
       renderCampaignMinimap(
         ctx,
         vp,
@@ -839,8 +900,11 @@ export class CampaignGame {
       muted: this.mutedFlag,
       room: roomName(this.world.level, s.checkpoint.room),
       levelName: this.world.level.name,
+      levelAct: this.world.level.act,
       levelOrdinal: this.world.level.ordinal,
-      levelCount: ACT_ONE.length,
+      levelCount: ALL_LEVELS.filter((l) => l.act === this.world.level.act).length,
+      dark: this.world.darkness > 0,
+      gravityInverted: this.world.gravityInverted,
       blinded: this.world.blinded,
       coresCollected: s.coresCollected,
       xp: s.xp,
@@ -871,9 +935,10 @@ export class CampaignGame {
         return { armed: true, closeTimerMs: soonest.closeTimer };
       })(),
       bossActive: s.boss !== null && s.checkpoint.room === this.world.level.boss?.room,
+      bossName: this.world.level.boss?.kind === 'custode' ? 'CUSTODE' : 'SENTINELLA',
       bossPhase: s.boss?.phase ?? 'defeated',
       bossDamageTaken: s.boss?.damageTaken ?? 0,
-      bossHitsToDefeat: BOSS_HITS_TO_DEFEAT,
+      bossHitsToDefeat: this.world.bossHitsToDefeat,
       victory: this.world.finished,
     });
   }

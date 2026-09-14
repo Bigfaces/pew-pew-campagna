@@ -57,6 +57,18 @@ const ON_FIRST: Record<string, string> = {
   levelCompleted: 'Settore sigillato alle tue spalle. Non che avessi intenzione di tornarci.',
   bossDefeated:
     'La Sentinella non risponde. Nessuna unità risponde. Hai la mia attenzione, adesso.',
+  // Atto II. Qui ARBITER smette di catalogare e comincia a parlarti —
+  // è la riga del GDD ("inizia a comunicare via interfono,
+  // deridendo/mettendo alla prova"), e si sente nel tono: prima
+  // annotava, adesso commenta.
+  fellIntoChasm:
+    'Il camminamento non c’è più da sei anni. Mi chiedevo se lo avresti notato prima o dopo.',
+  blackoutEntered:
+    'Luci di settore spente. Tranquillo: io ti vedo lo stesso.',
+  gravityFlipped:
+    'Su e giù erano una convenzione. L’ho revocata. Dimmi come procede.',
+  bossExposed:
+    'Il Custode si è aperto. Dura poco. Come quasi tutto, qui.',
 };
 
 /** Traduce gli eventi della simulazione in una battuta, se ce n'è una
@@ -80,6 +92,10 @@ export class ArbiterVoice {
     switch (ev.type) {
       case 'roomEntered':
         return this.once(`room:${ev.room}`, ON_ROOM[ev.room]);
+      case 'gravityFlipped':
+        // Solo quando si capovolge, non quando torna dritto: la
+        // battuta commenta l'atto, non il ripristino.
+        return ev.inverted ? this.once('gravityFlipped', ON_FIRST['gravityFlipped']) : null;
       case 'playerDied':
         return this.once(`death:${ev.cause}`, ON_FIRST_DEATH[ev.cause]);
       case 'shieldPickup':
@@ -99,6 +115,9 @@ export class ArbiterVoice {
       case 'dashStarted':
       case 'nodeUnlocked':
       case 'floorCollapsed':
+      case 'fellIntoChasm':
+      case 'blackoutEntered':
+      case 'bossExposed':
       case 'gasEntered':
       case 'levelCompleted':
       case 'bossEnraged':

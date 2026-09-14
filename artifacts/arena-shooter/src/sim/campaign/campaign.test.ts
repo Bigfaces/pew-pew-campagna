@@ -437,7 +437,9 @@ describe('CampaignWorld — Sentinella del Molo', () => {
     }
 
     expect(world.state.boss!.phase).toBe('defeated');
-    expect(world.state.outcome).toBe('victory');
+    // Il Molo chiude l'Atto I ma apre il II: è un passaggio, non la
+    // fine della campagna.
+    expect(world.state.outcome).toBe('levelComplete');
     // Three solid rear hits plus the defeat bonus, no other XP source
     // touched since the checkpoint was set directly rather than walked.
     expect(world.state.xp).toBe(BOSS_HITS_TO_DEFEAT * XP_BOSS_HIT_SOLID + XP_BOSS_DEFEAT);

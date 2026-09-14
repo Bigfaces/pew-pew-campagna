@@ -94,6 +94,58 @@ export interface GasZoneDef {
   room: string;
 }
 
+/** Passerella sospesa: il vuoto fra due tratti di camminamento.
+ *
+ *  Non è un muro — ci si passa sopra — ma restarci più di `graceMs`
+ *  fa cadere. È tarato perché camminare non basti e lo scatto sì: un
+ *  tile a passo normale costa ~240 ms, in scatto ~100. È l'unico
+ *  punto in cui l'albero delle abilità cambia la *geometria* del
+ *  livello invece di una statistica, e proprio per questo ogni
+ *  voragine deve avere una strada alternativa a piedi — un nodo
+ *  facoltativo non può essere l'unico modo di finire un livello.
+ *  Lo verifica un test strutturale. */
+export interface ChasmDef {
+  id: string;
+  tiles: readonly TilePos[];
+  /** Quanto si può restare sospesi prima di cadere. */
+  graceMs: number;
+  /** Dove si riemerge. Come il pavimento che cede: un costo di tempo,
+   *  non una morte. */
+  landing: TilePos;
+  room: string;
+}
+
+/** Blackout a settori: qui non si vede.
+ *
+ *  Non tocca la simulazione — è il gemello visivo del gas. Ma al
+ *  contrario del gas *non* spegne la minimappa: al buio lo scanner
+ *  diventa l'unica cosa che resta, ed è il momento in cui il ramo
+ *  Percezione si ripaga. Due trappole che tolgono informazione in modi
+ *  opposti valgono più di due che la tolgono allo stesso modo. */
+export interface BlackoutZoneDef {
+  id: string;
+  tiles: readonly TilePos[];
+  /** Quanto resta buio dopo esserne usciti. */
+  lingerMs: number;
+  room: string;
+}
+
+/** Gravità alterata.
+ *
+ *  In un gioco senza asse verticale la gravità non può tirare in
+ *  basso: non esiste un basso. Quello che può fare è cambiare *dove
+ *  credi che sia*. In un settore invertito il mondo si ribalta — il
+ *  soffitto diventa il pavimento — e lo strafe si specchia con lui.
+ *  È la stessa riscrittura onesta fatta per i nomi dei nodi: si tiene
+ *  l'intento (disorientare, togliere l'automatismo del movimento) e
+ *  si butta la lettera, invece di inventare una fisica che il motore
+ *  non ha. */
+export interface GravityZoneDef {
+  id: string;
+  tiles: readonly TilePos[];
+  room: string;
+}
+
 export interface CoreDef {
   id: string;
   tx: number;
@@ -106,8 +158,16 @@ export interface ShieldPickupDef {
   ty: number;
 }
 
+/** Due boss, due macchine a stati. La Sentinella insegue e si scopre
+ *  caricando; il Custode non si muove e si scopre fra una
+ *  manipolazione e l'altra. Non hanno niente in comune oltre al fatto
+ *  di avere fasi, quindi `kind` sceglie quale logica gira invece di
+ *  parametrizzarne una sola fino a farla sembrare entrambe. */
+export type BossKind = 'sentinella' | 'custode';
+
 export interface BossDef {
   id: string;
+  kind: BossKind;
   tx: number;
   ty: number;
   room: string;
@@ -123,7 +183,9 @@ export interface ExitDef {
 
 export interface LevelDef {
   id: string;
-  /** Numero mostrato al giocatore (1..3 nell'Atto I). */
+  /** A quale atto appartiene (1..3). */
+  act: number;
+  /** Numero dentro l'atto (1..3). */
   ordinal: number;
   name: string;
   /** Riga che ARBITER pronuncia entrando. */
@@ -138,6 +200,9 @@ export interface LevelDef {
   turrets: readonly TurretDef[];
   collapsingFloors: readonly CollapsingFloorDef[];
   gasZones: readonly GasZoneDef[];
+  chasms: readonly ChasmDef[];
+  blackouts: readonly BlackoutZoneDef[];
+  gravityZones: readonly GravityZoneDef[];
   cores: readonly CoreDef[];
   shields: readonly ShieldPickupDef[];
   boss: BossDef | null;

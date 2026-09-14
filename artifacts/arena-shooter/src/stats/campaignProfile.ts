@@ -13,21 +13,21 @@
 // simulazione.
 // ================================================================
 
-import { ACT_ONE, FIRST_LEVEL_ID } from '../sim/campaign/levels';
+import { ALL_LEVELS, FIRST_LEVEL_ID } from '../sim/campaign/levels';
 import { CAMPAIGN_PROFILE_VERSION, type CampaignProfile } from '../sim/campaign/types';
 
 const KEY = 'pew-pew.campaign.profile';
 
 /** Le chiavi `livello/stanza` che possono legittimamente comparire in
- *  un profilo. Validare contro l'atto invece che contro una lista
- *  scritta a mano vuol dire che aggiungere un livello non lascia qui
- *  un elenco che dimentica la stanza nuova e le toglie il bonus in
+ *  un profilo. Validare contro i livelli veri invece che contro una
+ *  lista scritta a mano vuol dire che aggiungere un livello non lascia
+ *  qui un elenco che dimentica la stanza nuova e le toglie il bonus in
  *  silenzio. */
 const ROOM_KEYS: ReadonlySet<string> = new Set(
-  ACT_ONE.flatMap((l) => l.rooms.map((r) => `${l.id}/${r.id}`)),
+  ALL_LEVELS.flatMap((l) => l.rooms.map((r) => `${l.id}/${r.id}`)),
 );
 
-const LEVEL_IDS: ReadonlySet<string> = new Set(ACT_ONE.map((l) => l.id));
+const LEVEL_IDS: ReadonlySet<string> = new Set(ALL_LEVELS.map((l) => l.id));
 
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];

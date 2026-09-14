@@ -17,8 +17,10 @@ import {
   DASH_COOLDOWN_MS,
   NODE_AGGANCIO_MOVE_MULT,
   NODE_AGGANCIO_TRANSITION_MS,
+  DASH_SPEED,
   NODE_OTTURATORE_COOLDOWN_MS,
   NODE_PASSO_LUNGO_MULT,
+  NODE_SLANCIO_SPEED_MULT,
   SHIELD_CHARGES_BASE,
   SHIELD_CHARGES_UPGRADED,
   type SkillNodeId,
@@ -53,21 +55,51 @@ export interface MovementStats {
   speedMult: number;
   hasDash: boolean;
   dashCooldownMs: number;
+  /** px/tick durante lo scatto. È questo, non la durata, a decidere
+   *  quanto è larga la passerella che si riesce ad attraversare. */
+  dashSpeed: number;
   /** Whether an active dash makes the player untouchable. */
   dashInvulnerable: boolean;
 }
 
 export function movementStatsFor(unlocked: readonly string[]): MovementStats {
+  // I prerequisiti sono già garantiti da tryUnlockNode, ma leggerli
+  // anche qui rende la funzione vera per *qualsiasi* lista — e i test
+  // ne costruiscono di arbitrarie senza passare dall'albero.
+  const hasDash = unlocked.includes('scatto');
   return {
     speedMult: unlocked.includes('passo-lungo') ? NODE_PASSO_LUNGO_MULT : 1,
-    hasDash: unlocked.includes('scatto'),
+    hasDash,
     dashCooldownMs: DASH_COOLDOWN_MS,
-    // Il prerequisito è già garantito da tryUnlockNode, ma leggerlo
-    // anche qui rende la funzione vera per *qualsiasi* lista — e i
-    // test ne costruiscono di arbitrarie senza passare dall'albero.
-    dashInvulnerable:
-      unlocked.includes('scatto-evasivo') && unlocked.includes('scatto'),
+    dashSpeed:
+      hasDash && unlocked.includes('slancio')
+        ? DASH_SPEED * NODE_SLANCIO_SPEED_MULT
+        : DASH_SPEED,
+    dashInvulnerable: hasDash && unlocked.includes('scatto-evasivo'),
   };
+}
+
+// ---- Secondo anello (Atto II) ----
+// Quattro nodi, uno per ramo, ognuno risposta a una minaccia che
+// l'Atto II introduce. È la progressione che l'atto merita: prima
+// arriva il problema, poi il ramo che se ne occupa offre la risposta —
+// invece di nodi che migliorano numeri già buoni.
+
+/** Mira Stabile: l'ottica non si abbassa più per gas o gravità. */
+export function scopeResistsInterference(unlocked: readonly string[]): boolean {
+  return unlocked.includes('mira-stabile') && unlocked.includes('aggancio-ottico');
+}
+
+/** Ancoraggio: la gravità invertita ribalta ancora la vista, ma non
+ *  specchia più i comandi. Toglie la parte che punisce i riflessi e
+ *  lascia quella che disorienta — che è la metà interessante. */
+export function resistsGravityFlip(unlocked: readonly string[]): boolean {
+  return unlocked.includes('ancoraggio') && unlocked.includes('riserva-di-bordo');
+}
+
+/** Sensori Inerziali: lo scanner regge dentro il contaminante. */
+export function scannerResistsGas(unlocked: readonly string[]): boolean {
+  return unlocked.includes('sensori-inerziali') && hasContacts(unlocked);
 }
 
 // ---- Sopravvivenza ----
@@ -99,6 +131,7 @@ export function hasMinimap(unlocked: readonly string[]): boolean {
 export function hasContacts(unlocked: readonly string[]): boolean {
   return unlocked.includes('lettura-termica') && hasMinimap(unlocked);
 }
+
 
 // ---- Albero ----
 

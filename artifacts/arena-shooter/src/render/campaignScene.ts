@@ -196,12 +196,84 @@ function drawTurret(
 }
 
 const BOSS_PHASE_COLOR: Record<BossPhase, string> = {
+  // Sentinella
   guard: '#8aa0c8',
   telegraph: '#ffb020',
   charge: '#ff3b3b',
   recover: '#c88a50',
+  // Custode: freddo mentre manipola, ambra al preavviso, acceso nella
+  // finestra. Il colore è metà del tell — l'altra metà è il tempo.
+  blackout: '#4a5a80',
+  invert: '#6a4a90',
+  tell: '#ffb020',
+  exposed: '#ff5c3b',
   defeated: '#3d6b4a',
 };
+
+/** Il Custode. Una colonna, non un cingolato: non si muove, quindi
+ *  non ha un davanti e un dietro da leggere. Quello che va letto è il
+ *  *momento*, e infatti tutto il disegno racconta la fase — l'anello
+ *  esterno gira mentre manipola, il nucleo si apre solo nella
+ *  finestra. */
+function drawCustode(
+  ctx: CanvasRenderingContext2D,
+  screenX: number,
+  floorY: number,
+  tileH: number,
+  boss: BossState,
+  nowMs: number,
+): void {
+  const color = BOSS_PHASE_COLOR[boss.phase];
+  const h = tileH * 1.5;
+  const w = tileH * 0.55;
+  const top = floorY - h;
+
+  ctx.save();
+
+  // Corpo: una colonna aperta, righe orizzontali. Wireframe come tutto
+  // il resto — niente asset, coerente con i muri.
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1.5, tileH * 0.04);
+  ctx.strokeRect(screenX - w / 2, top, w, h);
+  for (let i = 1; i < 5; i++) {
+    const y = top + (h * i) / 5;
+    ctx.beginPath();
+    ctx.moveTo(screenX - w / 2, y);
+    ctx.lineTo(screenX + w / 2, y);
+    ctx.stroke();
+  }
+
+  // Anello: gira mentre manipola, si ferma al preavviso. Il movimento
+  // è il segnale che sta ancora lavorando.
+  const manipulating = boss.phase === 'blackout' || boss.phase === 'invert';
+  const spin = manipulating ? nowMs * 0.004 : 0;
+  const ringY = top + h * 0.3;
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath();
+  ctx.ellipse(screenX, ringY, w * 0.85, w * 0.22, spin, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Nucleo: chiuso mentre manipola, spalancato nella finestra. È
+  // l'unica cosa che si può colpire, e si vede da lontano che è
+  // aperta — la finestra deve essere un appuntamento, non un indovinello.
+  const open = boss.phase === 'exposed';
+  const coreY = top + h * 0.55;
+  const r = tileH * (open ? 0.22 : 0.07) * (open ? 1 + Math.sin(nowMs * 0.02) * 0.12 : 1);
+  ctx.globalAlpha = open ? 0.95 : 0.5;
+  ctx.fillStyle = open ? '#ffd166' : color;
+  ctx.beginPath();
+  ctx.arc(screenX, coreY, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (open) {
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.arc(screenX, coreY, r * 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
 
 function drawBoss(
   ctx: CanvasRenderingContext2D,
@@ -404,6 +476,23 @@ export function renderCampaignScenery(
     }
   }
 
+  for (const c of level.chasms) {
+    // Il vuoto: nero pieno, senza pulsazioni. Un pavimento che cede
+    // avvisa perché si può ancora scegliere di non starci; una
+    // voragine non avvisa perché è già tutto detto — non c'è niente
+    // sotto, e si vede.
+    for (const t of c.tiles) {
+      drawFloorTile(ctx, vp, fx, cam, depth, t, 'rgba(2, 3, 6, 0.96)', 1);
+    }
+  }
+
+  for (const z of level.gravityZones) {
+    const pulse = 0.10 + Math.sin(nowMs * 0.002) * 0.04;
+    for (const t of z.tiles) {
+      drawFloorTile(ctx, vp, fx, cam, depth, t, `rgba(150, 110, 220, ${pulse})`, 2);
+    }
+  }
+
   for (const f of state.collapsingFloors) {
     const def = level.collapsingFloors.find((x) => x.id === f.id);
     if (!def) continue;
@@ -484,15 +573,42 @@ export function renderCampaignScenery(
 
   const boss = state.boss;
   if (boss) {
+    const custode = level.boss?.kind === 'custode';
     push(boss.x, boss.y, 0.5, (screenX, _y, tileH, perp) => {
       const floorY = heightToScreenY(vp, fx, perp, 0);
-      return () =>
-        drawBoss(ctx, screenX, floorY, tileH, cam, boss, hasGraze, enraged, nowMs);
+      return custode
+        ? () => drawCustode(ctx, screenX, floorY, tileH, boss, nowMs)
+        : () => drawBoss(ctx, screenX, floorY, tileH, cam, boss, hasGraze, enraged, nowMs);
     });
   }
 
   list.sort((a, b) => b.dist - a.dist);
   for (const b of list) b.draw();
+}
+
+/** Il buio. Non è un velo uniforme: resta un alone attorno a chi
+ *  guarda, o il livello diventerebbe una schermata nera invece di una
+ *  stanza al buio. Ed è di proposito che *non* spegne la minimappa —
+ *  al contrario del gas. Due trappole che tolgono informazione in modi
+ *  opposti valgono più di due che la tolgono allo stesso modo. */
+export function renderDarkness(
+  ctx: CanvasRenderingContext2D,
+  vp: Viewport,
+  strength: number,
+): void {
+  if (strength <= 0) return;
+  const cx = vp.width / 2;
+  const cy = vp.height / 2;
+  const inner = Math.min(vp.width, vp.height) * 0.12;
+  const outer = Math.max(vp.width, vp.height) * 0.62;
+  const g = ctx.createRadialGradient(cx, cy, inner, cx, cy, outer);
+  const a = Math.min(1, strength);
+  g.addColorStop(0, `rgba(2, 3, 6, ${a * 0.35})`);
+  g.addColorStop(1, `rgba(2, 3, 6, ${a * 0.97})`);
+  ctx.save();
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, vp.width, vp.height);
+  ctx.restore();
 }
 
 /** Il velo che il gas lascia sugli occhi. Disegnato dopo la scena e

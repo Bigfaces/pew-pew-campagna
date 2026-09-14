@@ -81,6 +81,9 @@ Pensati per essere implementabili con sola geometria/logica, senza asset:
 | Pavimento che cede | Restarci sopra troppo a lungo riporta al punto di partenza della stanza — nessuna fisica di caduta, solo un "warp" di stato | Condotti, il pozzo | fatto |
 | Gas/EMP | Area che spegne minimappa e ottica finché non se ne esce, più una coda | Condotti, la camera | fatto |
 | Corridoio a fuoco incrociato | Tre turret sfasate di un terzo di ciclo: si supera leggendo il ritmo, non a forza | Molo, la galleria | fatto |
+| Passerelle sospese | Vuoto fra due camminamenti: restarci sopra fa cadere, e camminando non si fa in tempo. Si passa in scatto | Anello esterno, il ponte | fatto |
+| Blackout di settore | Buio: resta un alone attorno a chi guarda. Non spegne la minimappa — è il contrario del gas | Refrigerante, camera fredda; e il Custode | fatto |
+| Gravità alterata | Il mondo si ribalta e lo strafe si specchia con lui | Refrigerante, sala della gravità; e il Custode | fatto |
 
 Tutti derivano da primitive già presenti (trigger volumetrici, timer,
 stati temporanei) più i bot esistenti, riletti come "trappole" invece che
@@ -104,6 +107,25 @@ fissare qui:
   quindi sparava sempre qualcuna e non c'era ritmo da leggere. Due chicane
   spezzano il corridoio in tre segmenti, una turret per segmento. Solo
   allora lo sfasamento conta.
+- **La gravità è una riscrittura onesta.** In un gioco senza asse verticale
+  la gravità non può tirare in basso: non esiste un basso. Quello che può
+  fare è cambiare *dove credi che sia*. In un settore invertito il mondo si
+  ribalta e lo strafe si specchia con lui; il nodo Ancoraggio toglie il
+  secondo e lascia il primo, cioè la parte che disorienta senza quella che
+  punisce i riflessi. Stesso criterio dei nomi dei nodi (sezione 6): si
+  tiene l'intento, si butta la lettera, invece di inventare una fisica che
+  il motore non ha.
+- **Buio e gas tolgono informazione in modi opposti, di proposito.** Il gas
+  spegne i sensori e lascia la vista; il buio spegne la vista e lascia i
+  sensori. Al buio la minimappa è l'unica cosa che resta — ed è il momento
+  in cui il ramo Percezione si ripaga. Due trappole che la tolgono allo
+  stesso modo sarebbero la stessa trappola due volte.
+- **Le passerelle sono l'unico punto in cui un nodo cambia la geometria.**
+  Quelle strette chiedono lo Scatto, quelle larghe anche lo Slancio. Proprio
+  per questo ogni voragine ha sempre una strada alternativa a piedi — più
+  lunga, più esposta, ma percorribile da chiunque: un albero facoltativo non
+  può diventare un requisito di sblocco. Lo verifica un test strutturale su
+  ogni livello, e il bot di attraversabilità lo rifà camminando.
 
 ## 5. Boss
 
@@ -122,10 +144,26 @@ subirla passivamente), e **niente bullet-hell** — coerente col ritmo
    finestre vulnerabili, quindi la percentuale di ciclo scoperta sale
    (31% → 54%, misurati da `balance:campaign`). Una seconda fase che
    fosse solo più aggressiva sarebbe soltanto più lunga da subire.
-2. **Custode del Reattore** (fine Atto II) — non insegue: manipola
-   l'ambiente (spegne le luci a settori, inverte due volte la gravità di
-   una sezione della stanza). Il giocatore deve muoversi tra le zone sicure
-   e sparare nelle brevi finestre di luce/normalità.
+2. **Custode del Reattore** (fine Atto II) — non insegue e non si muove:
+   manipola l'ambiente. Alterna due manipolazioni, blackout e inversione
+   di gravità, e fra l'una e l'altra resta scoperto per una finestra
+   breve, annunciata da un preavviso.
+
+   Il contrasto con la Sentinella è il punto, ed è deliberato: lì la
+   finestra si *crea* — farlo mancare, girargli dietro — ed è
+   **posizionale**, solo il cono posteriore. Qui la finestra *arriva* ed è
+   **temporale**: da qualsiasi angolo, ma solo adesso. Due boss che si
+   battessero allo stesso modo sarebbero un boss con due skin.
+
+   Anche le seconde fasi vanno in direzioni opposte. La Sentinella
+   alterata stringe il ritmo *e* apre di più (31% → 54% di ciclo
+   vulnerabile). Il Custode alterato fa il contrario: allunga le
+   manipolazioni e accorcia la finestra — diventa più *avaro*, non più
+   aggressivo. Entrambe le cifre le misura `balance:campaign`.
+
+   Il preavviso non è un regalo: senza, colpire nella finestra sarebbe
+   questione di trovarsi già girati dalla parte giusta per caso, cioè
+   fortuna invece di lettura.
 3. **ARBITER** (finale, 3 fasi) — corpo modulare: fase 1 a distanza (turret
    multiple da disattivare una a una), fase 2 ravvicinata (mobilità e
    schivata), fase 3 "nucleo" scoperto con tempo limitato. Ogni fase riusa
@@ -172,7 +210,30 @@ la Campagna non ha mai avuto una minimappa — quindi il primo nodo *è* la
 minimappa e il secondo aggiunge i contatti, cioè la parte che si chiamava
 "estesa", stavolta guadagnata.
 
-**Prerequisiti.** Due nodi stanno dietro un altro: Scatto Evasivo richiede
+**Secondo anello, aperto dall'Atto II** — un nodo per ramo, ognuno
+risposta a una minaccia che l'atto introduce:
+
+- **Precisione — Mira Stabile** (dietro Aggancio Ottico): l'ottica regge
+  nel gas e a gravità invertita.
+- **Mobilità — Slancio** (dietro Scatto): scatto più veloce, quindi le
+  passerelle larghe diventano passabili.
+- **Sopravvivenza — Ancoraggio** (dietro Riserva di Bordo): la gravità
+  invertita non specchia più i comandi.
+- **Percezione — Sensori Inerziali** (dietro Lettura Termica): lo scanner
+  regge dentro il contaminante.
+
+È la progressione che un atto nuovo merita: prima arriva il problema, poi
+il ramo che se ne occupa offre la risposta. Nodi che migliorano numeri già
+buoni si comprano per abitudine; nodi che sbloccano una strada si
+scelgono.
+
+Una nota su Slancio, perché sembrava ovvio e non lo era: moltiplica la
+*velocità* dello scatto, non la durata. Sul vuoto non conta quanto dura lo
+scatto, conta quanti millisecondi si passano sospesi — allungare la durata
+farebbe arrivare più lontano ma non più in fretta, e una passerella larga
+resterebbe impossibile lo stesso.
+
+**Prerequisiti.** Quattro nodi stanno dietro un altro: Scatto Evasivo richiede
 Scatto, Lettura Termica richiede Scanner di Settore. Sono i due che
 cambiano *come* si gioca invece di spostare un numero, e stanno dietro
 quello che introduce la meccanica su cui si appoggiano. È anche ciò che
@@ -181,10 +242,11 @@ sta sempre nello stesso ramo del nodo che lo richiede — il menu mostra un
 ramo per volta, e mandare a cercare un nodo fuori schermata sarebbe una
 trappola.
 
-**Quanto ci vuole a riempirlo.** Dieci nodi, undici livelli: nessun punto
-resta senza un nodo su cui finire. Il primo run paga un ramo intero più un
-nodo (quattro punti spendibili prima del colpo che chiude la partita), e
-l'albero completo arriva verso il terzo run. Le due cose tirano in
+**Quanto ci vuole a riempirlo.** Quattordici nodi, quindici livelli:
+nessun punto resta senza un nodo su cui finire. L'Atto I paga il primo
+anello (dieci punti), l'Atto II il secondo; chi esplora arriva a 3 → 6 →
+10 → 11 → 12 → 14 punti a fine di ciascun livello, chi tira dritto a
+1 → 2 → 7 → 8 → 9 → 10 — cioè ogni livello paga qualcosa a chiunque. Le due cose tirano in
 direzioni opposte di proposito: un albero comprabile tutto subito non è un
 albero, e uno che non lascia scegliere niente al primo run non è una
 progressione. Sono invarianti verificate da `pnpm run balance:campaign`,
@@ -271,13 +333,14 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
 
 1. Un livello "verticale slice" *(fatto)* — poi diventato l'Atto I
    completo: tre livelli, il boss alla fine del terzo.
-2. Skill tree *(fatto)* — quattro rami, dieci nodi, persistenza su
-   `localStorage`.
-3. Trabocchetti restanti e composizioni *(fatto)* — tutti e cinque,
-   corridoio a fuoco incrociato compreso.
+2. Skill tree *(fatto)* — quattro rami su due anelli, quattordici nodi,
+   persistenza su `localStorage`.
+3. Trabocchetti restanti e composizioni *(fatto)* — tutti e otto,
+   corridoio a fuoco incrociato e passerelle compresi.
 4. Narrativa: battute di ARBITER *(fatto per la slice, sezione 10)*; testi
    tra un livello e l'altro ancora da scrivere.
-5. Atti II e III, bilanciamento con il tool esteso.
+5. Atto II *(fatto)* — Il Nucleo Anulare, tre livelli e il Custode.
+6. Atto III, bilanciamento con il tool esteso.
 
 ## 9. Decisioni dal briefing
 
@@ -302,41 +365,51 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
      corrente (3 livelli + boss): la posta si alza per chi cerca la sfida
      vera.
 
-## 10. Atto I (modalità Tutorial)
+## 10. Stato della campagna (modalità Tutorial)
 
 *Nato come "verticale slice": un livello solo, per validare il loop prima
 di scriverne nove. Il loop ha retto, e la slice è diventata il primo dei
 tre livelli dell'atto.*
 
-**Stato: l'Atto I è completo e giocabile.** Tre livelli concatenati —
-Attracco, Condotti, Molo — raggiungibili da "CAMPAGNA (BETA)" nel menu
-principale, con controlli touch oltre a tastiera/mouse, ottica e
-progressione salvata in locale. Tutti e cinque i trabocchetti della
-sezione 4 esistono, la Sentinella ha la sua seconda fase (sezione 5),
-ARBITER commenta il run (sotto) e lo skill tree è completo: quattro rami,
-dieci nodi, due prerequisiti (sezione 6).
+**Stato: Atti I e II completi e giocabili.** Sei livelli concatenati —
+Attracco, Condotti, Molo, Anello Esterno, Condotte del Refrigerante,
+Nucleo — raggiungibili da "CAMPAGNA (BETA)" nel menu principale, con
+controlli touch oltre a tastiera/mouse, ottica e progressione salvata in
+locale. Tutti e otto i trabocchetti della sezione 4 esistono, i due boss
+hanno le loro seconde fasi (sezione 5), ARBITER commenta il run e
+nell'Atto II comincia a parlare al giocatore invece che catalogarlo, e lo
+skill tree ha due anelli: quattro rami, quattordici nodi, quattro
+prerequisiti (sezione 6).
 
-Il prossimo passo è l'Atto II (sezione 2), che è anche il primo banco di
-prova dell'idea che un livello sia solo un dato: se costruirne uno nuovo
-richiede di toccare la simulazione, l'astrazione non regge e va rivista
-prima di moltiplicarla per nove.
+**L'astrazione ha retto.** L'Atto II era il banco di prova dell'idea che un
+livello sia solo un dato, e la risposta è netta: i tre livelli nuovi sono
+tre oggetti in `levels.ts` e non hanno richiesto una riga in
+`CampaignWorld`. Quello che *ha* richiesto codice sono state le meccaniche
+nuove — passerelle, buio, gravità, il Custode — che è esattamente la
+divisione che si voleva: aggiungere un livello è dato, aggiungere un tipo
+di minaccia è lavoro, e si paga una volta sola.
+
+Resta l'Atto III (sezione 2), che secondo il GDD deve ricombinare le
+minacce viste invece di aggiungerne: se è vero, dovrebbe essere quasi
+tutto dato.
 
 Obiettivo: un loop giocabile end-to-end, per validare le meccaniche prima di
 scrivere tutto l'Atto I. Scope fissato dal briefing:
 
-- **Livelli:** tre, lineari, di 3-4 stanze ciascuno (riuso del raycaster
+- **Livelli:** sei, lineari, di 3-4 stanze ciascuno (riuso del raycaster
   esistente, nessuna mappa enorme). Raggiungere l'uscita di un livello
-  apre il successivo; il terzo finisce col boss invece che con un'uscita.
-- **Trabocchetti:** tutti e cinque della sezione 4, distribuiti sui tre
+  apre il successivo; l'ultimo livello di ogni atto finisce col boss
+  invece che con un'uscita.
+- **Trabocchetti:** tutti e otto della sezione 4, distribuiti sui sei
   livelli.
-- **Boss:** Sentinella del Molo, alla fine del terzo livello — scudo
-  frontale sempre attivo, vulnerabile solo al core sul retro quando carica
-  l'attacco ravvicinato, con una seconda fase a metà danni (sezione 5).
+- **Boss:** Sentinella del Molo alla fine dell'Atto I, Custode del
+  Reattore alla fine del II. Vulnerabilità posizionale il primo, temporale
+  il secondo; entrambi con una seconda fase a metà danni (sezione 5).
 - **Morte:** checkpoint di stanza (regola "Tutorial" sopra).
-- **Skill tree:** tutti e quattro i rami (sezione 6), dieci nodi,
-  sbloccabili con punti abilità guadagnati salendo di livello (esperienza
-  da core, stanze, drone, boss). Lo Sprint 1 si era fermato al solo ramo
-  Precisione; gli altri tre sono arrivati subito dopo.
+- **Skill tree:** quattro rami su due anelli (sezione 6), quattordici
+  nodi, sbloccabili con punti abilità guadagnati salendo di livello
+  (esperienza da core, stanze, turret, boss). Il primo anello si compra
+  nell'Atto I, il secondo nell'Atto II.
 - **Potenziamento tattico:** uno scudo raccoglibile nel Magazzino, prima
   del Molo — assorbe un colpo e si consuma, distinto dallo skill tree
   (sezione 6, "Potenziamenti vs progressione permanente").

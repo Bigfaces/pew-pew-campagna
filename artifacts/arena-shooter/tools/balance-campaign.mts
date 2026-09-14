@@ -1,5 +1,5 @@
 // ================================================================
-// BALANCE HARNESS — Campagna, Atto I
+// BALANCE HARNESS — Campagna
 // ================================================================
 // Il gemello di balance.mts per la campagna. Stesso principio: le
 // affermazioni sul bilanciamento si controllano invece di discuterle.
@@ -22,6 +22,12 @@ import {
   BOSS_GUARD_MS,
   BOSS_HITS_TO_DEFEAT,
   BOSS_RECOVER_ENRAGED_MS,
+  CUSTODE_EXPOSED_ENRAGED_MS,
+  CUSTODE_EXPOSED_MS,
+  CUSTODE_HITS_TO_DEFEAT,
+  CUSTODE_MANIPULATION_ENRAGED_MS,
+  CUSTODE_MANIPULATION_MS,
+  CUSTODE_TELL_MS,
   BOSS_RECOVER_MS,
   BOSS_TELEGRAPH_ENRAGED_MS,
   BOSS_TELEGRAPH_MS,
@@ -35,7 +41,7 @@ import {
   XP_TURRET_DOWN,
   levelForXp,
 } from '../src/sim/campaign/constants';
-import { ACT_ONE } from '../src/sim/campaign/levels';
+import { ACT_ONE, ACT_TWO, ALL_LEVELS } from '../src/sim/campaign/levels';
 import { roomAtTx } from '../src/sim/campaign/levelTypes';
 
 const NODES = ALL_SKILL_NODES.length;
@@ -58,7 +64,7 @@ interface Stop {
 /** Le tappe di un livello, lette dalla sua definizione.
  *  `thorough` = raccoglie tutto e abbatte tutto; altrimenti attraversa
  *  soltanto. */
-function stopsFor(level: (typeof ACT_ONE)[number], thorough: boolean): Stop[] {
+function stopsFor(level: (typeof ALL_LEVELS)[number], thorough: boolean): Stop[] {
   const stops: Stop[] = [];
   const spawnRoom = roomAtTx(level, level.spawn.tx);
 
@@ -77,8 +83,10 @@ function stopsFor(level: (typeof ACT_ONE)[number], thorough: boolean): Stop[] {
     }
   }
   if (level.boss) {
-    for (let i = 1; i <= BOSS_HITS_TO_DEFEAT; i++) {
-      const kills = i === BOSS_HITS_TO_DEFEAT;
+    const hits =
+      level.boss.kind === 'custode' ? CUSTODE_HITS_TO_DEFEAT : BOSS_HITS_TO_DEFEAT;
+    for (let i = 1; i <= hits; i++) {
+      const kills = i === hits;
       stops.push({
         label: `colpo al boss ${i}${kills ? ' (uccide)' : ''}`,
         xp: XP_BOSS_HIT_SOLID,
@@ -105,8 +113,8 @@ function walkAct(label: string, thorough: boolean, verbose: boolean): Walk {
   let useful = 0;
   const perLevel: number[] = [];
 
-  for (const level of ACT_ONE) {
-    console.log(`\n  ── ${level.ordinal}. ${level.name} ──`);
+  for (const level of ALL_LEVELS) {
+    console.log(`\n  ── ${level.act}.${level.ordinal} ${level.name} ──`);
     for (const stop of stopsFor(level, thorough)) {
       xp += stop.xp;
       const pts = pointsAt(xp);
@@ -127,13 +135,26 @@ function walkAct(label: string, thorough: boolean, verbose: boolean): Walk {
   return { xp, useful, perLevel };
 }
 
-console.log('CAMPAGNA — BILANCIAMENTO DELL’ATTO I');
+console.log('CAMPAGNA — BILANCIAMENTO');
+console.log(`\nAtti: ${ACT_ONE.length} + ${ACT_TWO.length} livelli`);
 console.log(`\nSoglie di livello: ${LEVEL_XP_THRESHOLDS.join(', ')}`);
 console.log(`Nodi sbloccabili: ${NODES}`);
 for (const b of SKILL_TREE) console.log(`  ${b.name.padEnd(16)} ${b.nodes.length} nodi`);
 
 const thorough = walkAct('Esplora e ripulisce tutto', true, true);
 const rushed = walkAct('Tira dritto (niente core, niente turret)', false, false);
+
+/** I punti a fine di ciascun atto: serve a vedere che il secondo
+ *  anello dell'albero non si compri già nel primo atto. */
+function pointsPerAct(w: Walk): number[] {
+  const out: number[] = [];
+  let seen = 0;
+  for (const act of [ACT_ONE, ACT_TWO]) {
+    seen += act.length;
+    out.push(w.perLevel[seen - 1]!);
+  }
+  return out;
+}
 
 // ---- Invarianti ----
 // Le cose che possono rompersi ritarando l'XP o aggiungendo un
@@ -151,7 +172,13 @@ console.log(
 );
 
 console.log(
-  `\n  2. L'albero si apre lungo tutto l'atto, non tutto in fondo\n` +
+  `\n  1b. Il primo anello dell'albero si compra nell'Atto I, il secondo\n` +
+    `      nell'Atto II\n` +
+    `     punti a fine atto, esplorando: ${pointsPerAct(thorough).join(' → ')} su ${NODES}`,
+);
+
+console.log(
+  `\n  2. L'albero si apre lungo tutta la campagna, non tutto in fondo\n` +
     `     punti a fine livello, esplorando: ${thorough.perLevel.join(' → ')} → ${
       gainsEveryLevel(thorough) ? 'SÌ' : 'NO'
     }\n` +
@@ -221,4 +248,36 @@ bossCycle(
 console.log(
   '\n  La seconda fase deve stringere il ritmo *e* aprire di più: se la\n' +
     '  percentuale vulnerabile scendesse, sarebbe solo più lunga da subire.',
+);
+
+// ---- Ritmo del Custode ----
+// L'altro boss non si misura in cariche ma in finestre: quanta parte
+// del ciclo si passa a poter colpire.
+
+function custodeCycle(label: string, manipulation: number, exposed: number): void {
+  const cycleMs = manipulation + CUSTODE_TELL_MS + exposed;
+  console.log(`\n  ${label}`);
+  console.log(`    manipolazione           ${(manipulation / 1000).toFixed(1)} s`);
+  console.log(`    preavviso               ${(CUSTODE_TELL_MS / 1000).toFixed(1)} s`);
+  console.log(`    ciclo completo          ${(cycleMs / 1000).toFixed(1)} s`);
+  console.log(
+    `    finestra vulnerabile    ${(exposed / 1000).toFixed(1)} s  (${Math.round(
+      (exposed / cycleMs) * 100,
+    )}% del ciclo)`,
+  );
+}
+
+console.log('\n\n══ Custode del Reattore ══');
+console.log(`  colpi per abbatterlo      ${CUSTODE_HITS_TO_DEFEAT}`);
+custodeCycle('Prima fase', CUSTODE_MANIPULATION_MS, CUSTODE_EXPOSED_MS);
+custodeCycle(
+  'Seconda fase (alterato)',
+  CUSTODE_MANIPULATION_ENRAGED_MS,
+  CUSTODE_EXPOSED_ENRAGED_MS,
+);
+console.log(
+  "\n  Qui la seconda fase deve fare il *contrario* di quella della\n" +
+    '  Sentinella: non stringere il ritmo aprendo di più, ma stringere la\n' +
+    "  finestra. La Sentinella alterata diventa più aggressiva, il Custode\n" +
+    '  più avaro — due idee diverse di seconda fase, non la stessa due volte.',
 );
