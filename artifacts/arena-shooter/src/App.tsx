@@ -318,7 +318,11 @@ export default function App(): React.ReactElement {
       {ui === 'campaign' && campaignSnap?.phase === 'playing' && (
         <>
           <CampaignHud snap={campaignSnap} />
-          <TouchControls game={campaignRef.current} adsActive={campaignSnap.adsActive} />
+          <TouchControls
+            game={campaignRef.current}
+            adsActive={campaignSnap.adsActive}
+            dashReady={campaignSnap.dashReady}
+          />
         </>
       )}
       {ui === 'campaign' && campaignSnap?.phase === 'paused' && (

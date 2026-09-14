@@ -106,19 +106,27 @@ export const XP_BOSS_DEFEAT = 150;
 
 /** XP cumulativa richiesta per raggiungere il livello (indice + 1).
  *
- *  La tabella si ferma a 4 livelli perché i nodi sbloccabili sono 3:
- *  un livello oltre l'ultimo nodo darebbe punti da spendere su niente.
- *  Si allunga quando arriveranno gli altri rami (GDD.md sezione 6).
+ *  Undici livelli, cioè dieci punti: esattamente i nodi dell'albero.
+ *  Un livello oltre l'ultimo nodo darebbe punti da spendere su niente
+ *  — è lo stesso motivo per cui la tabella si fermava a quattro
+ *  quando il ramo costruito era solo Precisione.
  *
- *  Calibrata su cosa è raggiungibile *prima* che il boss muoia, non
- *  sul totale del run: la prima versione metteva le soglie a
- *  50/130/240, e con 115 XP disponibili prima dello scontro il terzo
- *  punto arrivava solo insieme al bonus di vittoria — cioè a partita
- *  finita, su un nodo che non si poteva più usare. Ora chi esplora
- *  tutto (stanze + core + drone = 115 XP) entra nel Molo con tutti e
- *  tre i punti; chi tira dritto ignorando core e drone (45 XP) arriva
- *  al massimo durante lo scontro, colpo dopo colpo. */
-export const LEVEL_XP_THRESHOLDS: readonly number[] = [0, 40, 75, 110];
+ *  Le prime quattro soglie sono rimaste dov'erano: erano calibrate su
+ *  cosa si raggiunge *prima* che il boss muoia (la prima versione
+ *  metteva il terzo punto a 240 XP, cioè insieme al bonus di vittoria
+ *  — un punto guadagnato a partita finita, su un nodo che non si
+ *  poteva più usare), e quel vincolo non è cambiato.
+ *
+ *  Quelle nuove invece accettano di proposito che un run solo non
+ *  basti: dieci nodi comprabili tutti alla prima partita non sarebbero
+ *  un albero, sarebbero una lista che si riempie da sola. Il primo run
+ *  paga un ramo intero più un nodo — abbastanza per specializzarsi
+ *  davvero — e l'albero completo arriva verso il terzo. Le cifre le
+ *  verifica `balance:campaign`, che le ricalcola invece di fidarsi di
+ *  questo commento. */
+export const LEVEL_XP_THRESHOLDS: readonly number[] = [
+  0, 40, 75, 110, 150, 210, 280, 360, 450, 560, 690,
+];
 
 export function levelForXp(xp: number): number {
   let level = 1;
@@ -136,7 +144,16 @@ export function xpForNextLevel(level: number): number | null {
   return LEVEL_XP_THRESHOLDS[level] ?? null;
 }
 
-// ---- Skill tree: ramo Precisione ----
+// ---- Skill tree ----
+// Quattro rami. Precisione era l'unico costruito nello Sprint 1; gli
+// altri tre esistevano solo come nomi nel menu, e quei nomi
+// promettevano cose che la slice non ha: "passo silenzioso" in un
+// gioco dove il drone ti trova con la linea di vista e non con
+// l'udito, "rigenerazione" in un gioco dove un colpo uccide e non
+// esiste una barra da riempire. Tenerli avrebbe voluto dire inventare
+// meccaniche per far tornare i nomi. Sono stati riscritti su quello
+// che la simulazione fa davvero — vedi GDD.md sezione 6.
+
 /** Costo in punti abilità (uno per livello guadagnato), non più in
  *  core raccolti — vedi "Esperienza e livelli" sopra. */
 export const NODE_COST = 1;
@@ -147,26 +164,163 @@ export const BASE_WEAPON_STATS = {
   adsMoveMult: ADS_MOVE_MULT,
 };
 
-export type PrecisionNodeId =
+export type SkillBranchId = 'precisione' | 'mobilita' | 'sopravvivenza' | 'percezione';
+
+export type SkillNodeId =
   | 'otturatore-rapido'
   | 'aggancio-ottico'
-  | 'danno-di-striscio';
+  | 'danno-di-striscio'
+  | 'scatto'
+  | 'passo-lungo'
+  | 'scatto-evasivo'
+  | 'piastra-aggiuntiva'
+  | 'riserva-di-bordo'
+  | 'scanner-di-settore'
+  | 'lettura-termica';
 
-export interface PrecisionNodeDef {
-  id: PrecisionNodeId;
+export interface SkillNodeDef {
+  id: SkillNodeId;
   cost: number;
   name: string;
+  /** Una riga su cosa fa. Un albero i cui nodi sono soltanto nomi
+   *  costringe a comprare al buio e a scoprire dopo se era la scelta
+   *  giusta — con punti che non si possono rimborsare. */
+  desc: string;
+  /** Nodo da sbloccare prima di questo. È ciò che rende l'albero un
+   *  albero invece di una lista della spesa: i due nodi che cambiano
+   *  *come* si gioca stanno dietro quello che introduce la meccanica
+   *  su cui si appoggiano. */
+  requires?: SkillNodeId;
 }
 
-export const PRECISION_NODES: readonly PrecisionNodeDef[] = [
-  { id: 'otturatore-rapido', cost: NODE_COST, name: 'Otturatore Rapido' },
-  { id: 'aggancio-ottico', cost: NODE_COST, name: 'Aggancio Ottico' },
-  { id: 'danno-di-striscio', cost: NODE_COST, name: 'Danno di Striscio' },
+export interface SkillBranchDef {
+  id: SkillBranchId;
+  name: string;
+  /** Cosa promette il ramo, in una riga: serve a scegliere *dove*
+   *  investire prima ancora di leggere i singoli nodi. */
+  tagline: string;
+  nodes: readonly SkillNodeDef[];
+}
+
+export const SKILL_TREE: readonly SkillBranchDef[] = [
+  {
+    id: 'precisione',
+    name: 'PRECISIONE',
+    tagline: 'Colpire meglio, e più spesso.',
+    nodes: [
+      {
+        id: 'otturatore-rapido',
+        cost: NODE_COST,
+        name: 'Otturatore Rapido',
+        desc: 'Ricarica più veloce tra un colpo e il successivo.',
+      },
+      {
+        id: 'aggancio-ottico',
+        cost: NODE_COST,
+        name: 'Aggancio Ottico',
+        desc: "L'ottica si apre quasi subito e rallenta meno il passo.",
+      },
+      {
+        id: 'danno-di-striscio',
+        cost: NODE_COST,
+        name: 'Danno di Striscio',
+        desc: 'Mezzo danno anche fuori dal cono posteriore del boss.',
+      },
+    ],
+  },
+  {
+    id: 'mobilita',
+    name: 'MOBILITÀ',
+    tagline: 'Arrivare dove il colpo non arriva.',
+    nodes: [
+      {
+        id: 'scatto',
+        cost: NODE_COST,
+        name: 'Scatto',
+        desc: 'Uno strappo breve nella direzione del movimento (MAIUSC).',
+      },
+      {
+        id: 'passo-lungo',
+        cost: NODE_COST,
+        name: 'Passo Lungo',
+        desc: 'Velocità base più alta, sempre.',
+      },
+      {
+        id: 'scatto-evasivo',
+        cost: NODE_COST,
+        name: 'Scatto Evasivo',
+        desc: 'Durante lo scatto sei intoccabile: la carica si attraversa.',
+        requires: 'scatto',
+      },
+    ],
+  },
+  {
+    id: 'sopravvivenza',
+    name: 'SOPRAVVIVENZA',
+    tagline: 'Un errore che non finisce il run.',
+    nodes: [
+      {
+        id: 'piastra-aggiuntiva',
+        cost: NODE_COST,
+        name: 'Piastra Aggiuntiva',
+        desc: 'Lo scudo assorbe due colpi invece di uno.',
+      },
+      {
+        id: 'riserva-di-bordo',
+        cost: NODE_COST,
+        name: 'Riserva di Bordo',
+        desc: 'Entrare in una stanza nuova ricarica lo scudo.',
+      },
+    ],
+  },
+  {
+    id: 'percezione',
+    name: 'PERCEZIONE',
+    tagline: 'Sapere prima di vedere.',
+    nodes: [
+      {
+        id: 'scanner-di-settore',
+        cost: NODE_COST,
+        name: 'Scanner di Settore',
+        desc: 'Minimappa del settore con la tua posizione.',
+      },
+      {
+        id: 'lettura-termica',
+        cost: NODE_COST,
+        name: 'Lettura Termica',
+        desc: 'La minimappa segna anche droni, boss, core e scudo.',
+        requires: 'scanner-di-settore',
+      },
+    ],
+  },
 ];
 
+export const ALL_SKILL_NODES: readonly SkillNodeDef[] = SKILL_TREE.flatMap((b) => b.nodes);
+
+// ---- Valori dei nodi ----
+
+// Precisione
 export const NODE_OTTURATORE_COOLDOWN_MS = 1150;
 export const NODE_AGGANCIO_TRANSITION_MS = 70;
 export const NODE_AGGANCIO_MOVE_MULT = 0.55;
+
+// Mobilità
+/** px/tick durante lo scatto. Sopra BOSS_CHARGE_SPEED (3.4) di
+ *  proposito: uno scatto più lento della carica non sarebbe una
+ *  schivata, sarebbe una fuga persa in partenza. */
+export const DASH_SPEED = 5.5;
+export const DASH_DURATION_MS = 170;
+export const DASH_COOLDOWN_MS = 2600;
+/** Moltiplicatore di PLAYER_SPEED con Passo Lungo. Tenuto sotto la
+ *  soglia che renderebbe il giocatore più veloce della carica del
+ *  boss: la Sentinella deve restare una minaccia da schivare, non da
+ *  superare camminando. */
+export const NODE_PASSO_LUNGO_MULT = 1.18;
+
+// Sopravvivenza
+export const SHIELD_CHARGES_BASE = 1;
+export const SHIELD_CHARGES_UPGRADED = 2;
+
 
 // ---- Boss: Sentinella del Molo ----
 export const BOSS_TX = 18;

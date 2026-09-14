@@ -17,7 +17,8 @@ import {
   DRONE_REACTION_MS,
   LEVEL_XP_THRESHOLDS,
   NODE_OTTURATORE_COOLDOWN_MS,
-  PRECISION_NODES,
+  ALL_SKILL_NODES,
+  SKILL_TREE,
   SHIELD_X,
   SHIELD_Y,
   XP_BOSS_DEFEAT,
@@ -94,17 +95,37 @@ describe('esperienza e livelli', () => {
 
   /** La curva deve restare spendibile *durante* la partita: la prima
    *  versione concedeva il terzo punto solo insieme al bonus di
-   *  vittoria, cioè su un nodo ormai inutilizzabile. */
-  it('grants a point for every node before the boss dies, exploring everything', () => {
+   *  vittoria, cioè su un nodo ormai inutilizzabile.
+   *
+   *  Con un solo ramo l'asticella era "tutti i nodi prima del boss".
+   *  Con quattro rami quella soglia sarebbe sbagliata al contrario:
+   *  un albero comprabile per intero alla prima partita non è un
+   *  albero. Quello che deve restare vero è che chi esplora possa
+   *  *specializzarsi* — cioè riempire almeno un ramo completo prima di
+   *  entrare nel Molo. */
+  it('affords a full branch before the boss fight, exploring everything', () => {
     const preBossXp = 3 * XP_ROOM_ENTER + 2 * XP_CORE + XP_DRONE_DOWN;
     const pointsBeforeBoss = levelForXp(preBossXp) - 1;
-    expect(pointsBeforeBoss).toBe(PRECISION_NODES.length);
+    const biggestBranch = Math.max(...SKILL_TREE.map((b) => b.nodes.length));
+    expect(pointsBeforeBoss).toBeGreaterThanOrEqual(biggestBranch);
   });
 
-  it('reaches max level mid-fight even skipping cores and drone', () => {
+  /** L'altro lato dello stesso vincolo: chi tira dritto ignorando core
+   *  e drone deve comunque guadagnare punti *mentre* combatte, non
+   *  soltanto a partita finita. */
+  it('still earns spendable points mid-fight when skipping cores and drone', () => {
     const roomsOnly = 3 * XP_ROOM_ENTER;
-    const afterThreeHits = roomsOnly + BOSS_HITS_TO_DEFEAT * XP_BOSS_HIT_SOLID;
-    expect(levelForXp(afterThreeHits) - 1).toBe(PRECISION_NODES.length);
+    // Due colpi, non tre: il terzo uccide il boss e chiude la slice,
+    // quindi un punto che arrivasse lì non sarebbe spendibile.
+    const beforeKillingBlow = roomsOnly + (BOSS_HITS_TO_DEFEAT - 1) * XP_BOSS_HIT_SOLID;
+    expect(levelForXp(beforeKillingBlow) - 1).toBeGreaterThan(levelForXp(roomsOnly) - 1);
+  });
+
+  /** Nessun punto deve restare senza un nodo su cui finire: la tabella
+   *  dei livelli e l'albero devono avere la stessa misura. */
+  it('tops out at exactly one point per node in the tree', () => {
+    const maxPoints = LEVEL_XP_THRESHOLDS.length - 1;
+    expect(maxPoints).toBe(ALL_SKILL_NODES.length);
   });
 });
 
@@ -263,7 +284,7 @@ describe('CampaignWorld — scudo tattico', () => {
     // Walk over the pickup first.
     const pickupEvents = world.step();
     expect(world.state.shield.collected).toBe(true);
-    expect(world.state.player.shieldActive).toBe(true);
+    expect(world.state.player.shieldCharges).toBe(1);
     expect(pickupEvents.some((e) => e.type === 'shieldPickup')).toBe(true);
 
     // Now stand where the drone can see us and let it fire.
@@ -280,7 +301,7 @@ describe('CampaignWorld — scudo tattico', () => {
 
     expect(sawBreak).toBe(true);
     expect(sawDeath).toBe(false);
-    expect(world.state.player.shieldActive).toBe(false);
+    expect(world.state.player.shieldCharges).toBe(0);
     // The player never actually died, so they should still be standing
     // in front of the drone, not back at the checkpoint.
     expect(world.state.player.x).toBe(13.5 * TILE);

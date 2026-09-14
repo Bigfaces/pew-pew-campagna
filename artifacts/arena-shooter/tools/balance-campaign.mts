@@ -31,8 +31,9 @@ import {
   BOSS_TELEGRAPH_ENRAGED_MS,
   BOSS_TELEGRAPH_MS,
   BOSS_VOLLEY_RECOVER_MS,
+  ALL_SKILL_NODES,
   LEVEL_XP_THRESHOLDS,
-  PRECISION_NODES,
+  SKILL_TREE,
   XP_BOSS_DEFEAT,
   XP_BOSS_HIT_SOLID,
   XP_CORE,
@@ -41,7 +42,8 @@ import {
   levelForXp,
 } from '../src/sim/campaign/constants';
 
-const NODES = PRECISION_NODES.length;
+const NODES = ALL_SKILL_NODES.length;
+const BIGGEST_BRANCH = Math.max(...SKILL_TREE.map((b) => b.nodes.length));
 
 function pointsAt(xp: number): number {
   return levelForXp(xp) - 1;
@@ -58,10 +60,10 @@ interface Step {
   spendable: boolean;
 }
 
-function run(label: string, steps: Step[]): number {
+function run(label: string, steps: Step[], startXp = 0): { xp: number; useful: number } {
   console.log(`\n── ${label} ──`);
-  let xp = 0;
-  let pointsWhileUseful = 0;
+  let xp = startXp;
+  let pointsWhileUseful = pointsAt(xp);
   for (const s of steps) {
     xp += s.xp;
     const pts = pointsAt(xp);
@@ -73,14 +75,17 @@ function run(label: string, steps: Step[]): number {
     );
   }
   console.log(`  → punti spendibili mentre servono ancora: ${pointsWhileUseful}/${NODES}`);
-  return pointsWhileUseful;
+  return { xp, useful: pointsWhileUseful };
 }
 
 console.log('CAMPAGNA — BILANCIAMENTO');
 console.log(`\nSoglie di livello: ${LEVEL_XP_THRESHOLDS.join(', ')}`);
-console.log(`Nodi sbloccabili: ${NODES} (ramo Precisione)`);
+console.log(`Nodi sbloccabili: ${NODES}`);
+for (const b of SKILL_TREE) {
+  console.log(`  ${b.name.padEnd(16)} ${b.nodes.length} nodi`);
+}
 
-const explorer = run('Esplora tutto', [
+const explorer = run('Esplora tutto (primo run)', [
   { label: 'entra in corridoio', xp: XP_ROOM_ENTER, spendable: true },
   { label: 'core del corridoio', xp: XP_CORE, spendable: true },
   { label: 'entra in magazzino', xp: XP_ROOM_ENTER, spendable: true },
@@ -103,13 +108,45 @@ run('Tira dritto (niente core, niente drone)', [
   { label: 'bonus di vittoria', xp: XP_BOSS_DEFEAT, spendable: false },
 ]);
 
-// L'invariante che conta, e che la prima taratura violava: chi cerca
-// tutto quello che la slice offre deve poter *usare* tutto quello che
-// ha guadagnato. Per chi tira dritto, avere meno nodi non è un bug —
-// è il premio dell'esplorazione visto dall'altro lato.
+// Un secondo run non ripaga stanze e core: sono once-per-profilo,
+// altrimenti uscire al menu e rientrare sarebbe un loop di XP stabile.
+// Quello che resta è il drone e il boss — ed è su questo residuo che
+// si misura quanto ci mette l'albero a riempirsi.
+const REPEAT_RUN_XP = XP_DRONE_DOWN + 3 * XP_BOSS_HIT_SOLID + XP_BOSS_DEFEAT;
+console.log(`\nUn run ripetuto vale ${REPEAT_RUN_XP} XP (stanze e core sono già pagati).`);
+
+let xp = explorer.xp;
+let runs = 1;
+console.log(`  dopo il run 1: ${xp} XP → ${pointsAt(xp)}/${NODES} punti`);
+while (pointsAt(xp) < NODES && runs < 20) {
+  xp += REPEAT_RUN_XP;
+  runs++;
+  console.log(`  dopo il run ${runs}: ${xp} XP → ${pointsAt(xp)}/${NODES} punti`);
+}
+
+// ---- Invarianti ----
+// Le tre cose che possono rompersi ritarando XP o aggiungendo nodi, e
+// che leggendo le costanti non si vedono.
+
+const maxPoints = LEVEL_XP_THRESHOLDS.length - 1;
+console.log('\nInvarianti');
 console.log(
-  `\nInvariante — chi esplora tutto può spendere ogni nodo prima del colpo decisivo: ` +
-    `${explorer >= NODES ? 'SÌ' : `NO (${explorer}/${NODES})`}`,
+  `  1. Nessun punto senza un nodo su cui finire: ${maxPoints} punti / ${NODES} nodi — ` +
+    `${maxPoints === NODES ? 'SÌ' : 'NO'}`,
+);
+console.log(
+  `  2. Al primo run ci si può specializzare (un ramo intero prima del boss): ` +
+    `${explorer.useful} punti / ramo più grande ${BIGGEST_BRANCH} — ` +
+    `${explorer.useful >= BIGGEST_BRANCH ? 'SÌ' : 'NO'}`,
+);
+console.log(
+  `  3. L'albero completo NON arriva al primo run, ma arriva: run ${runs} — ` +
+    `${runs > 1 && pointsAt(xp) >= NODES ? 'SÌ' : 'NO'}`,
+);
+console.log(
+  '\n  La 2 e la 3 tirano in direzioni opposte di proposito: un albero\n' +
+    '  comprabile tutto subito non è un albero, e uno che non lascia\n' +
+    '  scegliere niente al primo run non è una progressione.',
 );
 
 function bossCycle(label: string, guard: number, telegraph: number, charges: number, volleyPause: number, recover: number): void {

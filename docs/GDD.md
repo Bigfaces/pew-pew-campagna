@@ -115,21 +115,55 @@ core restano raccoglibili e restano la fonte di XP più affidabile da
 esplorazione pura, ma non sono più l'unica strada: un run aggressivo e uno
 esplorativo progrediscono entrambi, verso lo stesso tipo di ricompensa.
 
-**Rami dello skill tree** (indicativi, da bilanciare):
+**Rami dello skill tree** — quattro rami, dieci nodi, tutti costruiti:
 
-- **Precisione** *(implementato)* — otturatore più rapido, aggancio ottico
-  più rapido e meno penalizzante, danno di striscio ai boss.
-- **Mobilità** — velocità base, scatto breve (dash) con cooldown, rumore dei
-  passi ridotto.
-- **Sopravvivenza** — vite/scudo aggiuntivo, rigenerazione parziale tra le
-  stanze.
-- **Percezione** — minimappa estesa, indicazione più precisa della
-  direzione dei passi/spari nemici (evoluzione naturale del sistema
-  "informazione guadagnata" già presente in Arena).
+- **Precisione** — *Otturatore Rapido* (ricarica più breve), *Aggancio
+  Ottico* (l'ottica si apre quasi subito e rallenta meno il passo), *Danno
+  di Striscio* (mezzo danno anche fuori dal cono posteriore del boss).
+- **Mobilità** — *Scatto* (uno strappo breve, direzione fissata alla
+  partenza, con cooldown), *Passo Lungo* (velocità base più alta), *Scatto
+  Evasivo* (durante lo scatto sei intoccabile: la carica si attraversa).
+- **Sopravvivenza** — *Piastra Aggiuntiva* (lo scudo assorbe due colpi),
+  *Riserva di Bordo* (entrare in una stanza nuova ricarica lo scudo già
+  raccolto).
+- **Percezione** — *Scanner di Settore* (minimappa del settore), *Lettura
+  Termica* (la minimappa segna anche droni, boss, core e scudo).
 
-I tre rami non-Precisione sono mostrati nel menu (schermata di pausa) come
-"prossimamente", con i nodi previsti a titolo di intenzione — non fanno
-ancora nulla, per non promettere un effetto che il gioco non mantiene.
+**I nomi non sono quelli promessi nella prima stesura, e il motivo conta.**
+Il piano iniziale elencava "passo silenzioso" e "rigenerazione parziale tra
+le stanze". Nessuno dei due descrive una meccanica che questo gioco ha: il
+drone trova il giocatore con la linea di vista e non con l'udito, e non
+esiste una barra di vita da rigenerare, perché un colpo uccide. Tenere quei
+nomi avrebbe voluto dire inventare meccaniche per far tornare le etichette.
+Sono stati riscritti su ciò che la simulazione fa davvero, tenendo l'intento
+di ciascuno: "silenzioso" era *non farsi prendere*, e quello lo fa lo
+Scatto; "rigenerazione" era *un errore che non finisce il run*, e quello lo
+fa la Riserva di Bordo. "Minimappa estesa" non aveva niente da estendere —
+la Campagna non ha mai avuto una minimappa — quindi il primo nodo *è* la
+minimappa e il secondo aggiunge i contatti, cioè la parte che si chiamava
+"estesa", stavolta guadagnata.
+
+**Prerequisiti.** Due nodi stanno dietro un altro: Scatto Evasivo richiede
+Scatto, Lettura Termica richiede Scanner di Settore. Sono i due che
+cambiano *come* si gioca invece di spostare un numero, e stanno dietro
+quello che introduce la meccanica su cui si appoggiano. È anche ciò che
+rende l'albero un albero invece di una lista della spesa. Un prerequisito
+sta sempre nello stesso ramo del nodo che lo richiede — il menu mostra un
+ramo per volta, e mandare a cercare un nodo fuori schermata sarebbe una
+trappola.
+
+**Quanto ci vuole a riempirlo.** Dieci nodi, undici livelli: nessun punto
+resta senza un nodo su cui finire. Il primo run paga un ramo intero più un
+nodo (quattro punti spendibili prima del colpo che chiude la partita), e
+l'albero completo arriva verso il terzo run. Le due cose tirano in
+direzioni opposte di proposito: un albero comprabile tutto subito non è un
+albero, e uno che non lascia scegliere niente al primo run non è una
+progressione. Sono invarianti verificate da `pnpm run balance:campaign`,
+non affermazioni di questo documento.
+
+**Nodi che non toccano la simulazione.** I due di Percezione cambiano solo
+cosa il giocatore vede. Restano comunque stato della sim (`unlockedNodes`):
+è il renderer a chiedere, non a decidere.
 
 **Armi:** si parte con il fucile di precisione. Nodi dello skill tree
 sbloccano varianti/potenziamenti (es. caricatore da 2 colpi prima di
@@ -197,7 +231,8 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
 1. Un livello "verticale slice": 2-3 stanze, un trabocchetto, un boss
    semplice (Sentinella del Molo), per validare il loop prima di scrivere
    tutto l'Atto I.
-2. Skill tree minimo (2 rami, pochi nodi) + persistenza.
+2. Skill tree *(fatto)* — quattro rami, dieci nodi, persistenza su
+   `localStorage`.
 3. Trabocchetti restanti e composizioni (corridoi a fuoco incrociato).
 4. Narrativa: battute di ARBITER *(fatto per la slice, sezione 10)*; testi
    tra un livello e l'altro ancora da scrivere.
@@ -207,6 +242,10 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
 
 - **Lunghezza:** 3 livelli + boss per atto (9 livelli + 3 boss totali). Si
   allunga solo se, dopo la verticale slice, il ritmo lo giustifica.
+- **Skill tree:** il briefing aveva fissato *un ramo, 2-3 nodi* per la
+  slice, ed è quello che lo Sprint 1 ha consegnato. Gli altri tre rami sono
+  arrivati subito dopo, una volta che il loop reggeva: la decisione del
+  briefing era sullo scope della prima iterazione, non un tetto.
 - **Sprite:** in futuro solo su nemici/boss. I muri restano wireframe/texture
   procedurali come nell'Arena: è il tratto distintivo tecnico del gioco.
 - **Salvataggio:** profilo unico su `localStorage`, come le statistiche
@@ -228,9 +267,9 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
 raggiungibili da "CAMPAGNA (BETA)" nel menu principale, con controlli
 touch oltre a tastiera/mouse, ottica (tasto destro o pulsante a schermo)
 e progressione salvata in locale. La Sentinella ha la sua seconda fase
-(sezione 5) e ARBITER commenta il run (sotto). Restano aperti: i tre rami
-dello skill tree oltre a Precisione (sezione 6) e il resto dell'Atto I —
-due livelli e i trabocchetti mancanti (sezione 4).
+(sezione 5), ARBITER commenta il run (sotto) e lo skill tree è completo:
+quattro rami, dieci nodi, due prerequisiti (sezione 6). Resta aperto il
+resto dell'Atto I — due livelli e i trabocchetti mancanti (sezione 4).
 
 Obiettivo: un loop giocabile end-to-end, per validare le meccaniche prima di
 scrivere tutto l'Atto I. Scope fissato dal briefing:
@@ -242,10 +281,10 @@ scrivere tutto l'Atto I. Scope fissato dal briefing:
 - **Boss:** Sentinella del Molo — scudo frontale sempre attivo, vulnerabile
   solo al core sul retro quando carica l'attacco ravvicinato.
 - **Morte:** checkpoint di stanza (regola "Tutorial" sopra).
-- **Skill tree:** un solo ramo, **Precisione**, sbloccabile con punti
-  abilità guadagnati salendo di livello (esperienza da core, stanze,
-  drone, boss — vedi sezione 6). Gli altri rami restano solo su carta
-  per ora.
+- **Skill tree:** tutti e quattro i rami (sezione 6), dieci nodi,
+  sbloccabili con punti abilità guadagnati salendo di livello (esperienza
+  da core, stanze, drone, boss). Lo Sprint 1 si era fermato al solo ramo
+  Precisione; gli altri tre sono arrivati subito dopo.
 - **Potenziamento tattico:** uno scudo raccoglibile nel Magazzino, prima
   del Molo — assorbe un colpo e si consuma, distinto dallo skill tree
   (sezione 6, "Potenziamenti vs progressione permanente").

@@ -14,6 +14,7 @@ import {
   DRONE_REACTION_MS,
 } from '../sim/campaign/constants';
 import { angleDelta } from '../sim/raycast';
+import { CAMP_MAP_H, CAMP_MAP_W } from '../sim/campaign/map';
 import { campCastRay, type GetTileFn } from '../sim/campaign/raycast';
 import type {
   BossPhase,
@@ -351,4 +352,148 @@ export function renderCampaignBillboards(
 
   list.sort((a, b) => b.dist - a.dist);
   for (const b of list) b.draw();
+}
+
+// ================================================================
+// MINIMAPPA — nodi Percezione
+// ================================================================
+// La campagna non ha mai avuto una minimappa: il segnaposto nel menu
+// prometteva "minimappa estesa", ma non c'era niente da estendere.
+// Quindi il primo nodo *è* la minimappa, e il secondo aggiunge i
+// contatti — cioè la parte che nel segnaposto si chiamava "estesa",
+// stavolta guadagnata.
+//
+// Non riusa renderMinimap dell'Arena: quella è legata a MAP_W/MAP_H
+// dell'Arena e ai suoi tipi Entity/PowerUp, e generalizzarla
+// vorrebbe dire toccare un file da cui dipende il multiplayer. Stessa
+// scelta già fatta per physics e raycast della campagna.
+// ================================================================
+
+/** Cache del fondo: i muri non cambiano mai tranne che per la porta,
+ *  quindi ridisegnare 242 tile per frame sarebbe lavoro buttato. La
+ *  chiave include lo stato della porta proprio perché quello cambia. */
+let campMinimapCache: { canvas: HTMLCanvasElement; size: number; door: boolean } | null =
+  null;
+
+function campMinimapBackground(
+  size: number,
+  getTile: GetTileFn,
+  doorClosed: boolean,
+): HTMLCanvasElement {
+  const cached = campMinimapCache;
+  if (cached && cached.size === size && cached.door === doorClosed) return cached.canvas;
+
+  const c = document.createElement('canvas');
+  c.width = size;
+  c.height = size;
+  const g = c.getContext('2d')!;
+  const sx = size / CAMP_MAP_W;
+  const sy = size / CAMP_MAP_H;
+
+  g.fillStyle = 'rgba(6, 12, 18, 0.82)';
+  g.fillRect(0, 0, size, size);
+  g.fillStyle = 'rgba(120, 190, 230, 0.30)';
+  for (let ty = 0; ty < CAMP_MAP_H; ty++) {
+    for (let tx = 0; tx < CAMP_MAP_W; tx++) {
+      if (getTile(tx, ty) !== 0) g.fillRect(tx * sx, ty * sy, sx + 0.5, sy + 0.5);
+    }
+  }
+  g.strokeStyle = 'rgba(150, 220, 255, 0.45)';
+  g.lineWidth = 1;
+  g.strokeRect(0.5, 0.5, size - 1, size - 1);
+
+  campMinimapCache = { canvas: c, size, door: doorClosed };
+  return c;
+}
+
+export interface MinimapContacts {
+  cores: readonly CoreState[];
+  drone: DroneState;
+  droneX: number;
+  droneY: number;
+  boss: BossState;
+  shieldX: number;
+  shieldY: number;
+  shieldAvailable: boolean;
+}
+
+/** Draws the sector minimap. `contacts` is null with only Scanner di
+ *  Settore unlocked: you see the map and yourself, but not what is on
+ *  it — which is exactly the difference the second node sells. */
+/** Dove finisce la minimappa, in px CSS (vp.width è già in px CSS).
+ *
+ *  Esportata perché la HUD deve sapere quanto spazio lasciarle. La
+ *  colonna centrale della HUD è larga quanto il suo contenuto, e senza
+ *  questo dato le finisce sotto — è esattamente quello che faceva la
+ *  prima versione, verificata su iPhone 13. Una formula sola, letta da
+ *  chi disegna e da chi deve scansarsi, invece di due numeri da tenere
+ *  d'accordo a mano ogni volta che uno dei due cambia.
+ *
+ *  La mappa è larga il doppio di quanto è alta (22x11): riservarle un
+ *  quadrato sprecherebbe metà dello spazio su un telefono. */
+export function campMinimapBox(vpWidth: number): { w: number; h: number; pad: number } {
+  const w = Math.round(Math.min(200, Math.max(120, vpWidth * 0.17)));
+  return { w, h: Math.round((w * CAMP_MAP_H) / CAMP_MAP_W), pad: 12 };
+}
+
+export function renderCampaignMinimap(
+  ctx: CanvasRenderingContext2D,
+  vp: Viewport,
+  getTile: GetTileFn,
+  doorClosed: boolean,
+  playerX: number,
+  playerY: number,
+  playerAngle: number,
+  contacts: MinimapContacts | null,
+): void {
+  const { w, h, pad } = campMinimapBox(vp.width);
+  const mx = vp.width - w - pad;
+  const my = pad;
+  const sx = w / (CAMP_MAP_W * TILE);
+  const sy = h / (CAMP_MAP_H * TILE);
+
+  ctx.save();
+  ctx.globalAlpha = 0.92;
+  // Il fondo è disegnato su un canvas quadrato di lato `w` e poi
+  // schiacciato all'altezza reale: una sola cache, invece di una per
+  // ogni rapporto di forma.
+  ctx.drawImage(campMinimapBackground(w, getTile, doorClosed), mx, my, w, h);
+
+  if (contacts) {
+    for (const c of contacts.cores) {
+      if (c.collected) continue;
+      ctx.fillStyle = '#ffd166';
+      ctx.fillRect(mx + c.x * sx - 1.5, my + c.y * sy - 1.5, 3, 3);
+    }
+    if (contacts.shieldAvailable) {
+      ctx.fillStyle = '#44ccff';
+      ctx.fillRect(mx + contacts.shieldX * sx - 1.5, my + contacts.shieldY * sy - 1.5, 3, 3);
+    }
+    if (contacts.drone.alive) {
+      ctx.fillStyle = '#ff5c5c';
+      ctx.beginPath();
+      ctx.arc(mx + contacts.droneX * sx, my + contacts.droneY * sy, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (contacts.boss.phase !== 'defeated') {
+      ctx.fillStyle = '#ff7a2f';
+      ctx.beginPath();
+      ctx.arc(mx + contacts.boss.x * sx, my + contacts.boss.y * sy, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Il giocatore per ultimo: un contatto non deve mai coprire la
+  // freccia che dice dove sei.
+  const px = mx + playerX * sx;
+  const py = my + playerY * sy;
+  ctx.fillStyle = '#eaf6ff';
+  ctx.beginPath();
+  ctx.moveTo(px + Math.cos(playerAngle) * 5, py + Math.sin(playerAngle) * 5);
+  ctx.lineTo(px + Math.cos(playerAngle + 2.5) * 4, py + Math.sin(playerAngle + 2.5) * 4);
+  ctx.lineTo(px + Math.cos(playerAngle - 2.5) * 4, py + Math.sin(playerAngle - 2.5) * 4);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
 }

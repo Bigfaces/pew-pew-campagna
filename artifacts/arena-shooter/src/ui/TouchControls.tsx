@@ -42,9 +42,14 @@ function captureQuietly(e: React.PointerEvent<HTMLDivElement>): void {
 export function TouchControls({
   game,
   adsActive,
+  dashReady,
 }: {
   game: CampaignGame | null;
   adsActive: boolean;
+  /** null finché il nodo Scatto non è sbloccato: il pulsante non
+   *  esiste finché la meccanica non esiste. 0..1 quando c'è, 1 =
+   *  pronto. */
+  dashReady: number | null;
 }): React.ReactElement {
   const knobRef = useRef<HTMLDivElement | null>(null);
   const joyOrigin = useRef<{ x: number; y: number } | null>(null);
@@ -123,6 +128,18 @@ export function TouchControls({
       >
         OTTICA
       </div>
+      {dashReady !== null && (
+        <div
+          className="touch-dash"
+          data-ready={dashReady >= 1 ? 'true' : 'false'}
+          onPointerDown={(e) => {
+            captureQuietly(e);
+            game?.queueDash();
+          }}
+        >
+          SCATTO
+        </div>
+      )}
       <div
         className="touch-fire"
         onPointerDown={(e) => {

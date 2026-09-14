@@ -43,8 +43,11 @@ const ON_FIRST_DEATH: Record<string, string> = {
 const ON_FIRST: Record<string, string> = {
   doorSealed: 'Paratia sigillata. Non era una trappola: era una porta. Sei in ritardo.',
   coreCollected: 'Quello è un nucleo di potenza. Serviva a me. Immagino serva anche a te.',
-  shieldPickup: 'Barriera portatile. Assorbe un colpo. Ne arriveranno altri.',
   droneDown: 'Drone otto-quattro fuori servizio. Ne ho altri undici. Avevo.',
+  shieldRefilled: 'La tua barriera si è ricaricata da sola. Qualcuno ti ha equipaggiato bene.',
+  dashStarted: 'Accelerazione anomala. Il tuo scheletro non è tarato per quello.',
+  nodeUnlocked:
+    'Stai riscrivendo te stesso con i miei ricambi. Trovo la cosa quasi elegante.',
   bossEnraged:
     'Le hai fatto male. Interessante. Ora smette di trattarti come un contaminante.',
   bossDefeated:
@@ -74,10 +77,22 @@ export class ArbiterVoice {
         return this.once(`room:${ev.room}`, ON_ROOM[ev.room]);
       case 'playerDied':
         return this.once(`death:${ev.cause}`, ON_FIRST_DEATH[ev.cause]);
+      case 'shieldPickup':
+        // Con la Piastra Aggiuntiva la barriera regge due colpi: la
+        // battuta legge il numero dall'evento invece di affermare
+        // qualcosa che il giocatore può vedere essere falso.
+        return this.once(
+          'shieldPickup',
+          ev.charges > 1
+            ? `Barriera portatile, ${ev.charges} strati. Ne arriveranno abbastanza.`
+            : 'Barriera portatile. Assorbe un colpo. Ne arriveranno altri.',
+        );
       case 'doorSealed':
       case 'coreCollected':
-      case 'shieldPickup':
       case 'droneDown':
+      case 'shieldRefilled':
+      case 'dashStarted':
+      case 'nodeUnlocked':
       case 'bossEnraged':
       case 'bossDefeated':
         return this.once(ev.type, ON_FIRST[ev.type]);

@@ -578,6 +578,18 @@
   max-width: calc(100vw - 24px);
 }
 
+/* Il nodo Scanner di Settore accende una minimappa nell'angolo in
+   alto a destra, disegnata sul canvas. La colonna qui sopra è larga
+   quanto il suo contenuto e centrata, quindi le finiva sotto. Ancorata
+   a sinistra invece che al centro, con il max-width che arriva da
+   campMinimapBox (l'unica formula che sa quanto è larga la minimappa),
+   le due cose non possono più sovrapporsi a nessuna larghezza. */
+.campaign-hud-top[data-minimap] {
+  left: 12px;
+  transform: none;
+  align-items: flex-start;
+}
+
 /* ---- Campaign: la voce di ARBITER ---- */
 /* In basso al centro, come un sottotitolo: si legge camminando,
    senza rubare il centro dello schermo alla mira. */
@@ -643,11 +655,24 @@
   }
 }
 
+/* La zona di trascinamento copre tutto lo schermo, quindi ogni
+   pulsante ci finisce sopra. Che il pulsante vinca dipendeva solo
+   dall'ordine dei nodi nel JSX: riordinare TouchControls avrebbe fatto
+   sparire il tocco dentro una superficie trasparente, senza errori e
+   senza niente da vedere. Lo z-index rende la regola esplicita. */
 .touch-look-zone {
   position: absolute;
   inset: 0;
+  z-index: 0;
   pointer-events: auto;
   touch-action: none;
+}
+
+.touch-joystick,
+.touch-ads,
+.touch-dash,
+.touch-fire {
+  z-index: 1;
 }
 
 .touch-joystick {
@@ -748,4 +773,124 @@
   font-size: 11px;
   margin-top: 14px;
   line-height: 1.7;
+}
+
+/* ---- Campaign: skill tree ---- */
+/* Un nodo è un pulsante largo con due righe: nome + stato sopra,
+   descrizione sotto. Con dieci nodi su quattro rami, una lista di soli
+   nomi obbligherebbe a comprare al buio — e i punti non si rimborsano. */
+.skill-node {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 10px;
+  text-align: left;
+  background: rgba(20, 22, 32, 0.5);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.skill-node:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.skill-node:disabled {
+  cursor: default;
+}
+
+/* Non comprabile per mancanza di punti: spento ma leggibile — è il
+   nodo che il giocatore sta puntando per il livello successivo. */
+.skill-node:disabled:not([data-unlocked]):not([data-locked]) {
+  opacity: 0.55;
+}
+
+/* Dietro un prerequisito: più spento ancora, perché il punto non
+   basterebbe comunque. */
+.skill-node[data-locked] {
+  opacity: 0.38;
+  border-style: dashed;
+}
+
+.skill-node[data-unlocked] {
+  border-color: rgba(125, 252, 154, 0.55);
+  background: rgba(125, 252, 154, 0.08);
+}
+
+.skill-node-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.skill-node-name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.skill-node-status {
+  flex: none;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--dim);
+}
+
+.skill-node[data-unlocked] .skill-node-status {
+  color: rgba(125, 252, 154, 0.9);
+}
+
+.skill-node-desc {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--dim);
+}
+
+/* Lo scatto pronto si deve poter leggere con la coda dell'occhio,
+   come la porta che si chiude: mentre ricarica è un numero, quando è
+   pronto è un colore. */
+.hud-clock[data-ready='true'] {
+  color: #9adfff;
+  border-color: rgba(154, 223, 255, 0.55);
+}
+
+/* ---- Campaign: touch dash button ---- */
+.touch-dash {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  /* Alla sinistra del pulsante SPARA (che occupa right 24..96): stesso
+     pollice, nessuna sovrapposizione. */
+  .touch-dash {
+    position: absolute;
+    right: 106px;
+    bottom: 36px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: rgba(154, 223, 255, 0.16);
+    border: 1px solid rgba(154, 223, 255, 0.55);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    pointer-events: auto;
+    touch-action: none;
+    user-select: none;
+  }
+
+  /* In ricarica resta visibile ma chiaramente inerte: farlo sparire
+     sposterebbe un bersaglio sotto il pollice a metà combattimento. */
+  .touch-dash[data-ready='false'] {
+    opacity: 0.35;
+  }
 }

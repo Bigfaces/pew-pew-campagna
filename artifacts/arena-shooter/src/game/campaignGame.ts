@@ -9,7 +9,9 @@
 
 import { AudioEngine } from '../audio/engine';
 import {
+  campMinimapBox,
   renderCampaignBillboards,
+  renderCampaignMinimap,
   renderCampaignWalls,
 } from '../render/campaignScene';
 import { CameraFx, computeViewport, type Viewport } from '../render/camera';
@@ -33,6 +35,7 @@ import {
 } from '../sim/constants';
 import {
   BOSS_HITS_TO_DEFEAT,
+  DASH_COOLDOWN_MS,
   DRONE_X,
   DRONE_Y,
   SHIELD_X,
@@ -40,7 +43,13 @@ import {
   xpForNextLevel,
 } from '../sim/campaign/constants';
 import { CAMP_MAP_H, CAMP_MAP_W } from '../sim/campaign/map';
-import { hasGrazeDamage, weaponStatsFor } from '../sim/campaign/skills';
+import {
+  hasContacts,
+  hasGrazeDamage,
+  hasMinimap,
+  movementStatsFor,
+  weaponStatsFor,
+} from '../sim/campaign/skills';
 import type { CampaignEvent, CampaignInput, RoomId } from '../sim/campaign/types';
 import { CampaignWorld } from '../sim/campaign/world';
 import { ArbiterVoice, ARBITER_LINE_MS, type ArbiterLine } from '../ui/arbiter';
@@ -64,8 +73,17 @@ export interface CampaignHudSnapshot {
    *  bar to fill, not a bug. */
   xpForNextLevel: number | null;
   availableSkillPoints: number;
-  shieldActive: boolean;
+  /** Cariche di scudo rimaste — 0 significa nessuno scudo. */
+  shieldCharges: number;
   adsActive: boolean;
+  /** Presente solo col nodo Scatto: 0..1, 1 = pronto. La HUD non deve
+   *  mostrare un indicatore per una meccanica che il giocatore non ha
+   *  ancora sbloccato. */
+  dashReady: number | null;
+  /** Px CSS che la colonna della HUD deve lasciare libera a destra
+   *  perché la minimappa non le finisca sopra; 0 quando non c'è
+   *  minimappa. Calcolato dalla stessa funzione che la disegna. */
+  minimapReserve: number;
   /** La battuta di ARBITER da mostrare adesso, se ce n'è una viva. */
   arbiter: string | null;
   bossEnraged: boolean;
@@ -104,6 +122,10 @@ export class CampaignGame {
   private yaw = 0;
   private keys = new Set<string>();
   private fireQueued = false;
+  /** Edge-triggered come fireQueued: il tasto dello scatto va letto
+   *  come una pressione, non come uno stato tenuto, altrimenti
+   *  tenerlo giù farebbe ripartire lo scatto a ogni fine cooldown. */
+  private dashQueued = false;
 
   private pointerLocked = false;
   private mouseDX = 0;
@@ -232,6 +254,14 @@ export class CampaignGame {
     if (this.phase === 'playing') this.fireQueued = true;
   }
 
+  /** Richiede uno scatto: tastiera (MAIUSC) e pulsante a schermo
+   *  finiscono qui. Se il nodo non è sbloccato o il cooldown non è
+   *  finito, la simulazione ignora la richiesta — il controller non
+   *  duplica quella regola. */
+  queueDash(): void {
+    if (this.phase === 'playing') this.dashQueued = true;
+  }
+
   /** Raise or lower the scope. The mouse holds it; the on-screen
    *  button toggles it, because holding a finger on a button while
    *  aiming with the other is not a thing a phone can do. */
@@ -332,6 +362,10 @@ export class CampaignGame {
       else if (this.phase === 'paused') this.resume();
     }
     if (k === 'm') this.toggleMute();
+    // repeat: il browser ripete keydown mentre il tasto resta giù, e
+    // senza questo filtro tenere premuto MAIUSC accoderebbe uno
+    // scatto per ogni ripetizione.
+    if (k === 'shift' && !e.repeat) this.queueDash();
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
@@ -443,12 +477,14 @@ export class CampaignGame {
       strafe,
       aimAngle: this.yaw,
       fire: this.fireQueued,
+      dash: this.dashQueued,
       // The simulation applies the movement penalty itself from this
       // flag (see applyMovement), so the controller must not also
       // scale the input — that would charge the cost twice.
       ads: this.adsHeld,
     };
     this.fireQueued = false;
+    this.dashQueued = false;
     return input;
   }
 
@@ -474,7 +510,14 @@ export class CampaignGame {
           this.audio.impact(this.world.state.player.x, this.world.state.player.y);
           break;
         case 'shieldPickup':
+        case 'shieldRefilled':
           this.audio.pickup(this.world.state.player.x, this.world.state.player.y);
+          break;
+        case 'dashStarted':
+          // Riusa il suono del respawn: è lo scatto d'aria più corto
+          // del set sintetizzato, e la campagna non ha ancora una voce
+          // propria per questo gesto.
+          this.audio.respawn();
           break;
         case 'shieldBreak':
           this.audio.shieldBreak(this.world.state.player.x, this.world.state.player.y);
@@ -637,6 +680,34 @@ export class CampaignGame {
       },
       this.adsT,
     );
+    // Dopo la scena e prima del mirino: la minimappa è un pannello
+    // dell'interfaccia, non un oggetto del mondo, e il mirino resta
+    // l'ultima cosa disegnata perché è quella che non deve mai finire
+    // sotto a nient'altro.
+    if (hasMinimap(world.state.unlockedNodes)) {
+      renderCampaignMinimap(
+        ctx,
+        vp,
+        world.getTile,
+        world.state.door.closed,
+        cam.x,
+        cam.y,
+        cam.angle,
+        hasContacts(world.state.unlockedNodes)
+          ? {
+              cores: world.state.cores,
+              drone: world.state.drone,
+              droneX: DRONE_X,
+              droneY: DRONE_Y,
+              boss: world.state.boss,
+              shieldX: SHIELD_X,
+              shieldY: SHIELD_Y,
+              shieldAvailable: !world.state.shield.collected,
+            }
+          : null,
+      );
+    }
+
     this.renderCrosshair();
     renderDamageOverlay(ctx, vp, fx);
     if (this.banner) renderBanner(ctx, vp, this.banner, now);
@@ -688,8 +759,14 @@ export class CampaignGame {
       level: s.level,
       xpForNextLevel: xpForNextLevel(s.level),
       availableSkillPoints: this.world.availableSkillPoints,
-      shieldActive: s.player.shieldActive,
+      shieldCharges: s.player.shieldCharges,
       adsActive: this.adsHeld,
+      dashReady: movementStatsFor(s.unlockedNodes).hasDash
+        ? 1 - Math.min(1, s.player.dashCooldown / DASH_COOLDOWN_MS)
+        : null,
+      minimapReserve: hasMinimap(s.unlockedNodes)
+        ? campMinimapBox(this.cssW).w + campMinimapBox(this.cssW).pad * 2
+        : 0,
       arbiter:
         this.arbiterLine && now - this.arbiterLine.at < ARBITER_LINE_MS
           ? this.arbiterLine.text

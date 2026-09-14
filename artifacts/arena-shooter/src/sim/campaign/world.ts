@@ -42,6 +42,8 @@ import {
   BOSS_VOLLEY_RECOVER_MS,
   CORE_DEFS,
   CORE_PICKUP_RADIUS,
+  DASH_DURATION_MS,
+  DASH_SPEED,
   DOOR_CLOSE_DELAY_MS,
   DOOR_SENSOR_TX,
   DOOR_TILES,
@@ -69,7 +71,17 @@ import {
 import { CAMP_MAP_H, CAMP_MAP_W, campGetTile } from './map';
 import { campMoveEntity, distanceAlongRayToCircle, type IsSolidFn } from './physics';
 import { campCastRay, campHasLOS } from './raycast';
-import { hasGrazeDamage, isValidNode, nodeCost, pointsSpent, weaponStatsFor } from './skills';
+import {
+  hasGrazeDamage,
+  isValidNode,
+  movementStatsFor,
+  nodeCost,
+  pointsSpent,
+  prereqMet,
+  refillsShieldOnRoomEnter,
+  shieldCapacity,
+  weaponStatsFor,
+} from './skills';
 import {
   CAMPAIGN_PROFILE_VERSION,
   emptyCampaignInput,
@@ -149,7 +161,11 @@ export class CampaignWorld {
         pitch: 0,
         weaponCooldown: 0,
         respawnInvulnerableMs: 0,
-        shieldActive: false,
+        shieldCharges: 0,
+        dashTimer: 0,
+        dashCooldown: 0,
+        dashDirX: 0,
+        dashDirY: 0,
       },
       door: { armed: false, closeTimer: 0, closed: false },
       shield: { collected: false },
@@ -194,6 +210,16 @@ export class CampaignWorld {
     return this.state.boss.damageTaken >= BOSS_ENRAGE_AT;
   }
 
+  /** Il giocatore non può essere colpito adesso. Due sorgenti, una
+   *  sola domanda: il lockout dopo un respawn, e lo scatto con il
+   *  nodo Scatto Evasivo. Tenerle dietro un unico getter evita che un
+   *  punto del codice ne conosca una e non l'altra. */
+  private get invulnerable(): boolean {
+    const p = this.state.player;
+    if (p.respawnInvulnerableMs > 0) return true;
+    return p.dashTimer > 0 && movementStatsFor(this.state.unlockedNodes).dashInvulnerable;
+  }
+
   /** Skill points earned by leveling up but not yet spent on a node. */
   get availableSkillPoints(): number {
     return this.state.skillPoints - pointsSpent(this.state.unlockedNodes);
@@ -222,7 +248,11 @@ export class CampaignWorld {
     if (p.respawnInvulnerableMs > 0) {
       p.respawnInvulnerableMs = Math.max(0, p.respawnInvulnerableMs - TICK_MS);
     }
+    if (p.dashCooldown > 0) {
+      p.dashCooldown = Math.max(0, p.dashCooldown - TICK_MS);
+    }
 
+    this.startDashIfRequested(input);
     this.applyMovement(input);
     this.updateCheckpoint();
     this.updateDoor();
@@ -236,12 +266,13 @@ export class CampaignWorld {
     return this.events;
   }
 
-  /** Spend one available skill point to unlock a Precisione node.
-   *  Returns whether it succeeded — false if the id is unknown,
-   *  already unlocked, or unaffordable. */
+  /** Spend one available skill point to unlock a node. Returns
+   *  whether it succeeded — false if the id is unknown, already
+   *  unlocked, unaffordable, or still behind its prerequisite. */
   tryUnlockNode(id: string): boolean {
     if (!isValidNode(id)) return false;
     if (this.state.unlockedNodes.includes(id)) return false;
+    if (!prereqMet(this.state.unlockedNodes, id)) return false;
     if (this.availableSkillPoints < nodeCost(id)) return false;
     this.state.unlockedNodes.push(id);
     this.events.push({ type: 'nodeUnlocked', id });
@@ -266,9 +297,65 @@ export class CampaignWorld {
     }
   }
 
+  /** Lo scatto parte qui, non dentro applyMovement: applyMovement
+   *  esce subito quando non c'è input di movimento, e uno scatto
+   *  richiesto da fermo deve comunque partire. */
+  private startDashIfRequested(input: CampaignInput): void {
+    if (!input.dash) return;
+    const p = this.state.player;
+    if (p.dashTimer > 0 || p.dashCooldown > 0) return;
+
+    const move = movementStatsFor(this.state.unlockedNodes);
+    if (!move.hasDash) return;
+
+    // Direzione: quella in cui si sta andando; da fermi, quella in cui
+    // si guarda. Uno scatto che non parte perché il pollice non era
+    // sul joystick si legge come un comando ignorato, non come una
+    // regola.
+    //
+    // input.aimAngle e non p.angle: questo metodo gira *prima* di
+    // applyMovement, che è dove p.angle viene aggiornato, quindi
+    // leggere p.angle farebbe partire lo scatto nella direzione del
+    // tick precedente. Su un giocatore che sta girando sono 16 ms di
+    // ritardo su un gesto che ne dura 170.
+    const fx = Math.cos(input.aimAngle);
+    const fy = Math.sin(input.aimAngle);
+    const rx = -Math.sin(input.aimAngle);
+    const ry = Math.cos(input.aimAngle);
+    let dx = fx * input.forward + rx * input.strafe;
+    let dy = fy * input.forward + ry * input.strafe;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-6) {
+      dx = fx;
+      dy = fy;
+    } else {
+      dx /= len;
+      dy /= len;
+    }
+
+    p.dashDirX = dx;
+    p.dashDirY = dy;
+    p.dashTimer = DASH_DURATION_MS;
+    // Il cooldown parte adesso e non alla fine dello scatto: è la
+    // cadenza tra uno scatto e il successivo a essere progettata
+    // (DASH_COOLDOWN_MS), non la pausa dopo.
+    p.dashCooldown = move.dashCooldownMs;
+    this.events.push({ type: 'dashStarted' });
+  }
+
   private applyMovement(input: CampaignInput): void {
     const p = this.state.player;
     p.angle = input.aimAngle;
+
+    // Uno scatto in corso ignora il joystick e tiene la direzione
+    // fissata alla partenza: se seguisse l'input sarebbe una corsa
+    // veloce sterzabile, mentre quello che serve al giocatore è uno
+    // strappo da puntare *prima*, e da temporizzare.
+    if (p.dashTimer > 0) {
+      p.dashTimer = Math.max(0, p.dashTimer - TICK_MS);
+      campMoveEntity(this.isSolid, p, p.dashDirX * DASH_SPEED, p.dashDirY * DASH_SPEED);
+      return;
+    }
 
     let forward = input.forward;
     const strafe = input.strafe;
@@ -291,7 +378,9 @@ export class CampaignWorld {
     }
 
     const stats = weaponStatsFor(this.state.unlockedNodes);
-    const speed = PLAYER_SPEED * (input.ads ? stats.adsMoveMult : 1);
+    const move = movementStatsFor(this.state.unlockedNodes);
+    const speed =
+      PLAYER_SPEED * move.speedMult * (input.ads ? stats.adsMoveMult : 1);
     campMoveEntity(this.isSolid, p, vx * speed, vy * speed);
   }
 
@@ -309,7 +398,27 @@ export class CampaignWorld {
         this.state.roomsAwarded.push(room);
         this.grantXp(XP_ROOM_ENTER);
       }
+      this.refillShieldOnRoomEnter();
     }
+  }
+
+  /** Riserva di Bordo. Ricarica solo uno scudo *già raccolto*: senza
+   *  quella condizione il nodo consegnerebbe uno scudo entrando in
+   *  corridoio, cioè due stanze prima del punto in cui lo scudo si
+   *  trova, e renderebbe inutile andarlo a prendere. Così invece paga
+   *  proprio a chi ha fatto la deviazione — ed è nel Molo, all'ultima
+   *  stanza, che la ricarica conta davvero.
+   *
+   *  Non è sfruttabile in loop: i checkpoint avanzano soltanto, quindi
+   *  tornare indietro e rientrare non conta come stanza nuova. */
+  private refillShieldOnRoomEnter(): void {
+    if (!this.state.shield.collected) return;
+    if (!refillsShieldOnRoomEnter(this.state.unlockedNodes)) return;
+    const capacity = shieldCapacity(this.state.unlockedNodes);
+    const p = this.state.player;
+    if (p.shieldCharges >= capacity) return;
+    p.shieldCharges = capacity;
+    this.events.push({ type: 'shieldRefilled', charges: p.shieldCharges });
   }
 
   private updateDoor(): void {
@@ -352,19 +461,20 @@ export class CampaignWorld {
     const p = this.state.player;
     if (Math.hypot(p.x - SHIELD_X, p.y - SHIELD_Y) <= SHIELD_PICKUP_RADIUS) {
       shield.collected = true;
-      p.shieldActive = true;
-      this.events.push({ type: 'shieldPickup' });
+      p.shieldCharges = shieldCapacity(this.state.unlockedNodes);
+      this.events.push({ type: 'shieldPickup', charges: p.shieldCharges });
     }
   }
 
-  /** A hit that would otherwise kill the player — spends the shield
-   *  instead, if one is up. Tactical and disposable, unlike the
-   *  skill tree: see GDD.md, "Potenziamenti vs progressione
+  /** A hit that would otherwise kill the player — spends one shield
+   *  charge instead, if any are left. Tactical and disposable, unlike
+   *  the skill tree: see GDD.md, "Potenziamenti vs progressione
    *  permanente". */
   private damagePlayer(cause: 'drone' | 'boss'): void {
-    if (this.state.player.shieldActive) {
-      this.state.player.shieldActive = false;
-      this.events.push({ type: 'shieldBreak' });
+    const p = this.state.player;
+    if (p.shieldCharges > 0) {
+      p.shieldCharges--;
+      this.events.push({ type: 'shieldBreak', chargesLeft: p.shieldCharges });
       return;
     }
     this.killPlayer(cause);
@@ -394,12 +504,13 @@ export class CampaignWorld {
       drone.fireCooldown = Math.max(0, drone.fireCooldown - TICK_MS);
     }
 
-    if (
-      los &&
-      drone.reactionTimer <= 0 &&
-      drone.fireCooldown <= 0 &&
-      p.respawnInvulnerableMs <= 0
-    ) {
+    // Trattenere il colpo invece di sprecarlo: è il comportamento che
+    // il lockout da respawn aveva già, e lo scatto si limita a
+    // entrare nella stessa condizione. Contro il drone lo Scatto
+    // Evasivo compra quindi l'attraversamento, non 1.8 s di
+    // impunità — la vera contromossa resta rompergli la linea di
+    // vista, che è quello che il drone è lì per insegnare.
+    if (los && drone.reactionTimer <= 0 && drone.fireCooldown <= 0 && !this.invulnerable) {
       drone.fireCooldown = DRONE_FIRE_COOLDOWN_MS;
       this.damagePlayer('drone');
     }
@@ -451,7 +562,11 @@ export class CampaignWorld {
           boss.chargeDirY * BOSS_CHARGE_SPEED,
           BOSS_RADIUS - 1,
         );
-        if (p.respawnInvulnerableMs <= 0) {
+        // La guardia sta *fuori* dal ramo che fa break, non dentro
+        // damagePlayer: se un giocatore intoccabile fermasse comunque
+        // il tick della carica, il boss resterebbe addosso a lui a
+        // tempo fermo invece di passargli attraverso.
+        if (!this.invulnerable) {
           const dist = Math.hypot(p.x - boss.x, p.y - boss.y);
           if (dist <= BOSS_RADIUS + ENTITY_RADIUS) {
             this.damagePlayer('boss');
@@ -589,6 +704,10 @@ export class CampaignWorld {
     p.angle = cp.angle;
     p.weaponCooldown = 0;
     p.respawnInvulnerableMs = RESPAWN_INVULN_MS;
+    // Uno scatto sopravvissuto alla morte trascinerebbe il giocatore
+    // fuori dal checkpoint appena ripristinato.
+    p.dashTimer = 0;
+    p.dashCooldown = 0;
 
     // "Nemici della stanza resettati" (GDD.md section 9, modalità
     // Tutorial): only the hazards belonging to the room the checkpoint

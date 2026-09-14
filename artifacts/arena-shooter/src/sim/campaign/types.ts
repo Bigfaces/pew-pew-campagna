@@ -23,10 +23,15 @@ export interface CampaignInput {
   fire: boolean;
   /** Scoped aiming, held. */
   ads: boolean;
+  /** Edge-triggered: true on the tick the dash key is pressed. Ha
+   *  effetto solo col nodo Scatto sbloccato e fuori cooldown — la
+   *  simulazione decide, il controller si limita a riferire che il
+   *  tasto è stato premuto. */
+  dash: boolean;
 }
 
 export function emptyCampaignInput(): CampaignInput {
-  return { forward: 0, strafe: 0, aimAngle: 0, fire: false, ads: false };
+  return { forward: 0, strafe: 0, aimAngle: 0, fire: false, ads: false, dash: false };
 }
 
 export interface CampaignPlayer {
@@ -39,10 +44,24 @@ export interface CampaignPlayer {
    *  already-in-flight drone shot or boss charge cannot kill the
    *  player a second time before they have even moved. */
   respawnInvulnerableMs: number;
-  /** Tactical power-up, not permanent progression: absorbs exactly
-   *  one hit (drone or boss contact) and is gone. See GDD.md,
-   *  "Potenziamenti vs progressione permanente". */
-  shieldActive: boolean;
+  /** Tactical power-up, not permanent progression: each charge
+   *  absorbs one hit (drone or boss contact) and is gone. Un contatore
+   *  e non un booleano perché il nodo Piastra Aggiuntiva ne concede
+   *  due — con un flag il secondo colpo non avrebbe avuto dove
+   *  essere registrato. See GDD.md, "Potenziamenti vs progressione
+   *  permanente". */
+  shieldCharges: number;
+  /** ms remaining of an active dash. Mentre è > 0 il giocatore si
+   *  muove alla velocità dello scatto nella direzione fissata alla
+   *  partenza, e col nodo Scatto Evasivo è intoccabile. */
+  dashTimer: number;
+  /** ms before the dash is available again. */
+  dashCooldown: number;
+  /** Direzione dello scatto in corso, congelata all'avvio: uno scatto
+   *  che continuasse a seguire il joystick sarebbe una corsa veloce,
+   *  non uno strappo da leggere e temporizzare. */
+  dashDirX: number;
+  dashDirY: number;
 }
 
 export interface DoorTrapState {
@@ -157,8 +176,10 @@ export type CampaignEvent =
   | { type: 'roomEntered'; room: RoomId }
   | { type: 'doorSealed' }
   | { type: 'coreCollected'; id: string }
-  | { type: 'shieldPickup' }
-  | { type: 'shieldBreak' }
+  | { type: 'shieldPickup'; charges: number }
+  | { type: 'shieldRefilled'; charges: number }
+  | { type: 'shieldBreak'; chargesLeft: number }
+  | { type: 'dashStarted' }
   | { type: 'xpGained'; amount: number }
   | { type: 'levelUp'; level: number }
   | { type: 'nodeUnlocked'; id: string }
