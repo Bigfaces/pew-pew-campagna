@@ -244,6 +244,7 @@ describe('CampaignWorld — profilo salvato', () => {
       completedLevels: [],
       collectedCoreIds: [],
       roomsAwarded: [],
+      difficulty: 'tutorial',
     });
     expect(world.state.level).toBe(3);
     expect(world.state.skillPoints).toBe(2);

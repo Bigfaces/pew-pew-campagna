@@ -260,11 +260,34 @@ export interface Checkpoint {
   angle: number;
 }
 
+/** Le tre fasi di difficoltà del GDD (sezione 9), costruite una alla
+ *  volta invece che tutte insieme — Tutorial è la sola che esisteva
+ *  finora. Le tre non cambiano una sola regola di *come* si gioca:
+ *  cambiano solo cosa succede alla morte, che è tutto ciò che
+ *  CampaignWorld.killPlayer legge da questo valore. Tenerlo come un
+ *  campo di stato invece di tre classi (o tre World) evita di
+ *  triplicare fisica, IA e boss per una differenza che sta tutta in
+ *  un metodo. */
+export type CampaignDifficulty = 'tutorial' | 'medio' | 'roguelike';
+
+export const CAMPAIGN_DIFFICULTIES: readonly CampaignDifficulty[] = [
+  'tutorial',
+  'medio',
+  'roguelike',
+];
+
 /** 'levelComplete' è il gemello di 'victory': un livello senza boss
  *  finisce raggiungendo l'uscita, uno con il boss finisce abbattendolo.
  *  Tenerli distinti serve al chiamante, che nel primo caso deve
- *  costruire il livello successivo e nel secondo mostrare la fine. */
-export type CampaignOutcome = 'playing' | 'levelComplete' | 'victory';
+ *  costruire il livello successivo e nel secondo mostrare la fine.
+ *
+ *  'actRestart' è il terzo modo di finire una simulazione, ed è
+ *  Roguelike: la morte non chiude il livello, chiude l'atto. CampaignWorld
+ *  simula un livello alla volta (vedi il commento in cima a world.ts),
+ *  quindi non può ricostruire da sola il primo livello dell'atto — può
+ *  solo dirlo. Il controller (game/campaignGame.ts) legge questo
+ *  outcome, o l'evento gemello, e fa la ricostruzione. */
+export type CampaignOutcome = 'playing' | 'levelComplete' | 'victory' | 'actRestart';
 
 /** What survives leaving the campaign and coming back.
  *
@@ -295,12 +318,19 @@ export interface CampaignProfile {
    *  `livello/stanza` — due livelli possono avere una stanza con lo
    *  stesso nome, e senza il prefisso la seconda non pagherebbe. */
   roomsAwarded: string[];
+  /** Scelta fatta prima di iniziare il run, non modificabile a
+   *  partita in corso: cambiare regole di morte a metà atto non ha un
+   *  significato pulito, quindi il profilo la fissa insieme al resto
+   *  del personaggio. */
+  difficulty: CampaignDifficulty;
 }
 
-/** 2: il profilo ha imparato che esiste più di un livello. I profili
- *  di versione 1 vengono scartati, non migrati — è la politica
- *  dichiarata fin dall'inizio, e l'atto dura pochi minuti. */
-export const CAMPAIGN_PROFILE_VERSION = 2;
+/** 3: il profilo impara la difficoltà scelta (Tutorial/Medio/
+ *  Roguelike, vedi GDD.md sezione 9). Come sempre i profili di
+ *  versione precedente vengono scartati, non migrati — è la politica
+ *  dichiarata fin dall'inizio, e l'atto dura pochi minuti: rigiocarlo
+ *  costa meno che scrivere e mantenere un convertitore. */
+export const CAMPAIGN_PROFILE_VERSION = 3;
 
 export interface CampaignState {
   tick: number;
@@ -333,6 +363,10 @@ export interface CampaignState {
   /** null nei livelli senza boss. */
   boss: BossState | null;
   outcome: CampaignOutcome;
+  /** Fissata alla costruzione del mondo (dal profilo, o dalla scelta
+   *  del menu se non c'è ancora un profilo) e mai più cambiata da
+   *  dentro un run: vedi CampaignProfile.difficulty. */
+  difficulty: CampaignDifficulty;
 }
 
 export type CampaignEvent =
@@ -375,4 +409,9 @@ export type CampaignEvent =
   | { type: 'bossCoreSealed' }
   | { type: 'bossDefeated' }
   | { type: 'levelCompleted'; levelId: string; next: string | null }
-  | { type: 'playerDied'; cause: 'turret' | 'boss' | 'enemy' };
+  | { type: 'playerDied'; cause: 'turret' | 'boss' | 'enemy' }
+  /** Solo Roguelike: la morte non chiude il livello, chiude l'atto.
+   *  Sempre insieme a 'playerDied' nello stesso tick — questo è
+   *  l'evento in più che dice al controller di non fare il respawn
+   *  normale ma di ricostruire dal primo livello dell'atto. */
+  | { type: 'actRestart' };

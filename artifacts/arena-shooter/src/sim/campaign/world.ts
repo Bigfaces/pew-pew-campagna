@@ -127,7 +127,9 @@ import {
   CAMPAIGN_PROFILE_VERSION,
   emptyCampaignInput,
   type BossPhase,
+  type CampaignDifficulty,
   type CampaignEvent,
+  type Checkpoint,
   type EnemyState,
   type CampaignInput,
   type CampaignProfile,
@@ -300,10 +302,23 @@ export class CampaignWorld {
   /** I guinzagli sono una proprietà del livello, non del tick. */
   private leashCache = new Map<string, Leash | null>();
 
+  /** Il checkpoint di partenza, clonato alla costruzione e mai più
+   *  toccato: in modalità Medio è a questo — non all'ultimo
+   *  checkpoint raggiunto — che si torna a ogni morte (vedi
+   *  killPlayer). Tenerlo separato da state.checkpoint invece di
+   *  ricalcolarlo da level.spawn evita di dover rifare qui la stessa
+   *  roomAt/centreOf già fatta sotto. */
+  private readonly spawnCheckpoint: Checkpoint;
+
   /** `profile` seeds a returning player: the character they built,
    *  never where they were standing (see CampaignProfile). Absent —
-   *  or discarded as an unknown version — means a fresh start. */
-  constructor(level: LevelDef, profile?: CampaignProfile) {
+   *  or discarded as an unknown version — means a fresh start.
+   *
+   *  `difficulty` conta solo quando `profile` non c'è ancora: un
+   *  personaggio esistente ha già fissato la sua nel profilo, e
+   *  lasciare che il menu la cambi a metà campagna renderebbe le
+   *  regole di morte incoerenti con quanto già giocato. */
+  constructor(level: LevelDef, profile?: CampaignProfile, difficulty: CampaignDifficulty = 'tutorial') {
     this.level = level;
     const xp = profile?.xp ?? 0;
     const playerLevel = levelForXp(xp);
@@ -434,7 +449,9 @@ export class CampaignWorld {
           }
         : null,
       outcome: 'playing',
+      difficulty: profile?.difficulty ?? difficulty,
     };
+    this.spawnCheckpoint = { ...this.state.checkpoint };
   }
 
   get finished(): boolean {
@@ -510,6 +527,7 @@ export class CampaignWorld {
       completedLevels: [...this.state.completedLevels],
       collectedCoreIds: this.state.cores.filter((c) => c.collected).map((c) => c.id),
       roomsAwarded: [...this.state.roomsAwarded],
+      difficulty: this.state.difficulty,
     };
   }
 
@@ -1074,11 +1092,14 @@ export class CampaignWorld {
     }
   }
 
-  /** Riporta al loro posto i nemici della stanza del checkpoint. */
-  private resetEnemiesIn(room: string): void {
+  /** Riporta al loro posto i nemici che passano `inScope`. Un
+   *  predicato invece di un nome di stanza fisso perché Tutorial e
+   *  Medio si dividono solo su questo: "solo la stanza del
+   *  checkpoint" contro "tutto il livello" (vedi killPlayer). */
+  private resetEnemiesIn(inScope: (room: string) => boolean): void {
     for (const e of this.state.enemies) {
       const def = this.enemyDef(e.id);
-      if (def.room !== room) continue;
+      if (!inScope(def.room)) continue;
       const home = centreOf(def.tx, def.ty);
       const a = archetypeOf(e.kind);
       e.alive = true;
@@ -1560,7 +1581,31 @@ export class CampaignWorld {
   }
 
   private killPlayer(cause: 'turret' | 'boss' | 'enemy'): void {
+    if (this.state.difficulty === 'roguelike') {
+      // "Morire fa ripartire l'intero atto" (GDD.md sezione 9): questo
+      // mondo simula un livello solo (vedi il commento in cima al
+      // file), quindi non può essere lui a ricostruire i tre livelli
+      // dell'atto da capo — può solo dirlo. Niente reset qui sotto:
+      // questo stato sta per essere buttato via dal controller, che
+      // ne costruirà uno nuovo dal primo livello con lo stesso
+      // profilo (xp, nodi, core raccolti restano — vedi
+      // CampaignProfile — perché altrimenti morire diventerebbe un
+      // modo per rifarmare esperienza sugli stessi core).
+      this.state.outcome = 'actRestart';
+      this.events.push({ type: 'playerDied', cause });
+      this.events.push({ type: 'actRestart' });
+      return;
+    }
+
     const p = this.state.player;
+
+    // Medio: "il checkpoint torna alla stanza di spawn" (GDD.md
+    // sezione 9). Farlo *prima* di leggere `cp` sotto significa che il
+    // resto del metodo — scritto per "riporta al checkpoint" — riporta
+    // già allo spawn senza bisogno di un secondo percorso di codice.
+    if (this.state.difficulty === 'medio') {
+      this.state.checkpoint = { ...this.spawnCheckpoint };
+    }
     const cp = this.state.checkpoint;
 
     p.x = cp.x;
@@ -1591,33 +1636,38 @@ export class CampaignWorld {
     for (const c of this.state.chasms) c.hoverMs = 0;
 
     // "Nemici della stanza resettati" (GDD.md sezione 9, modalità
-    // Tutorial). Con i trabocchetti come dato, la regola si applica
-    // sola: ogni cosa dichiara a che stanza appartiene, e si resetta
-    // solo ciò che sta nella stanza del checkpoint. Aggiungere un
-    // trabocchetto a un livello non richiede di toccare questo
-    // metodo — che è esattamente il motivo per cui `room` esiste
-    // nelle definizioni.
+    // Tutorial) contro "resetta tutti i trabocchetti e i nemici del
+    // livello" (modalità Medio). Con i trabocchetti come dato, la
+    // differenza fra le due si riduce a questo unico predicato: ogni
+    // cosa dichiara già a che stanza appartiene, quindi "solo quella
+    // stanza" o "tutto il livello" è la sola domanda che cambia.
+    // Aggiungere un trabocchetto a un livello non richiede di toccare
+    // questo metodo in nessuna delle due modalità — che è esattamente
+    // il motivo per cui `room` esiste nelle definizioni.
+    const inScope = (room: string): boolean =>
+      this.state.difficulty === 'medio' || room === cp.room;
+
     for (const d of this.state.doors) {
-      if (this.level.doors.find((x) => x.id === d.id)!.room !== cp.room) continue;
+      if (!inScope(this.level.doors.find((x) => x.id === d.id)!.room)) continue;
       d.armed = false;
       d.closed = false;
       d.closeTimer = 0;
     }
     for (const t of this.state.turrets) {
       const def = this.turretDef(t.id);
-      if (def.room !== cp.room) continue;
+      if (!inScope(def.room)) continue;
       t.alive = true;
       t.reactionTimer = def.reactionMs;
       t.fireCooldown = def.phaseMs;
     }
-    this.resetEnemiesIn(cp.room);
+    this.resetEnemiesIn(inScope);
     for (const f of this.state.collapsingFloors) {
-      if (this.level.collapsingFloors.find((x) => x.id === f.id)!.room !== cp.room) continue;
+      if (!inScope(this.level.collapsingFloors.find((x) => x.id === f.id)!.room)) continue;
       f.collapsed = false;
       f.standingMs = 0;
       f.resetTimer = 0;
     }
-    if (this.state.boss && this.level.boss!.room === cp.room) {
+    if (this.state.boss && inScope(this.level.boss!.room)) {
       const boss = this.state.boss;
       const home = centreOf(this.level.boss!.tx, this.level.boss!.ty);
       const kind = this.level.boss!.kind;

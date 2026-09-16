@@ -19,6 +19,11 @@ import {
   type CareerTotals,
   type LeaderboardEntry,
 } from '../stats/client';
+import {
+  loadCampaignDifficultyChoice,
+  saveCampaignDifficultyChoice,
+} from '../stats/campaignProfile';
+import { CAMPAIGN_DIFFICULTIES, type CampaignDifficulty } from '../sim/campaign/types';
 
 const CONTROLS: [string, string][] = [
   ['W A S D', 'Movimento — avanti, indietro, laterale'],
@@ -53,6 +58,22 @@ const DIFF_NOTE: Record<Difficulty, string> = {
   facile: 'I bot reagiscono lenti, mirano male e si muovono piano.',
   normale: 'Taratura di riferimento: reazione ~0,5 s, mira imprecisa.',
   difficile: 'Reazione ~0,3 s, mira quasi perfetta, vista più ampia.',
+};
+
+/** Le tre fasi di GDD.md sezione 9. Non è la stessa scelta di
+ *  DIFFICULTIES sopra: quella cambia i bot dell'Arena, questa cambia
+ *  cosa succede quando si muore in Campagna — due giochi diversi, due
+ *  manopole diverse. */
+const CAMPAIGN_DIFF_LABEL: Record<CampaignDifficulty, string> = {
+  tutorial: 'TUTORIAL',
+  medio: 'MEDIO',
+  roguelike: 'ROGUELIKE',
+};
+
+const CAMPAIGN_DIFF_NOTE: Record<CampaignDifficulty, string> = {
+  tutorial: 'Morire riporta alla stanza raggiunta: si resettano solo i nemici e i trabocchetti lì dentro.',
+  medio: 'Morire riporta allo spawn del livello: si resetta tutto il livello, non solo la stanza.',
+  roguelike: 'Morire fa ripartire l’intero atto dal primo livello. Personaggio e core raccolti restano tuoi.',
 };
 
 function Controls(): React.ReactElement {
@@ -139,6 +160,14 @@ export function Menu({
   const [sensitivity, setSensitivity] = useState(initial.sensitivity);
   const [room, setRoom] = useState('');
   const [joining, setJoining] = useState(false);
+  // Letta pigramente da localStorage come readLocalCareer qui sotto:
+  // safe anche senza storage disponibile (vedi campaignProfile.ts).
+  // Un personaggio già esistente ignora questa scelta e usa la sua
+  // propria (CampaignProfile.difficulty) — questa vale solo per un
+  // run che comincia da zero.
+  const [campaignDifficulty, setCampaignDifficulty] = useState<CampaignDifficulty>(
+    loadCampaignDifficultyChoice(),
+  );
 
   const cfg = (): MenuConfig => ({
     name: (name.trim().slice(0, 12) || 'GIOCATORE').toUpperCase(),
@@ -256,6 +285,25 @@ export function Menu({
             <button className="btn" type="button" onClick={() => onStart(cfg())}>
               ▶ {standalone ? 'ENTRA NELL’ARENA' : 'GIOCATORE SINGOLO'}
             </button>
+            <div className="field">
+              <label>DIFFICOLTÀ CAMPAGNA</label>
+              <div className="seg">
+                {CAMPAIGN_DIFFICULTIES.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    data-on={campaignDifficulty === d}
+                    onClick={() => {
+                      setCampaignDifficulty(d);
+                      saveCampaignDifficultyChoice(d);
+                    }}
+                  >
+                    {CAMPAIGN_DIFF_LABEL[d]}
+                  </button>
+                ))}
+              </div>
+              <p className="hint">{CAMPAIGN_DIFF_NOTE[campaignDifficulty]}</p>
+            </div>
             <button className="btn secondary" type="button" onClick={onCampaign}>
               CAMPAGNA (BETA) — KESSLER-9
             </button>

@@ -579,6 +579,8 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
    livello, con punti deboli e vulnerabilità (sezione 4).
 8. Sprite direzionali *(fatto)* — dieci nemici e tre boss, otto
    direzioni ciascuno, cotti in codice all'avvio (sezione 4).
+9. Modalità Medio e Roguelike *(fatto)* — le fasi 2 e 3 previste dal
+   briefing (sezione 9).
 
 ## 9. Decisioni dal briefing
 
@@ -598,13 +600,35 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
 - **Morte e difficoltà — tre modalità, costruite come fasi di sviluppo
   successive (non tutte necessariamente nel gioco finale, si valuta dopo
   aver provato la prima):**
-  1. **Tutorial** *(prima a essere costruita)* — respawn nell'ultima stanza
-     raggiunta, nemici della stanza resettati, progressione/skill conservati.
-  2. **Medio** *(seconda iterazione)* — respawn all'inizio del livello
-     corrente.
-  3. **Roguelike** *(terza iterazione)* — morire fa ripartire l'intero atto
-     corrente (3 livelli + boss): la posta si alza per chi cerca la sfida
-     vera.
+  1. **Tutorial** *(fatta)* — respawn nell'ultima stanza raggiunta,
+     nemici della stanza resettati, progressione/skill conservati.
+  2. **Medio** *(fatta)* — respawn all'inizio del livello corrente, e si
+     resetta **tutto** il livello: trabocchetti, nemici e boss, non solo
+     quelli di una stanza.
+  3. **Roguelike** *(fatta)* — morire fa ripartire l'intero atto corrente
+     (3 livelli + boss): la posta si alza per chi cerca la sfida vera.
+
+  **Tre decisioni che valgono per tutte e tre.**
+
+  - **Il personaggio si conserva sempre**, Roguelike compreso: xp,
+    livello, nodi. È coerente con `CampaignProfile`, che è
+    deliberatamente *il personaggio, non la partita*.
+  - **Morire non deve poter rifarmare esperienza.** In Roguelike i core
+    già raccolti restano raccolti e le stanze già pagate restano pagate:
+    se tornassero disponibili, morire diventerebbe un modo per
+    guadagnare XP, e una modalità difficile che premia il morire è
+    rotta. È la ragione per cui il riavvio d'atto porta avanti il
+    profilo intero e cambia solo `levelId`.
+  - **La simulazione dice, il controller costruisce.** `CampaignWorld`
+    simula un livello per volta, quindi non può ricostruire un atto da
+    sé: alla morte in Roguelike segnala `actRestart` e basta. È la
+    stessa divisione che regge il passaggio di livello.
+
+  **La difficoltà è del personaggio, non della sessione.** Il selettore
+  nel menu vale solo per un profilo nuovo; un personaggio già avviato
+  usa la propria. Cambiare le regole di morte a metà campagna
+  contraddirebbe il punto sopra — e chi vuole cambiare modalità ha
+  "azzera la progressione", che è la stessa cosa detta onestamente.
 
 ## 10. Stato della campagna (modalità Tutorial)
 

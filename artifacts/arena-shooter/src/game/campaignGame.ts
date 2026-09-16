@@ -65,6 +65,7 @@ import { CampaignWorld } from '../sim/campaign/world';
 import { ArbiterVoice, ARBITER_LINE_MS, type ArbiterLine } from '../ui/arbiter';
 import {
   clearCampaignProfile,
+  loadCampaignDifficultyChoice,
   loadCampaignProfile,
   saveCampaignProfile,
 } from '../stats/campaignProfile';
@@ -349,11 +350,17 @@ export class CampaignGame {
 
   /** Il mondo per un profilo: il livello a cui era arrivato, o il
    *  primo dell'atto se non c'è profilo. Statico perché serve anche
-   *  all'inizializzatore di campo, prima che `this` esista. */
+   *  all'inizializzatore di campo, prima che `this` esista.
+   *
+   *  La difficoltà viene dal profilo quando c'è — un personaggio già
+   *  avviato non la rilegge dal menu, vedi CampaignWorld — e altrimenti
+   *  da quanto scelto nello schermo iniziale (Screens.tsx), cosicché
+   *  scegliere Roguelike prima di premere "entra" abbia un effetto. */
   private static buildWorld(profile: ReturnType<typeof loadCampaignProfile>): CampaignWorld {
     return new CampaignWorld(
       levelById(profile?.levelId ?? FIRST_LEVEL_ID),
       profile ?? undefined,
+      profile?.difficulty ?? loadCampaignDifficultyChoice(),
     );
   }
 
@@ -384,6 +391,40 @@ export class CampaignGame {
       `LIVELLO ${this.world.level.ordinal} — ${this.world.level.name}`,
       'settore successivo',
       '#7dfc9a',
+    );
+    this.arbiterLine = {
+      text: this.world.level.intro,
+      at: performance.now(),
+    };
+    this.pushHud(true);
+  }
+
+  /** Roguelike: la sim ha già deciso (CampaignWorld.killPlayer setta
+   *  outcome 'actRestart' e manda l'evento gemello) — qui si costruisce.
+   *  Stesso schema di finishLevel: si butta via il mondo appena morto
+   *  e se ne fa uno nuovo dal profilo, che è l'unica cosa che deve
+   *  sopravvivere alla morte in questa modalità (personaggio e core
+   *  già raccolti compresi — vedi CampaignProfile). L'unica differenza
+   *  è dove si punta: non il livello successivo, ma il primo dell'atto
+   *  in cui si è appena morti. */
+  private restartAct(): void {
+    const profile = this.world.toProfile();
+    const firstOfAct = ALL_LEVELS.find(
+      (l) => l.act === this.world.level.act && l.ordinal === 1,
+    );
+    // Non dovrebbe mai mancare — ogni atto ha un primo livello — ma se
+    // levels.ts cambiasse forma un mondo introvabile è meglio di un
+    // crash silenzioso: si resta sul livello attuale.
+    const target = firstOfAct ?? this.world.level;
+
+    const carried: typeof profile = { ...profile, levelId: target.id };
+    saveCampaignProfile(carried);
+    this.world = new CampaignWorld(target, carried);
+    this.syncToWorld();
+    this.raise(
+      `ATTO ${this.world.level.act} DA CAPO`,
+      'personaggio e core raccolti restano tuoi',
+      '#ff6b6b',
     );
     this.arbiterLine = {
       text: this.world.level.intro,
@@ -808,6 +849,14 @@ export class CampaignGame {
           // it must be re-synced or the view keeps facing whatever
           // direction killed the player, ignoring the teleport.
           this.yaw = this.world.state.player.angle;
+          break;
+        // Roguelike: sempre insieme a 'playerDied', gestito qui sopra
+        // per l'audio/fx della morte in sé. Questo evento in più dice
+        // *cosa* fare dopo — ricostruire dal primo livello dell'atto,
+        // che è compito del controller e non della sim (vedi
+        // restartAct e il commento su CampaignOutcome in types.ts).
+        case 'actRestart':
+          this.restartAct();
           break;
       }
     }

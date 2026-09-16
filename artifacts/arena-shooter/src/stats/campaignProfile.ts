@@ -14,9 +14,28 @@
 // ================================================================
 
 import { ALL_LEVELS, FIRST_LEVEL_ID } from '../sim/campaign/levels';
-import { CAMPAIGN_PROFILE_VERSION, type CampaignProfile } from '../sim/campaign/types';
+import {
+  CAMPAIGN_DIFFICULTIES,
+  CAMPAIGN_PROFILE_VERSION,
+  type CampaignDifficulty,
+  type CampaignProfile,
+} from '../sim/campaign/types';
 
 const KEY = 'pew-pew.campaign.profile';
+
+/** Dove vive la scelta di difficoltà fatta *prima* che esista un
+ *  profilo: un personaggio nuovo non ha ancora una `CampaignProfile`
+ *  da cui leggerla, ma il menu deve poter offrire la scelta comunque.
+ *  Una volta che il profilo esiste, è lui la fonte di verità (vedi
+ *  CampaignProfile.difficulty) — questa chiave conta solo per il
+ *  prossimo run che comincia da zero. */
+const DIFFICULTY_KEY = 'pew-pew.campaign.difficulty';
+
+const VALID_DIFFICULTIES: ReadonlySet<string> = new Set(CAMPAIGN_DIFFICULTIES);
+
+function isCampaignDifficulty(value: unknown): value is CampaignDifficulty {
+  return typeof value === 'string' && VALID_DIFFICULTIES.has(value);
+}
 
 /** Le chiavi `livello/stanza` che possono legittimamente comparire in
  *  un profilo. Validare contro i livelli veri invece che contro una
@@ -71,6 +90,10 @@ export function loadCampaignProfile(): CampaignProfile | null {
       completedLevels: stringArray(p['completedLevels']).filter((l) => LEVEL_IDS.has(l)),
       collectedCoreIds: stringArray(p['collectedCoreIds']),
       roomsAwarded: stringArray(p['roomsAwarded']).filter((r) => ROOM_KEYS.has(r)),
+      // Una difficoltà illeggibile riparte da Tutorial invece di
+      // buttare il resto del personaggio, stessa logica di levelId
+      // qui sopra: xp e nodi valgono più di una regola di morte.
+      difficulty: isCampaignDifficulty(p['difficulty']) ? p['difficulty'] : 'tutorial',
     };
   } catch {
     return null;
@@ -91,4 +114,27 @@ export function clearCampaignProfile(): void {
   } catch {
     // Idem.
   }
+}
+
+/** Ricorda la scelta fatta nel menu, per quando comincerà il prossimo
+ *  personaggio nuovo — vedi DIFFICULTY_KEY qui sopra. */
+export function saveCampaignDifficultyChoice(difficulty: CampaignDifficulty): void {
+  try {
+    localStorage.setItem(DIFFICULTY_KEY, difficulty);
+  } catch {
+    // Non-fatal: si può sempre scegliere di nuovo al prossimo avvio.
+  }
+}
+
+/** Tutorial come default: è la modalità già rodata, e un giocatore che
+ *  non ha mai visto il selettore non deve trovarsi catapultato in
+ *  Roguelike senza averlo scelto. */
+export function loadCampaignDifficultyChoice(): CampaignDifficulty {
+  try {
+    const raw = localStorage.getItem(DIFFICULTY_KEY);
+    if (isCampaignDifficulty(raw)) return raw;
+  } catch {
+    // Fallthrough al default sotto.
+  }
+  return 'tutorial';
 }
