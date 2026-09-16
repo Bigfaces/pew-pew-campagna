@@ -337,6 +337,81 @@ le due cose che le invarianti 1b e 2b esistono apposta per impedire.
 Adesso chi esplora sale 2 → 3 → 5 → 6 → 8 → 9 → 11 → 12 → 14, chi tira
 dritto chiude a 11.
 
+### Narrativa e finale
+
+Il punto 4 della roadmap chiedeva «testi fra un livello e l'altro», ed
+era l'ultima riga del GDD rimasta scoperta. Adesso ci sono tre battute
+distinte, e la distinzione è deliberata:
+
+1. **Le ultime parole di ARBITER**, durante l'abbattimento, sui
+   sottotitoli. Il gioco è ancora vivo mentre le si legge.
+2. **L'`outro` del livello**, che risponde al suo `intro`: lo chiude, o
+   lo lascia peggio di come l'aveva trovato.
+3. **La schermata d'atto**, che ferma il gioco. Per gli Atti I e II sta
+   fra un atto e il successivo; per il III **è il finale della
+   campagna**.
+
+Sovrapporle sarebbe stato più semplice e avrebbe sprecato il momento:
+tre notizie diverse dette insieme diventano una sola.
+
+**Il finale.** Prima, abbattere ARBITER mostrava un pannello con
+scritto «FINE DELL'ATTO III» e un riepilogo di statistiche — dopo nove
+livelli e tre boss. Adesso chiude il motivo aperto dalla prima riga del
+primo livello, «il registro è tutto ciò che mi resta»: nel finale non
+parla ARBITER, che è già stato abbattuto, parla **il registro**, e
+passa la penna al giocatore. Le statistiche restano, ma sotto il testo
+e separate da un filo — è la differenza fra "qui c'è ancora un
+riepilogo" e "il riepilogo *è* lo schermo".
+
+**Una regola che vale per tutto il resto**: quando mostrarle e in che
+ordine vive in `game/`, non nella simulazione. `CampaignWorld` non sa
+che esista una schermata d'atto, ed è la stessa disciplina che regge il
+passaggio di livello.
+
+### Voce audio
+
+La campagna prendeva in prestito i suoni dell'Arena, e in un punto il
+codice lo ammetteva: lo scatto usava il suono del respawn perché «la
+campagna non ha ancora una voce propria per questo gesto». Il colpo di
+un nemico usava il *fucile del giocatore* — cioè il suono che dice
+"hai sparato tu" per dire "ti hanno sparato". E la cosa più importante
+non suonava affatto: **il colpo al punto debole era identico a quello
+al corpo**, mentre vale sei volte tanto.
+
+Adesso la campagna ha `audio/campaignVoice.ts`, istanza separata con il
+suo contesto: `audio/engine.ts` è dell'Arena, che è multiplayer, e si
+tocca il meno possibile. Il prezzo è che ciclo di vita e ascoltatore
+vanno aggiornati due volte, e il prezzo è giusto.
+
+Come per gli sprite, **niente file audio**: tutto sintetizzato, tabelle
+di parametri come dati puri separati dal motore che li suona — che è
+ciò che rende verificabile senza far suonare niente. Le distanze
+misurate sulle coppie che devono essere inconfondibili: punto debole
+contro corpo, 2,15× di frequenza di picco e quasi il doppio di
+guadagno; piastra del Guardiano contro colpo andato a segno, 0,25× —
+un tonfo che sta quattro volte più in basso. Sono le due lezioni che il
+gioco deve insegnare senza scriverle.
+
+Tre cose decise cablando, che le tabelle da sole non dicevano:
+
+- **Chi colpisce toccando non spara.** Saldatore e Martello prendono un
+  tonfo d'impatto, non il colpo a distanza: dargli lo stesso suono
+  renderebbe illeggibile la differenza fra "mi ha inquadrato da
+  lontano" e "mi è arrivato addosso".
+- **Il sigillo di una porta si sente dalla porta**, non da dove stai
+  tu. L'evento porta solo un id, ma il livello sa dove sta: in un
+  corridoio con due paratie, sapere quale si è chiusa è mezza
+  informazione tattica.
+- **La gravità suona in entrambi i versi.** Il ripristino è un cambio
+  di regole tanto quanto l'inversione, e sentirlo solo a metà lasciava
+  il giocatore a indovinare quando poteva fidarsi di nuovo dei comandi.
+
+**Un limite noto, dichiarato**: gravità invertita e ripristinata sono
+due sweep incrociate con gli strati scambiati. Picco, guadagno e durata
+sono per forza identici; quello che cambia è quale delle due parte per
+prima, con venti millisecondi di scarto. È la distinzione più fragile
+del set, e va ascoltata prima di darla per buona.
+
 ## 5. Boss
 
 Ogni boss ha: **arena dedicata**, **1-2 pattern d'attacco leggibili**, una
@@ -571,8 +646,8 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
    persistenza su `localStorage`.
 3. Trabocchetti restanti e composizioni *(fatto)* — tutti e otto,
    corridoio a fuoco incrociato e passerelle compresi.
-4. Narrativa: battute di ARBITER *(fatto per la slice, sezione 10)*; testi
-   tra un livello e l'altro ancora da scrivere.
+4. Narrativa *(fatto)* — battute di ARBITER, outro per livello, tre
+   schermate d'atto e il finale della campagna (sezione 4).
 5. Atto II *(fatto)* — Il Nucleo Anulare, tre livelli e il Custode.
 6. Atto III *(fatto)* — Il Nido di ARBITER, tre livelli e il boss finale.
 7. Nemici mobili *(fatto)* — dieci archetipi su tre fasce, due o tre per
@@ -581,6 +656,8 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
    direzioni ciascuno, cotti in codice all'avvio (sezione 4).
 9. Modalità Medio e Roguelike *(fatto)* — le fasi 2 e 3 previste dal
    briefing (sezione 9).
+10. Finale, testi narrativi e voce audio della campagna *(fatto)* —
+    sezione 4.
 
 ## 9. Decisioni dal briefing
 

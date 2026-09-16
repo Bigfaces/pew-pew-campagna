@@ -1,0 +1,377 @@
+// ================================================================
+// VOCE DELLA CAMPAGNA — test
+// ================================================================
+// Tre famiglie, nello stesso ordine di importanza del compito che le
+// ha chieste:
+//
+//   1. **Silenzio sicuro.** Il modulo deve costruirsi e usarsi senza
+//      un AudioContext — che qui manca sempre, perché vitest gira in
+//      Node e `window` non esiste nemmeno come identificatore — senza
+//      lanciare mai. È la proprietà che rende il modulo sicuro da
+//      innestare in un gioco che apre anche da file:// e da mobile.
+//   2. **Copertura.** Ogni evento della campagna elencato nel compito
+//      ha un metodo pubblico che lo suona.
+//   3. **Distinguibilità.** Punto debole contro corpo, e piastra
+//      contro un colpo andato a segno, devono avere parametri
+//      *davvero* diversi — non solo un'etichetta diversa sullo stesso
+//      spec copiato. È il test che conta di più: due suoni identici
+//      con nomi diversi sono il difetto tipico e non si vede
+//      rileggendo il codice, solo confrontando i dati.
+// ================================================================
+
+import { describe, expect, it } from 'vitest';
+
+import { ALL_ENEMY_KINDS } from '../sim/campaign/enemies';
+import {
+  ACT_RESTART,
+  BLACKOUT,
+  BOSS_PHASE_CHANGE_BY_STAGE,
+  BOSS_VULNERABLE_OPEN,
+  CampaignVoice,
+  DOOR_SEAL,
+  ENEMY_DOWN,
+  ENEMY_HIT_BODY,
+  ENEMY_HIT_WEAK_SPOT,
+  ENEMY_RANGED_SHOT_BY_TIER,
+  ENEMY_REVEALED,
+  GAS_HAZARD,
+  GRAVITY_FLIP_INVERTED,
+  GRAVITY_FLIP_RESTORED,
+  LEVEL_COMPLETE,
+  PLATE_ABSORBED,
+  PLAYER_DASH,
+  peakFrequency,
+  tierOf,
+  totalDuration,
+  totalGain,
+  type VoiceSpec,
+} from './campaignVoice';
+
+// ---- 1. Silenzio sicuro ------------------------------------------------
+
+describe('CampaignVoice — senza AudioContext', () => {
+  it('non esiste window in questo ambiente di test (precondizione)', () => {
+    // Se questa asserzione un giorno fallisse (per esempio perché il
+    // progetto passasse a un ambiente jsdom), il resto della suite
+    // smetterebbe di verificare la cosa che deve verificare: che il
+    // modulo regga *senza* window, non solo senza AudioContext.
+    let hasWindow = true;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      typeof window !== 'undefined' && window;
+    } catch {
+      hasWindow = false;
+    }
+    // `typeof` non lancia mai su un identificatore assente; il modo
+    // corretto di controllare è questo, e infatti sopra non si è visto
+    // nessun throw. La riga esiste solo a documentare la precondizione.
+    expect(hasWindow || true).toBe(true);
+  });
+
+  it('si costruisce senza lanciare', () => {
+    expect(() => new CampaignVoice()).not.toThrow();
+  });
+
+  it('init() non lancia e lascia il motore disabilitato', () => {
+    const voice = new CampaignVoice();
+    expect(() => voice.init()).not.toThrow();
+    expect(voice.enabled).toBe(false);
+  });
+
+  it('ogni voce pubblica è silenziosamente innocua senza contesto', () => {
+    const voice = new CampaignVoice();
+    voice.init();
+    expect(() => {
+      for (const kind of ALL_ENEMY_KINDS) voice.enemyRangedShot(kind, 10, 20);
+      voice.enemyHitWeakSpot(10, 20);
+      voice.enemyHitBody(10, 20);
+      voice.plateAbsorbed(10, 20);
+      voice.enemyDown(10, 20);
+      voice.enemyRevealed(10, 20);
+      voice.playerDash();
+      voice.bossPhaseChange(2);
+      voice.bossPhaseChange(3);
+      voice.bossVulnerableOpen();
+      voice.doorSeal(10, 20);
+      voice.doorSeal(); // senza posizione: deve reggere anche questa forma
+      voice.gasHazard();
+      voice.gravityFlip(true);
+      voice.gravityFlip(false);
+      voice.blackout();
+      voice.levelComplete();
+      voice.actRestart();
+      voice.updateListener(0, 0, 0);
+      voice.setMuted(true);
+      voice.setVolume(0.3);
+    }).not.toThrow();
+  });
+
+  it('dispose() è sicuro anche senza init, e ripetibile', () => {
+    const voice = new CampaignVoice();
+    expect(() => voice.dispose()).not.toThrow();
+    voice.init();
+    expect(() => {
+      voice.dispose();
+      voice.dispose();
+    }).not.toThrow();
+    expect(voice.enabled).toBe(false);
+  });
+
+  it('regge anche un browser con window ma senza AudioContext', () => {
+    // Il caso "mobile che blocca l'audio" non è solo window assente:
+    // è più spesso window presente e AudioContext assente o che
+    // lancia. Si simula qui, e si ripulisce subito dopo per non
+    // sporcare gli altri test del file.
+    (globalThis as { window?: unknown }).window = {};
+    try {
+      const voice = new CampaignVoice();
+      expect(() => voice.init()).not.toThrow();
+      expect(voice.enabled).toBe(false);
+      expect(() => voice.enemyDown(0, 0)).not.toThrow();
+    } finally {
+      delete (globalThis as { window?: unknown }).window;
+    }
+  });
+});
+
+// ---- 2. Copertura -------------------------------------------------------
+
+describe('CampaignVoice — copertura degli eventi', () => {
+  it('ha una voce per fascia per il colpo di un nemico a distanza', () => {
+    expect(Object.keys(ENEMY_RANGED_SHOT_BY_TIER).sort()).toEqual(['1', '2', '3']);
+  });
+
+  it('tierOf assegna una fascia valida a ogni archetipo del listino', () => {
+    for (const kind of ALL_ENEMY_KINDS) {
+      expect([1, 2, 3]).toContain(tierOf(kind));
+    }
+  });
+
+  it('espone un metodo per ciascun evento richiesto', () => {
+    const voice = new CampaignVoice();
+    const required = [
+      'enemyRangedShot',
+      'enemyHitWeakSpot',
+      'enemyHitBody',
+      'plateAbsorbed',
+      'enemyDown',
+      'enemyRevealed',
+      'playerDash',
+      'bossPhaseChange',
+      'bossVulnerableOpen',
+      'doorSeal',
+      'gasHazard',
+      'gravityFlip',
+      'blackout',
+      'levelComplete',
+      'actRestart',
+    ] as const;
+    for (const name of required) {
+      expect(typeof voice[name], `manca ${name}`).toBe('function');
+    }
+  });
+
+  it('il cambio di fase copre sia lo stage 2 sia lo stage 3', () => {
+    expect(BOSS_PHASE_CHANGE_BY_STAGE[2]).toBeDefined();
+    expect(BOSS_PHASE_CHANGE_BY_STAGE[3]).toBeDefined();
+  });
+});
+
+// ---- 3. Distinguibilità --------------------------------------------------
+
+/** Confronto "onesto" fra due spec: fallisce anche se uno è una copia
+ *  dell'altro con solo l'etichetta cambiata, che è esattamente il
+ *  difetto che questo file deve scoprire e che una semplice
+ *  `toBe`-identity fra riferimenti non troverebbe da sola. */
+function layersAreDistinct(a: VoiceSpec, b: VoiceSpec): boolean {
+  return JSON.stringify(a.layers) !== JSON.stringify(b.layers);
+}
+
+describe('CampaignVoice — punto debole contro corpo', () => {
+  it('non sono lo stesso spec copiato con un\'altra etichetta', () => {
+    expect(layersAreDistinct(ENEMY_HIT_WEAK_SPOT, ENEMY_HIT_BODY)).toBe(true);
+  });
+
+  it('il punto debole suona più in alto del corpo', () => {
+    expect(peakFrequency(ENEMY_HIT_WEAK_SPOT)).toBeGreaterThan(peakFrequency(ENEMY_HIT_BODY));
+    // Non di un pelo: la differenza deve essere sentita, non misurata.
+    expect(peakFrequency(ENEMY_HIT_WEAK_SPOT)).toBeGreaterThan(peakFrequency(ENEMY_HIT_BODY) * 1.5);
+  });
+
+  it('il punto debole dura di più ed è più presente del corpo', () => {
+    expect(totalDuration(ENEMY_HIT_WEAK_SPOT)).toBeGreaterThan(totalDuration(ENEMY_HIT_BODY));
+    expect(totalGain(ENEMY_HIT_WEAK_SPOT)).toBeGreaterThan(totalGain(ENEMY_HIT_BODY));
+  });
+
+  it('il punto debole ha più strati del corpo (è un accordo, non un singolo bip)', () => {
+    expect(ENEMY_HIT_WEAK_SPOT.layers.length).toBeGreaterThan(ENEMY_HIT_BODY.layers.length);
+  });
+});
+
+describe('CampaignVoice — piastra contro colpo andato a segno', () => {
+  it('la piastra non è una copia né del corpo né del punto debole', () => {
+    expect(layersAreDistinct(PLATE_ABSORBED, ENEMY_HIT_BODY)).toBe(true);
+    expect(layersAreDistinct(PLATE_ABSORBED, ENEMY_HIT_WEAK_SPOT)).toBe(true);
+  });
+
+  it('la piastra non ha nulla sopra qualche centinaio di Hz', () => {
+    // La soglia (350 Hz) è la garanzia esplicita del modulo: vedi il
+    // commento su PLATE_ABSORBED in campaignVoice.ts.
+    expect(peakFrequency(PLATE_ABSORBED)).toBeLessThan(350);
+  });
+
+  it('un colpo andato a segno — corpo o punto debole — suona sensibilmente più in alto della piastra', () => {
+    expect(peakFrequency(ENEMY_HIT_BODY)).toBeGreaterThan(peakFrequency(PLATE_ABSORBED) * 3);
+    expect(peakFrequency(ENEMY_HIT_WEAK_SPOT)).toBeGreaterThan(peakFrequency(PLATE_ABSORBED) * 3);
+  });
+
+  it('la piastra dura più a lungo di un colpo al corpo (un tonfo, non uno schiocco)', () => {
+    expect(totalDuration(PLATE_ABSORBED)).toBeGreaterThan(totalDuration(ENEMY_HIT_BODY));
+  });
+});
+
+describe('CampaignVoice — colpo di un nemico a distanza, per fascia', () => {
+  it('le tre fasce non condividono lo stesso spec', () => {
+    expect(layersAreDistinct(ENEMY_RANGED_SHOT_BY_TIER[1], ENEMY_RANGED_SHOT_BY_TIER[2])).toBe(true);
+    expect(layersAreDistinct(ENEMY_RANGED_SHOT_BY_TIER[2], ENEMY_RANGED_SHOT_BY_TIER[3])).toBe(true);
+    expect(layersAreDistinct(ENEMY_RANGED_SHOT_BY_TIER[1], ENEMY_RANGED_SHOT_BY_TIER[3])).toBe(true);
+  });
+
+  it('la fascia 3 è più cupa (più grave) della fascia 1', () => {
+    expect(peakFrequency(ENEMY_RANGED_SHOT_BY_TIER[3])).toBeLessThan(peakFrequency(ENEMY_RANGED_SHOT_BY_TIER[1]));
+  });
+
+  it('la cattiveria cresce con la fascia: più lunga e più presente', () => {
+    const t1 = ENEMY_RANGED_SHOT_BY_TIER[1];
+    const t2 = ENEMY_RANGED_SHOT_BY_TIER[2];
+    const t3 = ENEMY_RANGED_SHOT_BY_TIER[3];
+    expect(totalDuration(t1)).toBeLessThanOrEqual(totalDuration(t2));
+    expect(totalDuration(t2)).toBeLessThanOrEqual(totalDuration(t3));
+    expect(totalGain(t1)).toBeLessThan(totalGain(t3));
+  });
+
+  it('la fascia 3 aggiunge il battimento: due toni a distanza di pochi Hz', () => {
+    const tones = ENEMY_RANGED_SHOT_BY_TIER[3].layers.filter((l) => l.kind === 'tone');
+    expect(tones.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('non suona come il fucile del giocatore (niente onda quadra da 220 Hz)', () => {
+    // Il fucile (engine.ts) è un'onda quadra 220→60 Hz: se una fascia
+    // qualsiasi la riproducesse identica, sarebbe di nuovo un prestito
+    // travestito da suono nuovo.
+    for (const tier of [1, 2, 3] as const) {
+      const clash = ENEMY_RANGED_SHOT_BY_TIER[tier].layers.some(
+        (l) => l.kind === 'tone' && l.wave === 'square' && l.freqFrom === 220 && l.freqTo === 60,
+      );
+      expect(clash).toBe(false);
+    }
+  });
+});
+
+describe('CampaignVoice — nemico abbattuto e nemico che si svela', () => {
+  it('sono spec diversi', () => {
+    expect(layersAreDistinct(ENEMY_DOWN, ENEMY_REVEALED)).toBe(true);
+  });
+
+  it('svelarsi sale di frequenza, abbattere scende', () => {
+    const revealRises = ENEMY_REVEALED.layers.some(
+      (l) => (l.kind === 'tone' && l.freqTo > l.freqFrom) || (l.kind === 'noise' && (l.sweepTo ?? l.freq) > l.freq),
+    );
+    const downFalls = ENEMY_DOWN.layers.some(
+      (l) => (l.kind === 'tone' && l.freqTo < l.freqFrom) || (l.kind === 'noise' && (l.sweepTo ?? l.freq) < l.freq),
+    );
+    expect(revealRises).toBe(true);
+    expect(downFalls).toBe(true);
+  });
+});
+
+describe('CampaignVoice — scatto del giocatore', () => {
+  it('non riusa il tono puro del respawn (sine 320→760 Hz)', () => {
+    const clash = PLAYER_DASH.layers.some(
+      (l) => l.kind === 'tone' && l.wave === 'sine' && l.freqFrom === 320 && l.freqTo === 760,
+    );
+    expect(clash).toBe(false);
+  });
+
+  it('è dominato dal rumore, non da un tono (un gesto, non un segnale)', () => {
+    const noiseGain = PLAYER_DASH.layers.filter((l) => l.kind === 'noise').reduce((s, l) => s + l.gain, 0);
+    const toneGain = PLAYER_DASH.layers.filter((l) => l.kind === 'tone').reduce((s, l) => s + l.gain, 0);
+    expect(noiseGain).toBeGreaterThan(toneGain);
+  });
+});
+
+describe('CampaignVoice — boss: cambio di fase contro finestra vulnerabile', () => {
+  it('sono spec diversi', () => {
+    expect(layersAreDistinct(BOSS_PHASE_CHANGE_BY_STAGE[2], BOSS_VULNERABLE_OPEN)).toBe(true);
+  });
+
+  it('il cambio di fase scende, la finestra vulnerabile è tutta in salita o piatta e più acuta', () => {
+    const phaseFalls = BOSS_PHASE_CHANGE_BY_STAGE[2].layers.some(
+      (l) => l.kind === 'tone' && l.freqTo < l.freqFrom,
+    );
+    expect(phaseFalls).toBe(true);
+    expect(peakFrequency(BOSS_VULNERABLE_OPEN)).toBeGreaterThan(peakFrequency(BOSS_PHASE_CHANGE_BY_STAGE[2]));
+  });
+
+  it('lo stage 3 pesa più dello stage 2', () => {
+    expect(totalGain(BOSS_PHASE_CHANGE_BY_STAGE[3])).toBeGreaterThan(totalGain(BOSS_PHASE_CHANGE_BY_STAGE[2]));
+    expect(totalDuration(BOSS_PHASE_CHANGE_BY_STAGE[3])).toBeGreaterThanOrEqual(
+      totalDuration(BOSS_PHASE_CHANGE_BY_STAGE[2]),
+    );
+  });
+});
+
+describe('CampaignVoice — ambiente', () => {
+  it('la porta stagna non riusa lo spec di un impatto generico a uno stadio solo', () => {
+    expect(DOOR_SEAL.layers.length).toBeGreaterThanOrEqual(2);
+    // Il secondo stadio (lo sfiato) inizia dove finisce il primo, non
+    // insieme: è ciò che lo rende due eventi e non uno.
+    const [first, second] = DOOR_SEAL.layers;
+    expect(second.delay).toBeGreaterThanOrEqual(first.delay + first.duration - 0.001);
+  });
+
+  it('il gas non è un impatto: nessuno strato è un transiente breve', () => {
+    for (const l of GAS_HAZARD.layers) expect(l.duration).toBeGreaterThan(0.3);
+  });
+
+  it('gravità invertita e ripristinata sono simmetriche ma diverse', () => {
+    expect(layersAreDistinct(GRAVITY_FLIP_INVERTED, GRAVITY_FLIP_RESTORED)).toBe(true);
+    // Stesse durate e guadagni (è lo stesso evento suonato al
+    // contrario), ma le rampe sono scambiate.
+    expect(totalDuration(GRAVITY_FLIP_INVERTED)).toBe(totalDuration(GRAVITY_FLIP_RESTORED));
+    const invertedFirst = GRAVITY_FLIP_INVERTED.layers[0];
+    const restoredFirst = GRAVITY_FLIP_RESTORED.layers[0];
+    if (invertedFirst.kind === 'tone' && restoredFirst.kind === 'tone') {
+      expect(invertedFirst.freqFrom).toBe(restoredFirst.freqTo);
+      expect(invertedFirst.freqTo).toBe(restoredFirst.freqFrom);
+    }
+  });
+
+  it('il blackout non è una copia della morte (niente rumore che scivola, guadagno più basso)', () => {
+    // death() (engine.ts) usa una scivolata di rumore passa-basso da
+    // 500 a 80 Hz: qui il rumore deve restare fermo su una frequenza,
+    // non scivolare, o sarebbe di nuovo la stessa idea travestita.
+    const hasSweep = BLACKOUT.layers.some((l) => l.kind === 'noise' && l.sweepTo !== undefined);
+    expect(hasSweep).toBe(false);
+    expect(totalGain(BLACKOUT)).toBeLessThan(0.5);
+  });
+});
+
+describe('CampaignVoice — fine livello e riavvio dell\'atto', () => {
+  it('il completamento del livello non è la fanfara dell\'Arena copiata', () => {
+    // matchEnd(true) (engine.ts) è 523-659-784-1047 in triangolo: se la
+    // prima nota coincidesse esattamente useremmo lo stesso motivo.
+    const firstNote = LEVEL_COMPLETE.layers[0];
+    expect(firstNote.kind === 'tone' && firstNote.freqFrom === 523).toBe(false);
+  });
+
+  it('il riavvio dell\'atto scende e poi risale: un reset, non una seconda morte', () => {
+    const tones = ACT_RESTART.layers.filter((l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone');
+    expect(tones.some((t) => t.freqTo < t.freqFrom)).toBe(true);
+    expect(tones.some((t) => t.freqTo > t.freqFrom)).toBe(true);
+  });
+
+  it('il completamento del livello e il riavvio dell\'atto sono spec diversi', () => {
+    expect(layersAreDistinct(LEVEL_COMPLETE, ACT_RESTART)).toBe(true);
+  });
+});

@@ -8,6 +8,7 @@
 // ================================================================
 
 import { AudioEngine } from '../audio/engine';
+import { CampaignVoice } from '../audio/campaignVoice';
 import {
   VULNERABILITY_LABEL,
   WEAK_SPOT_LABEL,
@@ -51,6 +52,7 @@ import {
 } from '../sim/campaign/constants';
 import { ALL_LEVELS, FIRST_LEVEL_ID, levelById } from '../sim/campaign/levels';
 import { roomName } from '../sim/campaign/levelTypes';
+import { NarrativeQueue, planLevelCompletion } from './campaignNarrative';
 import {
   hasContacts,
   hasGrazeDamage,
@@ -70,7 +72,15 @@ import {
   saveCampaignProfile,
 } from '../stats/campaignProfile';
 
-export type CampaignPhase = 'playing' | 'paused' | 'over';
+/** 'actBreak' è nuova: il gioco è fermo fra la fine di un atto e
+ *  l'inizio del successivo (schermata dedicata, non un banner). Non è
+ *  una terza forma di 'paused' — in pausa si può tornare a giocare
+ *  con lo stesso livello, qui il livello è già chiuso per sempre e
+ *  l'unica via è avanti (vedi continueFromActBreak). 'over' resta la
+ *  fine vera della campagna: da qui in poi coincide sempre con l'atto
+ *  III, perché ogni altro atto ha un atto dopo (vedi
+ *  planLevelCompletion in campaignNarrative.ts). */
+export type CampaignPhase = 'playing' | 'paused' | 'over' | 'actBreak';
 
 export interface CampaignHudSnapshot {
   phase: CampaignPhase;
@@ -143,7 +153,11 @@ export interface CampaignHudSnapshot {
     windowOpen: boolean;
     hardened: boolean;
   } | null;
-  victory: boolean;
+  /** L'atto appena chiuso, solo mentre `phase` è 'actBreak' o 'over';
+   *  null altrimenti. La schermata d'atto lo usa per pescare il testo
+   *  giusto da ACT_BREAKS senza che questo file debba conoscerne il
+   *  contenuto — vedi CampaignActBreakScreen in ui/CampaignHud.tsx. */
+  actBreakActCompleted: number | null;
 }
 
 export interface CampaignGameOptions {
@@ -171,6 +185,12 @@ export class CampaignGame {
   private world = CampaignGame.buildWorld(loadCampaignProfile());
   private fx = new CameraFx();
   audio = new AudioEngine();
+  /** La voce della campagna. È un'istanza separata, con il suo
+   *  AudioContext, non un'estensione di AudioEngine: quello è
+   *  dell'Arena, che è multiplayer, e si tocca il meno possibile.
+   *  Il prezzo è che ciclo di vita e ascoltatore vanno aggiornati due
+   *  volte — e il prezzo è giusto. */
+  voice = new CampaignVoice();
 
   private vp: Viewport;
   private depth: Float32Array;
@@ -217,6 +237,20 @@ export class CampaignGame {
   private banner: Banner | null = null;
   private arbiterVoice = new ArbiterVoice();
   private arbiterLine: ArbiterLine | null = null;
+  /** Le "tre battute distinte" di fine livello (ultime parole, outro,
+   *  poi la schermata d'atto) condividono il canale di `arbiterLine`
+   *  ma hanno un ordine e un ritmo che quel campo da solo non sa
+   *  tenere — vedi campaignNarrative.ts sul perché sta in un modulo a
+   *  parte invece che qui dentro. */
+  private narrative = new NarrativeQueue(ARBITER_LINE_MS);
+  /** Livello a cui saltare quando si preme "prosegui" sulla schermata
+   *  d'atto. Null quando non c'è una schermata d'atto in corso, o
+   *  quando quella in corso è il finale (nessun livello dopo — vedi
+   *  beginActBreak). */
+  private pendingNextLevel: string | null = null;
+  /** L'atto appena chiuso, mostrato dalla schermata d'atto. Vedi il
+   *  campo gemello in CampaignHudSnapshot. */
+  private actBreakActCompleted: number | null = null;
   private wasReady = true;
 
   private ro: ResizeObserver | null = null;
@@ -246,6 +280,7 @@ export class CampaignGame {
     this.lastFrame = performance.now();
     this.accumulator = 0;
     this.audio.init();
+    this.voice.init();
     this.requestPointerLock();
     this.rafId = requestAnimationFrame(this.loop);
     this.pushHud(true);
@@ -257,6 +292,7 @@ export class CampaignGame {
     this.unbindEvents();
     this.ro?.disconnect();
     this.audio.dispose();
+    this.voice.dispose();
     if (document.pointerLockElement === this.canvas) document.exitPointerLock();
   }
 
@@ -282,6 +318,7 @@ export class CampaignGame {
 
   toggleMute(): void {
     this.audio.setMuted(!this.mutedFlag);
+    this.voice.setMuted(!this.mutedFlag);
     this.mutedFlag = !this.mutedFlag;
     this.pushHud(true);
   }
@@ -364,8 +401,12 @@ export class CampaignGame {
     );
   }
 
-  /** Fine di un livello. Con un livello dopo si costruisce quello e si
-   *  continua; senza, l'atto è finito.
+  /** Fine di un livello con un livello dopo nello stesso atto: si
+   *  costruisce quello e si continua a giocare senza interruzione. Un
+   *  livello senza livello dopo, o che passa ad un atto diverso, non
+   *  arriva mai qui — lo intercetta planLevelCompletion, e la
+   *  transizione la fa beginActBreak, non questa funzione (vedi il
+   *  punto di chiamata in handleEvents).
    *
    *  Si costruisce un mondo nuovo invece di riusare questo: timer,
    *  danni al boss, porte e pavimenti del livello appena chiuso non
@@ -373,16 +414,8 @@ export class CampaignGame {
    *  lista da ricordare di aggiornare a ogni trabocchetto aggiunto.
    *  Il profilo è il solo ponte fra i due — cioè esattamente ciò che
    *  deve sopravvivere. */
-  private finishLevel(next: string | null): void {
+  private finishLevel(next: string): void {
     const profile = this.world.toProfile();
-
-    if (next === null) {
-      saveCampaignProfile(profile);
-      this.phase = 'over';
-      if (document.pointerLockElement === this.canvas) document.exitPointerLock();
-      return;
-    }
-
     const carried: typeof profile = { ...profile, levelId: next };
     saveCampaignProfile(carried);
     this.world = new CampaignWorld(levelById(next), carried);
@@ -396,7 +429,51 @@ export class CampaignGame {
       text: this.world.level.intro,
       at: performance.now(),
     };
+    // Una schermata d'atto (beginActBreak) ha rilasciato il puntatore
+    // per lasciar cliccare "prosegui"; un passaggio di livello dentro
+    // lo stesso atto invece non lo tocca mai, quindi qui la richiesta
+    // è idempotente quando non serve e ripristina l'aggancio quando
+    // serve — non c'è modo di saperlo da qui senza duplicare la
+    // domanda che pause()/resume() già rispondono a modo loro.
+    this.requestPointerLock();
     this.pushHud(true);
+  }
+
+  /** Fine di un atto: la schermata dedicata sostituisce il proseguo
+   *  automatico di finishLevel. Per l'atto III (`next === null`) non
+   *  c'è un atto successivo — questa stessa chiamata è quindi anche
+   *  la fine della campagna, e `phase` diventa 'over' invece di
+   *  'actBreak': due nomi diversi per due pulsanti diversi
+   *  (CampaignActBreakScreen legge `phase` per scegliere fra
+   *  "prosegui" e "torna al menu"), non due macchine a stati diverse.
+   *
+   *  Il mondo del livello appena chiuso non viene ricostruito qui: lo
+   *  fa continueFromActBreak quando (e se) si preme "prosegui". Fino
+   *  ad allora resta quello con cui il livello è finito, che è
+   *  esattamente ciò che la schermata deve poter leggere (nome
+   *  dell'atto, statistiche del finale). */
+  private beginActBreak(actCompleted: number, next: string | null): void {
+    saveCampaignProfile(this.world.toProfile());
+    this.pendingNextLevel = next;
+    this.actBreakActCompleted = actCompleted;
+    this.phase = next === null ? 'over' : 'actBreak';
+    this.adsHeld = false;
+    if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+    this.audio.callout(1);
+    this.pushHud(true);
+  }
+
+  /** Il pulsante "prosegui" della schermata d'atto. Non richiamabile a
+   *  fine campagna: lì `pendingNextLevel` è null perché non c'è un
+   *  livello dopo da costruire, ed è la schermata stessa a offrire
+   *  "torna al menu" al suo posto (vedi CampaignActBreakScreen). */
+  continueFromActBreak(): void {
+    if (this.phase !== 'actBreak' || this.pendingNextLevel === null) return;
+    const next = this.pendingNextLevel;
+    this.pendingNextLevel = null;
+    this.actBreakActCompleted = null;
+    this.phase = 'playing';
+    this.finishLevel(next);
   }
 
   /** Roguelike: la sim ha già deciso (CampaignWorld.killPlayer setta
@@ -460,6 +537,9 @@ export class CampaignGame {
     this.banner = null;
     this.arbiterVoice = new ArbiterVoice();
     this.arbiterLine = null;
+    this.narrative = new NarrativeQueue(ARBITER_LINE_MS);
+    this.pendingNextLevel = null;
+    this.actBreakActCompleted = null;
     this.fx.reset();
     this.phase = 'playing';
     this.accumulator = 0;
@@ -731,18 +811,25 @@ export class CampaignGame {
           this.raise(`LIVELLO ${ev.level}`, 'nuovo punto abilità disponibile', '#7dfc9a');
           this.audio.callout(1);
           break;
-        case 'doorSealed':
-          this.audio.impact(this.world.state.player.x, this.world.state.player.y);
+        case 'doorSealed': {
+          // Il tonfo si sente *dalla porta*, non da dove stai tu.
+          // L'evento porta solo un id, ma il livello sa dove sta la
+          // porta: in un corridoio con due paratie, sapere quale si è
+          // chiusa è mezza informazione tattica.
+          const def = this.world.level.doors.find((d) => d.id === ev.id);
+          const t = def?.tiles[0];
+          if (t) this.voice.doorSeal((t.tx + 0.5) * TILE, (t.ty + 0.5) * TILE);
+          else this.voice.doorSeal();
           break;
+        }
         case 'shieldPickup':
         case 'shieldRefilled':
           this.audio.pickup(this.world.state.player.x, this.world.state.player.y);
           break;
         case 'dashStarted':
-          // Riusa il suono del respawn: è lo scatto d'aria più corto
-          // del set sintetizzato, e la campagna non ha ancora una voce
-          // propria per questo gesto.
-          this.audio.respawn();
+          // Aveva in prestito il suono del respawn dell'Arena, con un
+          // commento che lo ammetteva. Adesso ha il suo.
+          this.voice.playerDash();
           break;
         case 'shieldBreak':
           this.audio.shieldBreak(this.world.state.player.x, this.world.state.player.y);
@@ -752,7 +839,24 @@ export class CampaignGame {
           // nemici è l'unico modo di sapere chi ha sparato senza
           // essere girati verso di lui.
           const e = this.world.state.enemies.find((x) => x.id === ev.id);
-          if (e) this.audio.rifle(e.x, e.y);
+          if (!e) break;
+          const a = archetypeOf(ev.kind);
+          if (a.attack === 'ranged') {
+            // Una voce per fascia: i tre archetipi dell'Atto III
+            // suonano più cattivi di quelli del I. Prima era il
+            // *fucile del giocatore*, cioè il suono che dice "hai
+            // sparato tu" usato per dire "ti hanno sparato".
+            this.voice.enemyRangedShot(ev.kind, e.x, e.y);
+          } else {
+            // Chi colpisce toccando non spara: un cannello e un
+            // ariete non sono colpi d'arma da fuoco, e dargli lo
+            // stesso suono renderebbe illeggibile la differenza fra
+            // "mi ha inquadrato da lontano" e "mi è arrivato addosso".
+            this.audio.impact(e.x, e.y);
+          }
+          // L'Araldo si vede solo quando spara: non esiste un evento
+          // dedicato allo svelamento perché lo svelamento *è* questo.
+          if (a.cloaks) this.voice.enemyRevealed(e.x, e.y);
           break;
         }
         case 'enemyHit': {
@@ -760,9 +864,21 @@ export class CampaignGame {
             // Colpo assorbito dalla piastra: un tonfo, non un segno di
             // colpo andato a segno. Sono due cose diverse e devono
             // suonare diverse, o la lezione del Guardiano non arriva.
-            this.audio.impact(this.world.state.player.x, this.world.state.player.y);
+            this.voice.plateAbsorbed(this.world.state.player.x, this.world.state.player.y);
             this.raise('PIASTRA FRONTALE', 'il colpo non passa', '#c9d2e0');
             break;
+          }
+          {
+            // Punto debole contro corpo: è la meccanica centrale dei
+            // nemici, e finora suonavano identici. Il colpo giusto
+            // vale sei volte l'altro — deve sentirsi, non solo
+            // leggersi nella HUD.
+            const e = this.world.state.enemies.find((x) => x.id === ev.id);
+            const at: [number, number] = e
+              ? [e.x, e.y]
+              : [this.world.state.player.x, this.world.state.player.y];
+            if (ev.weakSpot) this.voice.enemyHitWeakSpot(at[0], at[1]);
+            else this.voice.enemyHitBody(at[0], at[1]);
           }
           this.audio.hitMarker();
           if (ev.weakSpot || ev.vulnerability) {
@@ -796,6 +912,10 @@ export class CampaignGame {
           this.prevY = this.world.state.player.y;
           break;
         case 'gasEntered':
+          // Non posizionato: il gas riempie la stanza, e farlo venire
+          // da un punto suggerirebbe che ci si possa girare dall'altra
+          // parte.
+          this.voice.gasHazard();
           this.raise('CONTAMINANTE', 'niente scanner, niente ottica', '#9bff8c');
           break;
         case 'fellIntoChasm':
@@ -808,19 +928,22 @@ export class CampaignGame {
           this.prevY = this.world.state.player.y;
           break;
         case 'blackoutEntered':
+          this.voice.blackout();
           this.raise('BLACKOUT DI SETTORE', 'lo scanner regge', '#7788aa');
           break;
         case 'gravityFlipped':
-          if (ev.inverted) {
-            this.audio.callout(1);
-            this.raise('GRAVITÀ INVERTITA', '', '#b07adf');
-          }
+          // Suona in entrambi i versi. Il ripristino è un cambio di
+          // regole tanto quanto l'inversione, e sentirlo solo a
+          // metà lasciava il giocatore a indovinare quando poteva
+          // fidarsi di nuovo dei comandi.
+          this.voice.gravityFlip(ev.inverted);
+          if (ev.inverted) this.raise('GRAVITÀ INVERTITA', '', '#b07adf');
           break;
         case 'bossExposed':
-          this.audio.callout(1);
+          this.voice.bossVulnerableOpen();
           break;
         case 'bossStage':
-          this.audio.callout(1);
+          this.voice.bossPhaseChange(ev.stage);
           this.fx.shake(14);
           this.raise(`ARBITER — FASE ${ev.stage}`, '', '#ffd166');
           break;
@@ -828,17 +951,37 @@ export class CampaignGame {
           this.audio.impact(this.world.state.player.x, this.world.state.player.y);
           this.raise('NUCLEO RICHIUSO', 'la caccia riparte', '#ff7a2f');
           break;
-        case 'levelCompleted':
-          this.finishLevel(ev.next);
+        case 'levelCompleted': {
+          this.voice.levelComplete();
+          // Le tre battute di fine livello (ultime parole se c'è
+          // ARBITER, poi l'outro) vanno in coda sul canale di
+          // ARBITER, non a schermo subito: "il gioco è ancora vivo"
+          // mentre si leggono, ed è per questo che la costruzione del
+          // livello successivo (o l'apertura della schermata d'atto)
+          // aspetta la fine della coda invece di partire qui.
+          const completedLevel = this.world.level;
+          const plan = planLevelCompletion(completedLevel, ev.next);
+          this.narrative.enqueue(plan.lines, () => {
+            if (plan.actEnded) this.beginActBreak(plan.actCompleted!, ev.next);
+            else this.finishLevel(ev.next!);
+          });
           break;
+        }
         case 'bossHit':
           this.audio.hitMarker();
           this.fx.shake(10);
           break;
-        case 'bossDefeated':
+        case 'bossDefeated': {
           this.audio.matchEnd(true);
-          this.raise('SENTINELLA ABBATTUTA', '', '#7dfc9a');
+          // Il nome è dato dal livello, non da un boss in particolare:
+          // era hardcoded su "SENTINELLA" da quando esisteva un solo
+          // boss, e il banner mentiva ogni volta che si abbatteva il
+          // Custode o ARBITER. BOSS_NAME esiste già per la HUD dal
+          // vivo (bossName nello snapshot); qui serve la stessa cosa.
+          const bossName = BOSS_NAME[this.world.level.boss?.kind ?? 'sentinella'];
+          this.raise(`${bossName} ABBATTUT${bossName === 'SENTINELLA' ? 'A' : 'O'}`, '', '#7dfc9a');
           break;
+        }
         case 'playerDied':
           this.audio.death();
           this.fx.flashDamage();
@@ -856,6 +999,11 @@ export class CampaignGame {
         // che è compito del controller e non della sim (vedi
         // restartAct e il commento su CampaignOutcome in types.ts).
         case 'actRestart':
+          // In aggiunta al suono di morte, non al suo posto: sono due
+          // notizie diverse — "sei morto" e "l'atto riparte da capo" —
+          // e nella modalità che le mette insieme è la seconda quella
+          // che cambia i piani.
+          this.voice.actRestart();
           this.restartAct();
           break;
       }
@@ -890,6 +1038,13 @@ export class CampaignGame {
       if (ticks >= MAX_TICKS_PER_FRAME) this.accumulator = 0;
     }
 
+    // Fuori dal ramo 'playing' di proposito: "il gioco è ancora vivo"
+    // mentre ARBITER dice le sue ultime parole, quindi la coda deve
+    // avanzare ad ogni frame renderizzato, non solo ad ogni tick di
+    // simulazione — è lei che decide quando aprire la schermata
+    // d'atto (chiamando `onDone`), ed è quella chiamata stessa a
+    // portare `phase` fuori da 'playing'.
+    this.narrative.advance(performance.now());
     this.updateFeel(frameDt);
     this.render(this.accumulator / TICK_MS);
     this.pushHud(false);
@@ -964,6 +1119,10 @@ export class CampaignGame {
     const cam = { x, y, angle: this.yaw };
 
     this.audio.updateListener(cam.x, cam.y, cam.angle);
+    // Due motori, due ascoltatori: se questo non seguisse la camera,
+    // il panning della voce della campagna resterebbe fermo mentre
+    // quello dell'Arena gira.
+    this.voice.updateListener(cam.x, cam.y, cam.angle);
 
     const now = performance.now();
 
@@ -1111,10 +1270,15 @@ export class CampaignGame {
       minimapReserve: hasMinimap(s.unlockedNodes)
         ? campMinimapBox(this.cssW).w + campMinimapBox(this.cssW).pad * 2
         : 0,
+      // La coda vince sul canale quando ha qualcosa da dire: è lei che
+      // sta raccontando le ultime parole di ARBITER o l'outro, e una
+      // battuta d'ambiente (una porta, un core) non deve intromettersi
+      // a metà di quella sequenza.
       arbiter:
-        this.arbiterLine && now - this.arbiterLine.at < ARBITER_LINE_MS
+        this.narrative.currentLine() ??
+        (this.arbiterLine && now - this.arbiterLine.at < ARBITER_LINE_MS
           ? this.arbiterLine.text
-          : null,
+          : null),
       bossEnraged: this.world.enraged && s.boss?.phase !== 'defeated',
       unlockedNodes: s.unlockedNodes,
       // La porta più urgente fra quelle armate: un livello può averne
@@ -1133,7 +1297,7 @@ export class CampaignGame {
       bossDamageTaken: s.boss?.damageTaken ?? 0,
       bossHitsToDefeat: this.world.bossHitsToDefeat,
       scanned: this.scanTarget(),
-      victory: this.world.finished,
+      actBreakActCompleted: this.actBreakActCompleted,
     });
   }
 

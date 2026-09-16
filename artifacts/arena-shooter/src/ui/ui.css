@@ -968,3 +968,53 @@
     opacity: 0.35;
   }
 }
+
+/* ---- Campaign: schermata d'atto e finale ---- */
+/* Il pannello riusa .overlay/.panel/.btn così com'è: l'unica cosa
+   propria di questa schermata è come arrivano le righe. Ogni riga
+   parte invisibile e sfuma dentro al proprio `animation-delay`
+   (assegnato in CampaignActBreakScreen), che è come si ottiene "una
+   alla volta" senza un timer React da pulire se lo schermo cambia a
+   metà rivelazione. */
+.act-break-lines {
+  margin-bottom: 22px;
+}
+
+.act-break-line {
+  margin: 0 0 14px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text);
+  opacity: 0;
+  animation: act-break-line-in 420ms ease-out both;
+}
+
+.act-break-line:last-child {
+  margin-bottom: 0;
+}
+
+@keyframes act-break-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Solo sul finale (Atto III): le statistiche restano, ma sotto il
+   testo e separate da un filo, non al posto suo — è la differenza fra
+   "qui c'è ancora un riepilogo" e "il riepilogo È lo schermo", che è
+   quello che il vecchio pannello faceva. */
+.act-break-stats {
+  margin-top: 22px;
+  /* Il respiro sotto conta quanto quello sopra: senza, la riga di
+     riepilogo finisce appiccicata al bottone e le due cose si leggono
+     come una sola. È l'ultima schermata della campagna — vale la pena
+     che sia composta. */
+  margin-bottom: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}

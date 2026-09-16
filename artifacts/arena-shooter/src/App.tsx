@@ -14,6 +14,12 @@ import {
 } from './sim/constants';
 import type { SlotConfig } from './sim/world';
 import { CampaignEndScreen, CampaignHud, CampaignPauseScreen } from './ui/CampaignHud';
+// Riga a parte, non aggiunta a quella sopra: App.tsx qui è "solo
+// aggiunte" (è condiviso con l'Arena, vedi il resoconto), e toccare la
+// riga esistente per infilarci un altro nome — anche solo per
+// aggiungerlo — comparirebbe come una riga rimossa più una aggiunta in
+// un diff testuale, non come un'aggiunta pura.
+import { CampaignActBreakScreen } from './ui/CampaignHud';
 import { Hud } from './ui/Hud';
 import { TouchControls } from './ui/TouchControls';
 import {
@@ -336,6 +342,16 @@ export default function App(): React.ReactElement {
       )}
       {ui === 'campaign' && campaignSnap?.phase === 'over' && (
         <CampaignEndScreen snap={campaignSnap} onMenu={exitCampaign} />
+      )}
+      {/* Blocco a parte, non unito a quello sopra: stesso motivo del
+          doppio import, vedi il commento lì. 'actBreak' è la sola fase
+          nuova che ha bisogno di "prosegui" — 'over' non aveva e non
+          ha un livello dopo da costruire. */}
+      {ui === 'campaign' && campaignSnap?.phase === 'actBreak' && (
+        <CampaignActBreakScreen
+          snap={campaignSnap}
+          onContinue={() => campaignRef.current?.continueFromActBreak()}
+        />
       )}
 
       {ui === 'lobby' && (

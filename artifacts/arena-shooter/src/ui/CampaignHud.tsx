@@ -6,6 +6,7 @@ import {
 } from '../sim/campaign/constants';
 import { prereqMet } from '../sim/campaign/skills';
 import type { CampaignHudSnapshot } from '../game/campaignGame';
+import { ACT_BREAKS } from './arbiter';
 
 const BOSS_PHASE_LABEL: Record<string, string> = {
   // Sentinella
@@ -308,6 +309,64 @@ export function CampaignPauseScreen({
   );
 }
 
+/** Le frasi di un passaggio d'atto, scaglionate invece che tutte
+ *  insieme: un `animationDelay` per riga (vedi `.act-break-line` in
+ *  ui.css) invece di un timer React — niente stato da inizializzare
+ *  né da ripulire se lo schermo cambia a metà rivelazione, lo stesso
+ *  schema che già usa `.arbiter-line` per il proprio fade-in.
+ *  Condivisa fra CampaignActBreakScreen e CampaignEndScreen: sono due
+ *  schermate diverse (una prosegue, l'altra chiude la campagna) che
+ *  raccontano allo stesso modo. */
+function ActBreakLines({ lines }: { lines: readonly string[] }): React.ReactElement {
+  return (
+    <div className="act-break-lines">
+      {lines.map((line, i) => (
+        <p key={i} className="act-break-line" style={{ animationDelay: `${i * 900}ms` }}>
+          {line}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/** Schermata d'atto: ferma il gioco fra la fine dell'Atto I o II e
+ *  l'inizio del successivo. Non usata per l'Atto III — quello è
+ *  CampaignEndScreen più sotto, perché lì non c'è un "prosegui" ma un
+ *  "torna al menu", e sovrapporre le due scelte in un solo componente
+ *  con un flag `isFinale` si è rivelato più confuso che utile: due
+ *  pulsanti diversi restano due componenti, non un ramo. Il pulsante
+ *  non aspetta la rivelazione delle righe: bloccarlo avrebbe imposto
+ *  il proprio ritmo di lettura a chi il testo lo ha già letto una
+ *  volta. */
+export function CampaignActBreakScreen({
+  snap,
+  onContinue,
+}: {
+  snap: CampaignHudSnapshot;
+  onContinue: () => void;
+}): React.ReactElement {
+  const brk = ACT_BREAKS.find((b) => b.actCompleted === snap.actBreakActCompleted);
+  return (
+    <div className="overlay">
+      <div className="panel">
+        <p className="subtitle">
+          FINE DELL’ATTO {ACT_LABEL[snap.actBreakActCompleted ?? 1]}
+        </p>
+        <ActBreakLines lines={brk?.lines ?? []} />
+        <button className="btn" type="button" onClick={onContinue}>
+          PROSEGUI
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Fine della campagna: sostituisce il vecchio pannello "ARBITER
+ *  ABBATTUTO / FINE DELL'ATTO III". Il testo è il terzo ACT_BREAKS —
+ *  il finale della storia, non un riassunto di statistiche — e le
+ *  statistiche restano ma sotto quel testo, separate da un filo (vedi
+ *  `.act-break-stats` in ui.css): sono un riepilogo che il testo si
+ *  merita di avere sotto, non qualcosa a cui il testo fa da titolo. */
 export function CampaignEndScreen({
   snap,
   onMenu,
@@ -315,16 +374,13 @@ export function CampaignEndScreen({
   snap: CampaignHudSnapshot;
   onMenu: () => void;
 }): React.ReactElement {
+  const brk = ACT_BREAKS.find((b) => b.actCompleted === snap.actBreakActCompleted);
   return (
     <div className="overlay">
       <div className="panel">
-        <h1 className="title" style={{ fontSize: 34 }}>
-          {snap.bossName} ABBATTUT{snap.bossName === 'SENTINELLA' ? 'A' : 'O'}
-        </h1>
-        <p className="subtitle">
-          FINE DELL’ATTO {ACT_LABEL[snap.levelAct] ?? snap.levelAct}
-        </p>
-        <p className="hint">
+        <p className="subtitle">FINE DELLA CAMPAGNA</p>
+        <ActBreakLines lines={brk?.lines ?? []} />
+        <p className="hint act-break-stats">
           Livello {snap.level} · {snap.xp} XP · Core raccolti: {snap.coresCollected} · Nodi
           sbloccati: {snap.unlockedNodes.length} / {ALL_SKILL_NODES.length}
         </p>
