@@ -244,6 +244,91 @@ lo strafe specchiato rende illeggibile un nemico che si risolve solo
 aggirandolo; e la camera fredda, dove un Guardiano al buio chiedeva due
 cose difficili con un senso in meno.
 
+### Sprite
+
+Il briefing (sezione 9) concedeva gli sprite su nemici e boss, e solo
+lì. Restava da decidere *da dove* arrivano, e la strada scontata —
+scaricarli — è quella che questo repo non poteva permettersi.
+
+**Perché non asset scaricati.** Il progetto non ha un solo file
+binario, e non è un dettaglio estetico: la build a file singolo
+(`vite.config.ts`, l'`.html` che si apre col doppio clic) esiste
+*grazie* a questo, perché inlinea ogni byte. Un set di sprite
+scaricati finirebbe lì dentro in base64 e quel file passerebbe da
+~360 kB a qualche megabyte. Ci sarebbero anche le licenze da portarsi
+dietro — CC0 per Kenney e Quaternius, BSD per Freedoom, miste e
+virali su OpenGameArt — e una cartella di asset da tenere allineata al
+codice che li usa.
+
+**Si cuociono.** Stessa tecnica che il gioco usa già per i muri
+(`render/textures.ts`) e per i suoni (Web Audio): si disegnano una
+volta all'avvio dentro canvas fuori schermo e poi si copiano con
+`drawImage`. Zero asset, zero rete, build a file singolo intatta, e
+`imageSmoothingEnabled = false` era già impostato — lo scaling nearest
+a queste dimensioni è il look giusto, non un compromesso.
+
+**Otto direzioni senza disegnarle otto volte.** Un corpo è una lista
+di **scatole** in spazio modello (x avanti, y a destra, z da 0 ai
+piedi a 1 alla cima); il forno le proietta a ogni angolo e le ordina
+per profondità. Disegnare otto direzioni a mano avrebbe voluto dire
+ottanta immagini per dieci archetipi, e ogni ritocco moltiplicato per
+otto.
+
+Ed è una direzione che **serve**: da quando tre archetipi hanno il
+punto debole sul dorso, capire da che parte guarda un nemico non è un
+vezzo — è l'informazione che decide se il colpo vale uno o tre. Ogni
+bipede ha quindi una visiera davanti e uno zaino dietro: due sagome
+diverse, non lo stesso rettangolo girato. E `rel`, l'angolo dalla
+faccia del nemico a chi guarda, è *la stessa quantità* che
+`resolveEnemyHit` usa per decidere il dorso: non è un risparmio di
+codice, è la ragione per cui quello che vedi è quello che colpisci.
+
+**La regola si vede nel corpo.** La piastra del Guardiano è una
+scatola vera montata davanti al torace — non più solo un pannello che
+compare quando lo guardi in faccia, ma il motivo per cui è sagomato
+così. Stessa cosa per l'anello dell'Archivista (la sua minaccia è
+un'area, e l'area va dichiarata dal corpo), per l'ariete del Martello,
+e per il nucleo sulla schiena della Sentinella, che adesso si vede
+girandole attorno invece di doverlo imparare morendo.
+
+**I boss tengono il colore della fase.** Prima il loro corpo *era* un
+rettangolo del colore della fase, e quel colore è il loro telegrafo
+principale. Sostituirlo con una sagoma dettagliata li avrebbe resi
+più belli e meno leggibili, che è lo scambio sbagliato: adesso lo
+sprite viene velato dal colore della fase, così si vede da che parte è
+girato *e* in che fase sta. Archi posteriori, finestre del nucleo e
+anelli dei moduli restano disegnati sopra, invariati.
+
+**Quattro difetti, e nessuno era visibile leggendo il codice.**
+
+- **Metà di ogni sprite era nera.** `shade()` si applica due volte —
+  una dalla pianta del corpo per fare le parti chiare e scure, una dal
+  forno per l'ombreggiatura — e la seconda riceveva la stringa
+  `rgb(...)` prodotta dalla prima. `parseInt` dava NaN, gli
+  scorrimenti davano 0: teste, gambe e zaini di tutti e tredici i
+  corpi. Nero è un colore plausibile per un robot, e nessuna
+  rilettura l'avrebbe segnalato.
+- **Otto corpi su tredici sbordavano dal fotogramma**, e sbordare non
+  dà errore: il nemico si porta dietro un pezzo di sé girato da
+  un'altra parte. I rotori dei volanti sembravano una barra continua
+  invece di quattro bracci. Adesso lo impone un test.
+- **I volanti riempivano un terzo del loro fotogramma.** Sensato
+  pensando "tanto galleggia", sbagliato in pratica: `floatZ` li
+  solleva già, e l'unico effetto era un Falco grande come un puntino
+  con il segno del punto debole che galleggiava sopra il vuoto.
+- **Il velo di fase dei boss tingeva anche il muro dietro.**
+  `source-atop` compone contro *tutto* il canvas di destinazione, non
+  contro l'ultima cosa disegnata, e a quel punto i muri sono già lì.
+  Si risolve con un buffer grande quanto un fotogramma, dove il
+  ritaglio è per costruzione.
+
+**Due test guardano quello che nessuna rilettura vede**: che nessuna
+scatola esca dal fotogramma, e che sotto ogni punto debole ci sia
+davvero del corpo — se un archetipo ha la debolezza sulla testa e
+nella banda alta non c'è nessuna scatola, si mira dove non c'è niente
+da colpire. Entrambi hanno trovato difetti veri la prima volta che
+sono stati eseguiti.
+
 **L'economia dell'esperienza è stata ritarata.** Le taglie dei nemici
 hanno quasi raddoppiato l'XP disponibile (da ~2000 a ~3800 per chi
 esplora): con la vecchia tabella l'albero si riempiva entro la fine
@@ -492,6 +577,8 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
 6. Atto III *(fatto)* — Il Nido di ARBITER, tre livelli e il boss finale.
 7. Nemici mobili *(fatto)* — dieci archetipi su tre fasce, due o tre per
    livello, con punti deboli e vulnerabilità (sezione 4).
+8. Sprite direzionali *(fatto)* — dieci nemici e tre boss, otto
+   direzioni ciascuno, cotti in codice all'avvio (sezione 4).
 
 ## 9. Decisioni dal briefing
 
@@ -501,8 +588,11 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
   slice, ed è quello che lo Sprint 1 ha consegnato. Gli altri tre rami sono
   arrivati subito dopo, una volta che il loop reggeva: la decisione del
   briefing era sullo scope della prima iterazione, non un tetto.
-- **Sprite:** in futuro solo su nemici/boss. I muri restano wireframe/texture
-  procedurali come nell'Arena: è il tratto distintivo tecnico del gioco.
+- **Sprite:** solo su nemici/boss *(fatto — vedi sezione 4)*. I muri
+  restano wireframe/texture procedurali come nell'Arena: è il tratto
+  distintivo tecnico del gioco. Nemmeno gli sprite sono asset: si
+  cuociono in codice all'avvio come le texture, e il repo resta senza
+  un solo file binario.
 - **Salvataggio:** profilo unico su `localStorage`, come le statistiche
   dell'Arena. Niente slot multipli.
 - **Morte e difficoltà — tre modalità, costruite come fasi di sviluppo

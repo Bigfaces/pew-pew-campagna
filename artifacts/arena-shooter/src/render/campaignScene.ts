@@ -23,8 +23,10 @@ import {
   type EnemyKind,
 } from '../sim/campaign/enemies';
 import { angleDelta } from '../sim/raycast';
+import { ENEMY_COLOR, getSprites } from './enemySprites';
+import { drawTintedFrame, frameRect, spriteBox } from './spriteBaker';
 import { campCastRay, type GetTileFn } from '../sim/campaign/raycast';
-import type { LevelDef, TilePos, TurretDef } from '../sim/campaign/levelTypes';
+import type { BossKind, LevelDef, TilePos, TurretDef } from '../sim/campaign/levelTypes';
 import type {
   BossPhase,
   BossState,
@@ -207,24 +209,6 @@ function drawTurret(
   ctx.restore();
 }
 
-/** Il colore di base di ogni archetipo. Non è decorazione: a distanza
- *  la tinta è la prima cosa che si legge, e "quello arancione mi viene
- *  addosso" deve poter diventare un'abitudine. Le fasce salgono di
- *  saturazione, così un nemico dell'Atto III si distingue da uno del I
- *  anche prima di riconoscerne la forma. */
-const ENEMY_COLOR: Record<EnemyKind, string> = {
-  ronzino: '#8fd4ff',
-  vedetta: '#7fb6e8',
-  saldatore: '#ffb347',
-  ripetitore: '#9ad6a0',
-  guardiano: '#c9d2e0',
-  falco: '#ff8fd0',
-  crogiolo: '#b6ff7a',
-  araldo: '#c39bff',
-  martello: '#ff7a5c',
-  archivista: '#ffe066',
-};
-
 /** Il punto debole si disegna solo quando è davvero colpibile adesso.
  *
  *  Vale la stessa regola del boss (vedi drawBoss): un telegrafo che
@@ -299,7 +283,6 @@ function drawEnemy(
   const base = (a.floatZ ?? 0) * tileH;
   const w = h * (a.kind === 'martello' ? 0.78 : 0.56);
   const topY = floorY - base - h;
-  const color = ENEMY_COLOR[e.kind];
 
   // Quanto manca al colpo. Stesso contratto visivo delle turret
   // (drawTurret): l'alone si stringe e scalda mentre il tempo di
@@ -342,47 +325,43 @@ function drawEnemy(
   ctx.fill();
   ctx.restore();
 
-  ctx.globalAlpha = veil;
-  if (base > 0) {
-    // Chi vola è un rombo, come il drone: la forma dice "questo non
-    // cammina" prima che si veda muovere.
-    //
-    // Il lato è h/√2 e non "un po' meno del lato corto": ruotato di
-    // 45° un quadrato è alto quanto la sua diagonale, e serve che il
-    // rombo copra *tutta* l'altezza h. Con la misura precedente la
-    // banda alta della sagoma cadeva fuori dal disegno, quindi il
-    // segno della testa galleggiava sopra il nemico: si mirava a un
-    // punto dove non c'era niente da colpire.
-    drawDiamond(ctx, screenX, floorY - base - h * 0.5, h * 0.707, color, Math.PI / 4, veil);
-  } else {
-    ctx.fillStyle = '#0d0f18';
-    ctx.fillRect(screenX - w / 2, topY, w, h);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(1.2, w * 0.09);
-    ctx.strokeRect(screenX - w / 2, topY, w, h);
-    // La testa: una fascia separata, così la banda alta che conta per
-    // il colpo mirato è visibile e non va indovinata.
-    ctx.beginPath();
-    ctx.moveTo(screenX - w / 2, floorY - base - h * HEAD_BAND_LOW);
-    ctx.lineTo(screenX + w / 2, floorY - base - h * HEAD_BAND_LOW);
-    ctx.stroke();
-  }
-
+  // Il corpo: uno sprite cotto all'avvio, scelto per direzione.
+  //
+  // `rel` è l'angolo dalla faccia del nemico a chi guarda — la stessa
+  // quantità che la simulazione usa per decidere se il colpo prende il
+  // dorso (resolveEnemyHit). Che disegno e regola la calcolino allo
+  // stesso modo non è un risparmio di codice: è la ragione per cui
+  // quello che vedi è quello che colpisci.
   const angleToCam = Math.atan2(cam.y - e.y, cam.x - e.x);
-  const frontDiff = Math.abs(angleDelta(e.angle, angleToCam));
+  const rel = angleDelta(e.angle, angleToCam);
+  const frontDiff = Math.abs(rel);
   const behind = Math.PI - frontDiff <= ENEMY_REAR_ARC_HALF;
+
+  // Il passo si ferma quando il nemico si ferma. Lo sfasamento per
+  // posizione evita che una stanza intera cammini all'unisono, che è
+  // il modo più rapido di far sembrare finti tre nemici veri.
+  const frame = e.still ? 0 : Math.floor(nowMs / 130 + (e.x + e.y) * 0.05);
+  const sheet = getSprites().enemies[e.kind];
+  const src = frameRect(sheet, rel, frame);
+  const dst = spriteBox(h, screenX, floorY - base);
+  ctx.globalAlpha = veil;
+  ctx.drawImage(sheet.canvas, src.sx, src.sy, src.sw, src.sh, dst.dx, dst.dy, dst.dw, dst.dh);
+  ctx.globalAlpha = 1;
 
   // La piastra del Guardiano si disegna *mentre la stai guardando*:
   // è la risposta alla domanda "perché i miei colpi non fanno
   // niente", e senza di essa la lezione non arriva mai.
   if (a.frontImmune && frontDiff <= ENEMY_FRONT_PLATE_HALF) {
+    // Da quando la piastra è una scatola del modello — la si vede
+    // sporgere dal torace, e da dietro non c'è — questo overlay non
+    // deve più *disegnarla*: deve solo dire che è lei la ragione per
+    // cui il colpo non passa. Un pannello pieno coprirebbe lo sprite
+    // proprio nell'unico momento in cui guardarlo serve.
     ctx.save();
-    ctx.globalAlpha = 0.85 * veil;
-    ctx.fillStyle = '#5c6c8a';
-    ctx.fillRect(screenX - w * 0.44, topY + h * 0.12, w * 0.88, h * 0.62);
+    ctx.globalAlpha = (0.5 + Math.sin(nowMs * 0.006) * 0.18) * veil;
     ctx.strokeStyle = '#eef3ff';
-    ctx.lineWidth = Math.max(1, w * 0.06);
-    ctx.strokeRect(screenX - w * 0.44, topY + h * 0.12, w * 0.88, h * 0.62);
+    ctx.lineWidth = Math.max(1.4, w * 0.07);
+    ctx.strokeRect(screenX - w * 0.4, topY + h * 0.16, w * 0.8, h * 0.54);
     ctx.restore();
   } else {
     drawEnemyWeakSpot(ctx, a, screenX, floorY, tileH, w, behind, veil, nowMs);
@@ -457,11 +436,44 @@ const BOSS_PHASE_COLOR: Record<BossPhase, string> = {
  *  *momento*, e infatti tutto il disegno racconta la fase — l'anello
  *  esterno gira mentre manipola, il nucleo si apre solo nella
  *  finestra. */
+/** Il corpo di un boss: lo sprite, più un velo del colore della fase.
+ *
+ *  Il velo non è un vezzo. Prima dello sprite il corpo *era* un
+ *  rettangolo del colore della fase, e quel colore è il telegrafo
+ *  principale di tutti e tre i boss — "in guardia", "si prepara",
+ *  "scoperto". Sostituirlo con una sagoma dettagliata avrebbe reso il
+ *  boss più bello e meno leggibile, che è lo scambio sbagliato.
+ *  Velando lo sprite si tengono tutt'e due: si vede da che parte è
+ *  girato *e* in che fase sta.
+ *
+ *  Tutto il resto — archi posteriori, finestre del nucleo, anelli dei
+ *  moduli — resta disegnato sopra, invariato. */
+function drawBossBody(
+  ctx: CanvasRenderingContext2D,
+  kind: BossKind,
+  screenX: number,
+  floorY: number,
+  h: number,
+  cam: CameraView,
+  boss: BossState,
+): void {
+  const sheet = getSprites().bosses[kind];
+  const rel = angleDelta(boss.angle, Math.atan2(cam.y - boss.y, cam.x - boss.x));
+  // I boss non camminano: la loro andatura è la fase, non il passo.
+  // Un ciclo lento tiene vivo il respiro senza inventare un cammino
+  // che la simulazione non fa.
+  const frame = Math.floor(boss.phaseTimer / 220);
+  const src = frameRect(sheet, rel, frame);
+  const dst = spriteBox(h, screenX, floorY);
+  drawTintedFrame(ctx, sheet, src, dst, BOSS_PHASE_COLOR[boss.phase], 0.38);
+}
+
 function drawCustode(
   ctx: CanvasRenderingContext2D,
   screenX: number,
   floorY: number,
   tileH: number,
+  cam: CameraView,
   boss: BossState,
   nowMs: number,
 ): void {
@@ -472,18 +484,12 @@ function drawCustode(
 
   ctx.save();
 
-  // Corpo: una colonna aperta, righe orizzontali. Wireframe come tutto
-  // il resto — niente asset, coerente con i muri.
+  // Corpo: lo sprite, velato dal colore della fase. Era una colonna
+  // wireframe, e la colonna è rimasta — adesso è fatta di scatole e
+  // sa da che parte è girata.
+  drawBossBody(ctx, 'custode', screenX, floorY, h, cam, boss);
   ctx.strokeStyle = color;
   ctx.lineWidth = Math.max(1.5, tileH * 0.04);
-  ctx.strokeRect(screenX - w / 2, top, w, h);
-  for (let i = 1; i < 5; i++) {
-    const y = top + (h * i) / 5;
-    ctx.beginPath();
-    ctx.moveTo(screenX - w / 2, y);
-    ctx.lineTo(screenX + w / 2, y);
-    ctx.stroke();
-  }
 
   // Anello: gira mentre manipola, si ferma al preavviso. Il movimento
   // è il segnale che sta ancora lavorando.
@@ -541,13 +547,7 @@ function drawArbiter(
 
   // Corpo: sempre lo stesso profilo, così è riconoscibile fra una
   // fase e l'altra. Cambia cosa gli gira attorno.
-  ctx.strokeRect(screenX - w / 2, top, w, h);
-  ctx.beginPath();
-  ctx.moveTo(screenX - w / 2, top + h * 0.25);
-  ctx.lineTo(screenX + w / 2, top + h * 0.25);
-  ctx.moveTo(screenX - w / 2, top + h * 0.75);
-  ctx.lineTo(screenX + w / 2, top + h * 0.75);
-  ctx.stroke();
+  drawBossBody(ctx, 'arbiter', screenX, floorY, h, cam, boss);
 
   if (boss.stage === 1) {
     // Un anello per modulo ancora in piedi: si vede a colpo d'occhio
@@ -626,11 +626,7 @@ function drawBoss(
   ctx.fill();
   ctx.restore();
 
-  ctx.fillStyle = BOSS_PHASE_COLOR[boss.phase];
-  ctx.fillRect(screenX - w / 2, topY, w, h);
-  ctx.strokeStyle = '#0d0f18';
-  ctx.lineWidth = Math.max(1.5, w * 0.05);
-  ctx.strokeRect(screenX - w / 2, topY, w, h);
+  drawBossBody(ctx, 'sentinella', screenX, floorY, h, cam, boss);
 
   // Whether the viewer is currently standing in front (shielded) or
   // behind (core exposed) the boss — the single most important piece
@@ -914,7 +910,9 @@ export function renderCampaignScenery(
     ).length;
     push(boss.x, boss.y, 0.5, (screenX, _y, tileH, perp) => {
       const floorY = heightToScreenY(vp, fx, perp, 0);
-      if (kind === 'custode') return () => drawCustode(ctx, screenX, floorY, tileH, boss, nowMs);
+      if (kind === 'custode') {
+        return () => drawCustode(ctx, screenX, floorY, tileH, cam, boss, nowMs);
+      }
       if (kind === 'arbiter') {
         return () =>
           drawArbiter(ctx, screenX, floorY, tileH, cam, boss, modulesAlive, nowMs);
