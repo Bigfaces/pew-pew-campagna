@@ -238,6 +238,15 @@ export interface LevelDef {
   name: string;
   /** Riga che ARBITER pronuncia entrando. */
   intro: string;
+  /** Riga che ARBITER pronuncia a livello completato (uscita raggiunta
+   *  o boss sconfitto). Risponde all'`intro`: la chiude, o la lascia
+   *  peggio di come l'aveva trovata. Vive accanto a `intro` e non nelle
+   *  battute per-evento di `ui/arbiter.ts` perché quelle commentano
+   *  *cosa* è successo nella simulazione (una porta, un core, un
+   *  drone), mentre questa commenta il pensiero specifico con cui
+   *  ARBITER aveva aperto *questo* livello — un testo non deducibile
+   *  dagli eventi, quindi non riusabile fra livelli diversi. */
+  outro: string;
   width: number;
   height: number;
   /** 0 = pavimento, 1 = muro. */
