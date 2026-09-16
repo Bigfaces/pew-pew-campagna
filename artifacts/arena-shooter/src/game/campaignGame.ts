@@ -9,6 +9,13 @@
 
 import { AudioEngine } from '../audio/engine';
 import {
+  VULNERABILITY_LABEL,
+  WEAK_SPOT_LABEL,
+  archetypeOf,
+} from '../sim/campaign/enemies';
+import { campHasLOS } from '../sim/campaign/raycast';
+import { angleDelta } from '../sim/raycast';
+import {
   campMinimapBox,
   renderCampaignMinimap,
   renderCampaignScenery,
@@ -118,6 +125,23 @@ export interface CampaignHudSnapshot {
   bossPhase: string;
   bossDamageTaken: number;
   bossHitsToDefeat: number;
+  /** Il nemico sotto il mirino, e cosa si sa di lui.
+   *
+   *  Esiste solo col nodo Lettura Termica. Senza, la debolezza si
+   *  impara sparando — che è il modo giusto la prima volta e una
+   *  tassa dalla quinta in poi. È anche il motivo per cui quel nodo,
+   *  che prima segnava solo dei puntini sulla minimappa, adesso ha un
+   *  mestiere. */
+  scanned: {
+    name: string;
+    weakSpot: string;
+    vulnerability: string;
+    /** 0..1, quanto gli resta. */
+    hp: number;
+    /** La finestra è aperta adesso. */
+    windowOpen: boolean;
+    hardened: boolean;
+  } | null;
   victory: boolean;
 }
 
@@ -571,6 +595,53 @@ export class CampaignGame {
     return (this.fx.pitch * MAX_PITCH * this.vp.height) / this.vp.projDist;
   }
 
+  /** Il nemico che il mirino sta indicando, se lo scanner lo sa dire.
+   *
+   *  Si sceglie per *scarto angolare*, non per distanza: è quello che
+   *  fa il mirino. Cercare il più vicino avrebbe segnato il nemico
+   *  alle spalle mentre se ne inquadrava un altro in fondo alla
+   *  stanza. E vale la linea di vista, o lo scanner leggerebbe
+   *  attraverso i muri — cosa che nemmeno Lettura Termica promette. */
+  private scanTarget(): CampaignHudSnapshot['scanned'] {
+    const s = this.world.state;
+    if (!hasContacts(s.unlockedNodes)) return null;
+    // Nel gas lo scanner è cieco, a meno del nodo che lo rende
+    // immune: è la stessa regola della minimappa, e due regole
+    // diverse per due letture dello stesso sensore sarebbero una
+    // incoerenza.
+    if (s.player.empMs > 0 && !scannerResistsGas(s.unlockedNodes)) return null;
+
+    const p = s.player;
+    let best: { e: (typeof s.enemies)[number]; off: number } | null = null;
+    for (const e of s.enemies) {
+      if (!e.alive) continue;
+      const a = archetypeOf(e.kind);
+      if (a.cloaks && e.revealMs <= 0) continue;
+      const off = Math.abs(angleDelta(this.yaw, Math.atan2(e.y - p.y, e.x - p.x)));
+      if (off > 0.18) continue;
+      if (!campHasLOS(this.world.getTile, p.x, p.y, e.x, e.y, this.world.level.width, this.world.level.height)) {
+        continue;
+      }
+      if (!best || off < best.off) best = { e, off };
+    }
+    if (!best) return null;
+
+    const a = archetypeOf(best.e.kind);
+    const windowOpen =
+      (a.vulnerability === 'sfiatato' && best.e.ventMs > 0) ||
+      (a.vulnerability === 'immobile' && best.e.still) ||
+      (a.vulnerability === 'scoperto' && (best.e.closing || best.e.chargeMs > 0)) ||
+      (a.vulnerability === 'mirato' && this.adsHeld);
+    return {
+      name: a.name,
+      weakSpot: WEAK_SPOT_LABEL[a.weakSpot],
+      vulnerability: VULNERABILITY_LABEL[a.vulnerability],
+      hp: Math.max(0, best.e.hp) / a.hp,
+      windowOpen,
+      hardened: best.e.hardened,
+    };
+  }
+
   private buildInput(frameDt: number): CampaignInput {
     const k = this.keys;
     this.applyLook(frameDt);
@@ -635,6 +706,40 @@ export class CampaignGame {
         case 'shieldBreak':
           this.audio.shieldBreak(this.world.state.player.x, this.world.state.player.y);
           break;
+        case 'enemyAttack': {
+          // Il colpo si sente da dove parte: in una stanza con più
+          // nemici è l'unico modo di sapere chi ha sparato senza
+          // essere girati verso di lui.
+          const e = this.world.state.enemies.find((x) => x.id === ev.id);
+          if (e) this.audio.rifle(e.x, e.y);
+          break;
+        }
+        case 'enemyHit': {
+          if (ev.damage <= 0) {
+            // Colpo assorbito dalla piastra: un tonfo, non un segno di
+            // colpo andato a segno. Sono due cose diverse e devono
+            // suonare diverse, o la lezione del Guardiano non arriva.
+            this.audio.impact(this.world.state.player.x, this.world.state.player.y);
+            this.raise('PIASTRA FRONTALE', 'il colpo non passa', '#c9d2e0');
+            break;
+          }
+          this.audio.hitMarker();
+          if (ev.weakSpot || ev.vulnerability) {
+            // Il colpo giusto si annuncia. Dire *perché* ha fatto di
+            // più è ciò che trasforma un numero fortunato in una cosa
+            // ripetibile.
+            const why = [ev.weakSpot ? WEAK_SPOT_LABEL[ev.weakSpot] : null, ev.vulnerability ? VULNERABILITY_LABEL[ev.vulnerability] : null]
+              .filter(Boolean)
+              .join(' · ');
+            this.raise(`×${ev.damage}`, why, '#ffd166');
+          }
+          break;
+        }
+        case 'enemyDown': {
+          const e = this.world.state.enemies.find((x) => x.id === ev.id);
+          if (e) this.audio.kill(e.x, e.y);
+          break;
+        }
         case 'turretDown': {
           const def = this.world.level.turrets.find((t) => t.id === ev.id);
           if (def) this.audio.kill((def.tx + 0.5) * TILE, (def.ty + 0.5) * TILE);
@@ -978,6 +1083,7 @@ export class CampaignGame {
       bossPhase: s.boss?.phase ?? 'defeated',
       bossDamageTaken: s.boss?.damageTaken ?? 0,
       bossHitsToDefeat: this.world.bossHitsToDefeat,
+      scanned: this.scanTarget(),
       victory: this.world.finished,
     });
   }

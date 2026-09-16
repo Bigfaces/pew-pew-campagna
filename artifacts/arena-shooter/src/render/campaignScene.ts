@@ -13,6 +13,15 @@ import {
   BOSS_REAR_ARC_HALF,
   COLLAPSE_HOLD_MS,
 } from '../sim/campaign/constants';
+import {
+  CORE_BAND_CENTRE,
+  ENEMY_FRONT_PLATE_HALF,
+  ENEMY_REAR_ARC_HALF,
+  HEAD_BAND_LOW,
+  archetypeOf,
+  type EnemyArchetype,
+  type EnemyKind,
+} from '../sim/campaign/enemies';
 import { angleDelta } from '../sim/raycast';
 import { campCastRay, type GetTileFn } from '../sim/campaign/raycast';
 import type { LevelDef, TilePos, TurretDef } from '../sim/campaign/levelTypes';
@@ -21,6 +30,7 @@ import type {
   BossState,
   CampaignState,
   CoreState,
+  EnemyState,
   TurretState,
 } from '../sim/campaign/types';
 import {
@@ -98,8 +108,10 @@ function drawDiamond(
   size: number,
   color: string,
   rotation: number,
+  alpha = 1,
 ): void {
   ctx.save();
+  ctx.globalAlpha = alpha;
   ctx.translate(cx, cy);
   ctx.rotate(rotation);
   ctx.fillStyle = '#0d0f18';
@@ -192,6 +204,230 @@ function drawTurret(
   ctx.moveTo(screenX - size * 0.8, cy);
   ctx.lineTo(screenX + size * 0.8, cy);
   ctx.stroke();
+  ctx.restore();
+}
+
+/** Il colore di base di ogni archetipo. Non è decorazione: a distanza
+ *  la tinta è la prima cosa che si legge, e "quello arancione mi viene
+ *  addosso" deve poter diventare un'abitudine. Le fasce salgono di
+ *  saturazione, così un nemico dell'Atto III si distingue da uno del I
+ *  anche prima di riconoscerne la forma. */
+const ENEMY_COLOR: Record<EnemyKind, string> = {
+  ronzino: '#8fd4ff',
+  vedetta: '#7fb6e8',
+  saldatore: '#ffb347',
+  ripetitore: '#9ad6a0',
+  guardiano: '#c9d2e0',
+  falco: '#ff8fd0',
+  crogiolo: '#b6ff7a',
+  araldo: '#c39bff',
+  martello: '#ff7a5c',
+  archivista: '#ffe066',
+};
+
+/** Il punto debole si disegna solo quando è davvero colpibile adesso.
+ *
+ *  Vale la stessa regola del boss (vedi drawBoss): un telegrafo che
+ *  segnala una cosa che *non* farebbe danno è peggio di nessun
+ *  telegrafo, perché insegna una lezione falsa. Il dorso quindi si
+ *  accende solo da dietro, il nucleo e la testa sempre — quelli sono
+ *  una questione di alzo, e l'alzo è in mano a chi spara. */
+function drawEnemyWeakSpot(
+  ctx: CanvasRenderingContext2D,
+  a: EnemyArchetype,
+  screenX: number,
+  floorY: number,
+  tileH: number,
+  w: number,
+  behind: boolean,
+  veil: number,
+  nowMs: number,
+): void {
+  const base = (a.floatZ ?? 0) * tileH;
+  // Il minimo conta più del massimo: la pulsazione deve dire "guarda
+  // qui", non far sparire il bersaglio per mezzo secondo ogni secondo.
+  // La prima stesura scendeva a 0.2 e il nucleo, disegnato su un corpo
+  // scuro, per metà del ciclo non si vedeva affatto.
+  const pulse = (0.68 + Math.sin(nowMs * 0.011) * 0.28) * veil;
+
+  if (a.weakSpot === 'rear') {
+    if (!behind) return;
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#ff5050';
+    const h = a.height * tileH;
+    ctx.fillRect(screenX - w * 0.22, floorY - base - h * 0.62, w * 0.44, h * 0.26);
+    ctx.restore();
+    return;
+  }
+
+  const h = a.height * tileH;
+  const cy =
+    a.weakSpot === 'core'
+      ? floorY - base - h * CORE_BAND_CENTRE
+      : floorY - base - h * (HEAD_BAND_LOW + 0.06);
+  const r = Math.max(2, w * 0.16);
+  ctx.save();
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = a.weakSpot === 'core' ? '#ff6a4a' : '#ffd24a';
+  ctx.beginPath();
+  ctx.arc(screenX, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  // Un anello chiaro attorno: il punto debole va trovato anche su un
+  // corpo scuro e contro una parete scura, e il pieno da solo non
+  // stacca abbastanza.
+  ctx.globalAlpha = Math.min(1, pulse + 0.2 * veil);
+  ctx.strokeStyle = '#fff2e8';
+  ctx.lineWidth = Math.max(1, r * 0.35);
+  ctx.beginPath();
+  ctx.arc(screenX, cy, r * 1.55, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawEnemy(
+  ctx: CanvasRenderingContext2D,
+  screenX: number,
+  floorY: number,
+  tileH: number,
+  cam: CameraView,
+  e: EnemyState,
+  a: EnemyArchetype,
+  nowMs: number,
+): void {
+  const h = a.height * tileH;
+  const base = (a.floatZ ?? 0) * tileH;
+  const w = h * (a.kind === 'martello' ? 0.78 : 0.56);
+  const topY = floorY - base - h;
+  const color = ENEMY_COLOR[e.kind];
+
+  // Quanto manca al colpo. Stesso contratto visivo delle turret
+  // (drawTurret): l'alone si stringe e scalda mentre il tempo di
+  // reazione scende, quindi la minaccia si legge prima di subirla. È
+  // l'unica cosa che rende leale la morte in un colpo.
+  const ready = 1 - Math.max(0, Math.min(1, e.reactionTimer / Math.max(a.reactionMs, 1)));
+  const aiming = e.ai === 'engage' && a.attack !== 'none';
+
+  // L'Araldo è velato finché non spara. Un velo totale sarebbe un
+  // agguato e basta: resta una distorsione: si vede *che* c'è
+  // qualcosa, non cosa.
+  const cloaked = (a.cloaks ?? false) && e.revealMs <= 0;
+  // Il velo va *moltiplicato* in ogni disegno, non impostato una volta
+  // sul contesto: globalAlpha si sovrascrive, non si accumula
+  // attraverso save/restore, quindi ogni decorazione che apre il suo
+  // save lo azzerava. In pratica l'Araldo occultato aveva il corpo
+  // trasparente e il punto debole acceso a piena luce, cioè un
+  // bersaglio *più* visibile di uno normale: il velo faceva
+  // esattamente il contrario di quello per cui esiste.
+  const veil = cloaked ? 0.18 : 1;
+  ctx.save();
+
+  if (aiming) {
+    ctx.save();
+    ctx.globalAlpha = (0.12 + ready * 0.4) * (cloaked ? 0.4 : 1) * veil;
+    ctx.fillStyle = '#ff3b3b';
+    ctx.beginPath();
+    ctx.ellipse(screenX, floorY - base - h * 0.5, w * (1.1 - ready * 0.35), h * 0.62, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Ombra di contatto: chi vola non ne ha una attaccata ai piedi, e
+  // quella staccata è il modo in cui si legge che sta in aria.
+  ctx.save();
+  ctx.globalAlpha = (base > 0 ? 0.22 : 0.4) * veil;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(screenX, floorY - 1, w * 0.6, w * 0.18, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.globalAlpha = veil;
+  if (base > 0) {
+    // Chi vola è un rombo, come il drone: la forma dice "questo non
+    // cammina" prima che si veda muovere.
+    //
+    // Il lato è h/√2 e non "un po' meno del lato corto": ruotato di
+    // 45° un quadrato è alto quanto la sua diagonale, e serve che il
+    // rombo copra *tutta* l'altezza h. Con la misura precedente la
+    // banda alta della sagoma cadeva fuori dal disegno, quindi il
+    // segno della testa galleggiava sopra il nemico: si mirava a un
+    // punto dove non c'era niente da colpire.
+    drawDiamond(ctx, screenX, floorY - base - h * 0.5, h * 0.707, color, Math.PI / 4, veil);
+  } else {
+    ctx.fillStyle = '#0d0f18';
+    ctx.fillRect(screenX - w / 2, topY, w, h);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1.2, w * 0.09);
+    ctx.strokeRect(screenX - w / 2, topY, w, h);
+    // La testa: una fascia separata, così la banda alta che conta per
+    // il colpo mirato è visibile e non va indovinata.
+    ctx.beginPath();
+    ctx.moveTo(screenX - w / 2, floorY - base - h * HEAD_BAND_LOW);
+    ctx.lineTo(screenX + w / 2, floorY - base - h * HEAD_BAND_LOW);
+    ctx.stroke();
+  }
+
+  const angleToCam = Math.atan2(cam.y - e.y, cam.x - e.x);
+  const frontDiff = Math.abs(angleDelta(e.angle, angleToCam));
+  const behind = Math.PI - frontDiff <= ENEMY_REAR_ARC_HALF;
+
+  // La piastra del Guardiano si disegna *mentre la stai guardando*:
+  // è la risposta alla domanda "perché i miei colpi non fanno
+  // niente", e senza di essa la lezione non arriva mai.
+  if (a.frontImmune && frontDiff <= ENEMY_FRONT_PLATE_HALF) {
+    ctx.save();
+    ctx.globalAlpha = 0.85 * veil;
+    ctx.fillStyle = '#5c6c8a';
+    ctx.fillRect(screenX - w * 0.44, topY + h * 0.12, w * 0.88, h * 0.62);
+    ctx.strokeStyle = '#eef3ff';
+    ctx.lineWidth = Math.max(1, w * 0.06);
+    ctx.strokeRect(screenX - w * 0.44, topY + h * 0.12, w * 0.88, h * 0.62);
+    ctx.restore();
+  } else {
+    drawEnemyWeakSpot(ctx, a, screenX, floorY, tileH, w, behind, veil, nowMs);
+  }
+
+  // La finestra aperta: un contorno che pulsa. Dice "adesso", che è
+  // l'unica informazione che una vulnerabilità a tempo può dare.
+  const windowOpen =
+    (a.vulnerability === 'sfiatato' && e.ventMs > 0) ||
+    (a.vulnerability === 'immobile' && e.still) ||
+    (a.vulnerability === 'scoperto' && (e.closing || e.chargeMs > 0));
+  if (windowOpen) {
+    ctx.save();
+    ctx.globalAlpha = (0.45 + Math.sin(nowMs * 0.016) * 0.3) * veil;
+    ctx.strokeStyle = '#ffe066';
+    ctx.lineWidth = Math.max(1.4, w * 0.08);
+    ctx.strokeRect(screenX - w * 0.6, topY - h * 0.04, w * 1.2, h * 1.08);
+    ctx.restore();
+  }
+
+  // Irrobustito da un Archivista: un guscio esterno. Chi lo vede
+  // sull'uno ha la risposta su chi sparare per primo.
+  if (e.hardened) {
+    ctx.save();
+    ctx.globalAlpha = 0.5 * veil;
+    ctx.strokeStyle = '#ffe066';
+    ctx.lineWidth = Math.max(1, w * 0.05);
+    ctx.setLineDash([Math.max(2, w * 0.14), Math.max(2, w * 0.1)]);
+    ctx.strokeRect(screenX - w * 0.72, topY - h * 0.08, w * 1.44, h * 1.16);
+    ctx.restore();
+  }
+
+  // L'Archivista dichiara il proprio raggio: la sua minaccia è un'area,
+  // e un'area che non si vede non si può evitare.
+  if (a.hardensAlliesTiles !== undefined) {
+    ctx.save();
+    ctx.globalAlpha = (0.25 + Math.sin(nowMs * 0.004) * 0.1) * veil;
+    ctx.strokeStyle = '#ffe066';
+    ctx.lineWidth = Math.max(1, w * 0.06);
+    ctx.beginPath();
+    ctx.ellipse(screenX, floorY - 1, w * 1.5, w * 0.4, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   ctx.restore();
 }
 
@@ -661,6 +897,15 @@ export function renderCampaignScenery(
     });
   }
 
+  for (const e of state.enemies) {
+    if (!e.alive) continue;
+    const a = archetypeOf(e.kind);
+    push(e.x, e.y, 0.5, (screenX, _y, tileH, perp) => {
+      const floorY = heightToScreenY(vp, fx, perp, 0);
+      return () => drawEnemy(ctx, screenX, floorY, tileH, cam, e, a, nowMs);
+    });
+  }
+
   const boss = state.boss;
   if (boss) {
     const kind = level.boss?.kind;
@@ -856,6 +1101,15 @@ export function renderCampaignMinimap(
       if (!t.alive) continue;
       const def = level.turrets.find((d) => d.id === t.id);
       if (def) dot((def.tx + 0.5) * TILE, (def.ty + 0.5) * TILE, '#ff5c5c', 2.5);
+    }
+    for (const e of state.enemies) {
+      if (!e.alive) continue;
+      // Chi si occulta non compare nemmeno sulla minimappa finché non
+      // spara: se ci comparisse, il velo varrebbe solo contro chi non
+      // ha preso Lettura Termica — cioè sarebbe una punizione per chi
+      // ha investito nel ramo sbagliato invece di una minaccia.
+      if (archetypeOf(e.kind).cloaks && e.revealMs <= 0) continue;
+      dot(e.x, e.y, e.ai === 'engage' ? '#ff9a3c' : '#ffd166', 3);
     }
     if (state.boss && state.boss.phase !== 'defeated') {
       dot(state.boss.x, state.boss.y, '#ff7a2f', 4);

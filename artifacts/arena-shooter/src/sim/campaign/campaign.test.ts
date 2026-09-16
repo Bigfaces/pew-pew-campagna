@@ -25,6 +25,7 @@ import {
   XP_BOSS_DEFEAT,
   XP_BOSS_HIT_SOLID,
   XP_CORE,
+  XP_ENEMY_WEAK_HIT,
   XP_TURRET_DOWN,
   XP_ROOM_ENTER,
   levelForXp,
@@ -50,6 +51,7 @@ import {
   turretOf,
   quiet,
 } from './testSupport';
+import { archetypeOf } from './enemies';
 import { ACT_ONE, ALL_LEVELS, LEVEL_ATTRACCO } from './levels';
 import { roomAt } from './levelTypes';
 import { CampaignWorld } from './world';
@@ -127,6 +129,13 @@ describe('esperienza e livelli', () => {
     let xp = level.rooms.filter((r) => r.id !== spawnRoom).length * XP_ROOM_ENTER;
     if (thorough) {
       xp += level.cores.length * XP_CORE + level.turrets.length * XP_TURRET_DOWN;
+    }
+    // I nemici pagano a *entrambi* i profili: una turret in una nicchia
+    // si può ignorare, un nemico ti segue nella stanza e "passare
+    // oltre" non è sul tavolo. La differenza fra i due sta nel come —
+    // chi esplora colpisce il punto debole e incassa anche quel bonus.
+    for (const e of level.enemies) {
+      xp += archetypeOf(e.kind).xp + (thorough ? XP_ENEMY_WEAK_HIT : 0);
     }
     return xp;
   }

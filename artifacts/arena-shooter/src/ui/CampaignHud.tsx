@@ -194,6 +194,33 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
         {snap.muted && <div className="hud-muted">AUDIO MUTO · M</div>}
       </div>
 
+      {/* La lettura del bersaglio sta sotto il mirino e non nella
+          colonna in alto: è l'unica informazione della HUD che cambia
+          in base a dove stai guardando *adesso*, e cercarla in un
+          angolo vorrebbe dire staccare gli occhi da quello che stai
+          inquadrando. Esiste solo col nodo Lettura Termica. */}
+      {snap.scanned && (
+        <div className="campaign-scan">
+          <span className="campaign-scan-name">{snap.scanned.name}</span>
+          <span className="power-bar campaign-scan-bar">
+            <i style={{ width: `${snap.scanned.hp * 100}%` }} />
+          </span>
+          <span className="campaign-scan-weak">{snap.scanned.weakSpot}</span>
+          {snap.scanned.vulnerability !== '—' && (
+            <>
+              <span className="campaign-scan-sep">·</span>
+              <span
+                className="campaign-scan-vuln"
+                data-open={snap.scanned.windowOpen || undefined}
+              >
+                {snap.scanned.vulnerability}
+              </span>
+            </>
+          )}
+          {snap.scanned.hardened && <span className="campaign-scan-hard">CORAZZATO</span>}
+        </div>
+      )}
+
       {snap.arbiter && <div className="arbiter-line">ARBITER — {snap.arbiter}</div>}
 
       {!snap.pointerLocked && (

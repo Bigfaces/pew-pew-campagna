@@ -79,7 +79,7 @@ già usato in Arena, niente doppiaggio registrato).
   le stanze che coprono le colonne senza buchi, e una visita in ampiezza
   che dimostri che dallo spawn si arriva davvero alla fine.
 
-## 4. Trabocchetti
+## 4. Trabocchetti e nemici
 
 Pensati per essere implementabili con sola geometria/logica, senza asset:
 
@@ -135,6 +135,122 @@ fissare qui:
   lunga, più esposta, ma percorribile da chiunque: un albero facoltativo non
   può diventare un requisito di sblocco. Lo verifica un test strutturale su
   ogni livello, e il bot di attraversabilità lo rifà camminando.
+
+### Nemici
+
+Fino all'Atto III compreso la campagna aveva trabocchetti e boss, e
+niente in mezzo. Le turret non si muovono — il "drone" del Magazzino è
+una turret disegnata diversa, vedi la nota qui sopra — quindi **sei
+livelli su nove non contenevano nulla che si spostasse e sparasse**,
+mentre il ciclo di stanza della sezione 3 dice "entra → leggi la
+minaccia → risolvi". La parte che si muove mancava.
+
+Dieci archetipi su tre fasce, **due o tre per livello** (un test impone
+il tetto, e un altro che nessun archetipo compaia in un atto più basso
+della sua fascia).
+
+| # | Nome | Fascia | Vite | Punto debole | Vulnerabilità | Cosa insegna |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | RONZINO | I | 2 | nucleo | corto raggio | Ti viene addosso, e premia chi *non* arretra |
+| 2 | VEDETTA | I | 2 | dorso | da fermo | Si pianta per sparare: più precisa e più fragile insieme |
+| 3 | SALDATORE | I | 3 | testa | in avvicinamento | Colpisce toccando: la distanza è la risposta |
+| 4 | RIPETITORE | II | 4 | nucleo | sfiato | Arretra: chiudere la distanza qui non funziona |
+| 5 | GUARDIANO | II | 4 | dorso | — | Immune di fronte. Si risolve solo con la posizione |
+| 6 | FALCO | II | 2 | testa | ottica | Più veloce di te: non si semina, si colpisce |
+| 7 | CROGIOLO | II | 4 | nucleo | lungo raggio | Morendo apre una nube: ucciderlo in faccia acceca |
+| 8 | ARALDO | III | 4 | nucleo | sfiato | Invisibile finché non spara — e allora è vulnerabile |
+| 9 | MARTELLO | III | 5 | dorso | in avvicinamento | Carica in linea retta, senza correggere |
+| 10 | ARCHIVISTA | III | 3 | testa | da fermo | Non spara: irrobustisce gli altri. Priorità di bersaglio |
+
+**Sui "punti deboli" e sugli "elementi".** La richiesta era che ogni
+nemico avesse un punto debole, o un elemento debole che gli facesse più
+danni. Il gioco però ha **un'arma sola** e nessun elemento: fuoco,
+ghiaccio e scariche non esistono e non hanno una sorgente. Inventarli
+avrebbe voluto dire inventare anche tre munizioni per usarli.
+
+Stesso criterio già applicato alla gravità qui sopra: si tiene
+l'intento, si butta la lettera. L'intento è *"esiste un modo giusto di
+colpire questo nemico, e paga molto più del modo qualunque"*, e qui
+diventa due assi indipendenti che moltiplicano fra loro:
+
+- il **punto debole** dice *dove* — dorso, nucleo, testa. È geometria,
+  la cosa che un raycaster sa fare meglio. Vale ×3.
+- la **vulnerabilità** dice *quando*, ed è sempre qualcosa che il
+  giocatore già fa: aprire l'ottica, chiudere o tenere la distanza,
+  aspettare che l'altro abbia appena sparato. Un "elemento" che il
+  giocatore non può produrre sarebbe una statistica, non una scelta.
+  Vale ×2.
+
+Il colpo perfetto vale quindi **sei volte** quello qualunque. Con
+`BULLET_COOLDOWN` a 1400 ms — l'otturatore manuale è il vincolo che
+tara tutto il resto — è la differenza fra uno scontro di due colpi e
+uno di dieci secondi. Il risultato misurato: **sette archetipi su dieci
+si risolvono mirando, tre chiedono di girare attorno.**
+
+**La mira verticale acquista un senso.** Il colpo alla testa è l'unica
+cosa in tutto il gioco che dia un significato all'inclinazione della
+visuale, che fino a ieri era solo una panoramica. La conversione da
+inclinazione a *pendenza del tiro* la fa il controller e non la
+simulazione, perché richiede la proiezione — e così il mirino indica lo
+stesso punto a qualunque risoluzione e la simulazione resta senza DOM.
+
+**Il corpo si colpisce sempre, qualunque sia l'alzo.** Chiedere anche
+in verticale di stare dentro la sagoma avrebbe trasformato ogni colpo
+in un tiro di precisione, e in un motore dove l'orizzonte *scorre*
+invece di ruotare sarebbe stato un tiro che il giocatore non può mirare
+onestamente. L'alzo decide se il colpo vale di più, non se arriva.
+
+**Il guinzaglio.** Un nemico non lascia la stanza in cui è stato messo.
+Senza quel limite bastava farsi vedere una volta per trascinarsi dietro
+il livello intero, e il ciclo "entra, leggi, risolvi" diventava una
+fuga unica dall'inizio alla fine.
+
+**Il preavviso è la reazione.** Nessun nemico spara nell'istante in cui
+ti vede: tiene la linea di vista per un tempo dichiarato, e romperla
+azzera il conto. È lo stesso contratto delle turret, ed è deliberato
+che sia lo stesso — il giocatore ne impara uno. Con la morte in un
+colpo, quel preavviso *è* la lealtà dello scontro: la prima taratura
+scendeva a 480 ms, e il banco di prova ha detto che sotto i 650 non
+c'è nessuna decisione, c'è solo un dado.
+
+**Quattro difetti trovati misurando, non leggendo.** Vale la pena
+elencarli perché nessuno era visibile nel codice:
+
+- **Il nucleo era gratis.** A metà sagoma coincideva con la quota
+  dell'occhio, quindi il mirino *a riposo* ci cadeva dentro da solo: il
+  colpo al punto debole toccava a chiunque sparasse dritto senza
+  saperlo. Abbassato al ventre.
+- **La traversata era decorativa.** Col rateo di rotazione a 0.085
+  rad/tick nessuna distanza permetteva di uscire dal cono di mira. A
+  0.04 il conto cambia con la distanza — da lontano il nemico tiene la
+  mira, da vicino no — ed è ciò che rende aggirabili i tre archetipi
+  col punto debole sul dorso.
+- **Tre archetipi cadevano al primo colpo sul solo punto debole**,
+  quindi la loro vulnerabilità non aveva modo di contare. Alzati di una
+  vita: adesso la finestra è la differenza fra un colpo e due.
+- **Il velo dell'Araldo faceva il contrario di quello per cui esiste.**
+  L'opacità del canvas si sovrascrive invece di accumularsi attraverso
+  `save`/`restore`, quindi il corpo era trasparente e il punto debole
+  acceso a piena luce: un bersaglio *più* visibile di uno normale.
+
+**Il bot di attraversabilità ha ripagato tre volte.** Riscritto per
+combattere — mira al punto debole, tiene la distanza che la
+vulnerabilità del bersaglio chiede, gira attorno a chi ha il dorso
+scoperto — ha trovato due stanze sovraccariche e un errore di
+piazzamento che nessuna rilettura avrebbe mostrato: la sala pompe, dove
+il checkpoint è già sotto il tiro di una turret e un secondo bersaglio
+mobile trasformava ogni morte in un anello; la sala della gravità, dove
+lo strafe specchiato rende illeggibile un nemico che si risolve solo
+aggirandolo; e la camera fredda, dove un Guardiano al buio chiedeva due
+cose difficili con un senso in meno.
+
+**L'economia dell'esperienza è stata ritarata.** Le taglie dei nemici
+hanno quasi raddoppiato l'XP disponibile (da ~2000 a ~3800 per chi
+esplora): con la vecchia tabella l'albero si riempiva entro la fine
+dell'Atto II e chi tirava dritto arrivava comunque a 14 nodi su 14 —
+le due cose che le invarianti 1b e 2b esistono apposta per impedire.
+Adesso chi esplora sale 2 → 3 → 5 → 6 → 8 → 9 → 11 → 12 → 14, chi tira
+dritto chiude a 11.
 
 ## 5. Boss
 
@@ -374,6 +490,8 @@ drop casuale), sempre consumabili, sempre distinti dai nodi permanenti.
    tra un livello e l'altro ancora da scrivere.
 5. Atto II *(fatto)* — Il Nucleo Anulare, tre livelli e il Custode.
 6. Atto III *(fatto)* — Il Nido di ARBITER, tre livelli e il boss finale.
+7. Nemici mobili *(fatto)* — dieci archetipi su tre fasce, due o tre per
+   livello, con punti deboli e vulnerabilità (sezione 4).
 
 ## 9. Decisioni dal briefing
 

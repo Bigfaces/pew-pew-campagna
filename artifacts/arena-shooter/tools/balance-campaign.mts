@@ -39,9 +39,11 @@ import {
   XP_BOSS_HIT_SOLID,
   XP_CORE,
   XP_ROOM_ENTER,
+  XP_ENEMY_WEAK_HIT,
   XP_TURRET_DOWN,
   levelForXp,
 } from '../src/sim/campaign/constants';
+import { archetypeOf } from '../src/sim/campaign/enemies';
 import { ACTS, ALL_LEVELS } from '../src/sim/campaign/levels';
 import { roomAt } from '../src/sim/campaign/levelTypes';
 
@@ -81,6 +83,25 @@ function stopsFor(level: (typeof ALL_LEVELS)[number], thorough: boolean): Stop[]
     }
     for (const t of level.turrets) {
       stops.push({ label: `${t.kind} ${t.id}`, xp: XP_TURRET_DOWN, spendable: true });
+    }
+  }
+
+  // I nemici contano per *entrambi* i profili, e non è una svista.
+  //
+  // Una turret in una nicchia si può ignorare: sta ferma, e tirare
+  // dritto è una scelta legittima che costa solo l'esperienza. Un
+  // nemico no — ti segue dentro la stanza, e "passare oltre" non è
+  // sul tavolo. Farlo pagare solo a chi esplora avrebbe modellato un
+  // gioco che non esiste.
+  //
+  // La differenza fra i due profili sta nel *come*: chi esplora
+  // colpisce il punto debole e incassa anche quel bonus, chi corre
+  // spara al corpo e prende solo la taglia.
+  for (const e of level.enemies) {
+    const a = archetypeOf(e.kind);
+    stops.push({ label: `${a.name.toLowerCase()} ${e.id}`, xp: a.xp, spendable: true });
+    if (thorough) {
+      stops.push({ label: `  └ punto debole`, xp: XP_ENEMY_WEAK_HIT, spendable: true });
     }
   }
   if (level.boss) {

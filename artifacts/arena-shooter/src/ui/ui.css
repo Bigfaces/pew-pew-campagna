@@ -590,6 +590,80 @@
   align-items: flex-start;
 }
 
+/* ---- Campaign: lettura del bersaglio ---- */
+/* Appena sotto il mirino, non in un angolo: è l'unica riga della HUD
+   che dipende da dove stai guardando adesso, e leggerla altrove
+   vorrebbe dire smettere di guardare quello che stai inquadrando.
+   Sta *sotto* il centro perché sopra ci passa la linea di tiro. */
+.campaign-scan {
+  position: absolute;
+  top: calc(50% + 26px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 9px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  background: rgba(6, 8, 14, 0.62);
+  border: 1px solid rgba(157, 176, 208, 0.28);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.campaign-scan-name {
+  color: var(--text);
+}
+
+.campaign-scan-bar {
+  width: 52px;
+  height: 4px;
+}
+
+.campaign-scan-bar i {
+  background: #ff6a4a;
+}
+
+/* Il punto debole in rosso, la finestra in giallo: gli stessi due
+   colori con cui sono disegnati addosso al nemico (campaignScene.ts).
+   Due codici diversi per la stessa cosa sarebbero due cose da
+   imparare. */
+.campaign-scan-weak {
+  color: #ff8a6a;
+}
+
+.campaign-scan-vuln {
+  color: rgba(255, 224, 102, 0.55);
+}
+
+/* Aperta adesso: si accende. È l'unico stato della riga che chiede di
+   agire entro un secondo. */
+.campaign-scan-vuln[data-open] {
+  color: #ffe066;
+  text-shadow: 0 0 6px rgba(255, 224, 102, 0.7);
+}
+
+.campaign-scan-sep {
+  color: rgba(157, 176, 208, 0.5);
+}
+
+.campaign-scan-hard {
+  color: #ffe066;
+  opacity: 0.8;
+}
+
+/* Sul telefono la riga sta più in basso: sotto il mirino c'è il
+   pollice destro, e una riga coperta è una riga che non c'è. */
+@media (pointer: coarse) {
+  .campaign-scan {
+    top: calc(50% + 34px);
+    font-size: 9px;
+  }
+}
+
 /* ---- Campaign: la voce di ARBITER ---- */
 /* In basso al centro, come un sottotitolo: si legge camminando,
    senza rubare il centro dello schermo alla mira. */

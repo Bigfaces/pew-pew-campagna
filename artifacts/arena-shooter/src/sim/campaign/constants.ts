@@ -192,7 +192,19 @@ export const LEVEL_XP_THRESHOLDS: readonly number[] = [
   // colpo finale. Le cifre esatte le ricalcola `balance:campaign`
   // camminando i livelli veri — questa lista è il risultato, non la
   // premessa.
-  0, 40, 90, 210, 430, 580, 720, 880, 1080, 1260, 1420, 1520, 1610, 1800, 2000,
+  //
+  // Ritarata quando sono arrivati i nemici mobili, e non di poco: le
+  // taglie hanno quasi raddoppiato l'esperienza disponibile, da ~2000
+  // a ~3800 per chi esplora. Con la tabella precedente l'albero si
+  // riempiva entro la fine dell'Atto II, e chi tirava dritto arrivava
+  // comunque a quattordici nodi su quattordici — cioè esattamente le
+  // due cose che le invarianti 1b e 2b esistono per impedire. L'ha
+  // detto l'armonica, non una partita.
+  //
+  // I passi non sono regolari, di proposito: la tabella deve
+  // incastrarsi fra *due* curve diverse, e una progressione liscia che
+  // va bene a una va male all'altra.
+  0, 60, 180, 420, 700, 950, 1200, 1450, 1600, 1900, 2400, 2550, 2900, 3400, 3750,
 ];
 
 export function levelForXp(xp: number): number {
