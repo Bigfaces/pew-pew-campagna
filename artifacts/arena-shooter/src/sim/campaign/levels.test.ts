@@ -20,10 +20,20 @@ import { describe, expect, it } from 'vitest';
 import { TICK_MS, TILE } from '../constants';
 import { ARBITER_CORE_HITS, ARBITER_HITS_TO_DEFEAT } from './constants';
 import { COLLAPSE_HOLD_MS, GAS_LINGER_MS, TURRET_COOLDOWN_MS } from './constants';
+import {
+  CLOSE_RANGE_TILES,
+  CORE_BAND_CENTRE,
+  HEAD_BAND_LOW,
+  LONG_RANGE_TILES,
+  VULNERABILITY_MULT,
+  WEAK_SPOT_MULT,
+  archetypeOf,
+  type EnemyArchetype,
+} from './enemies';
 import { ACT_ONE, ACT_TWO, ALL_LEVELS, LEVEL_CONDOTTI, levelById } from './levels';
 import { roomAt, tileAt, type LevelDef, type TilePos } from './levelTypes';
 import { campHasLOS } from './raycast';
-import { centre, condotti } from './testSupport';
+import { centre, condotti, quiet } from './testSupport';
 import { emptyCampaignInput, type CampaignInput } from './types';
 import { CampaignWorld } from './world';
 
@@ -413,7 +423,7 @@ describe('gas / EMP', () => {
   });
 
   it('non fa danno: toglie informazione, non vita', () => {
-    const world = gasOnly();
+    const world = quiet(gasOnly());
     world.state.player.x = INSIDE.x;
     world.state.player.y = INSIDE.y;
     let died = false;
@@ -626,6 +636,19 @@ function botCross(
   const goal: TilePos = level.exit ?? level.boss!;
   let deaths = 0;
   const maxTicks = Math.ceil((maxSeconds * 1000) / TICK_MS);
+  /** Bersagli a cui sparare non ha prodotto niente, e fino a quando
+   *  lasciarli perdere.
+   *
+   *  Serve perché la linea di vista e il raggio del colpo non sono
+   *  *obbligati* a concordare: campHasLOS è stata resa simmetrica di
+   *  proposito (era una scorrettezza: nove coppie turret/tile su 2939
+   *  si vedevano solo da un lato), e la simmetria si ottiene fissando
+   *  un ordine canonico degli estremi — quindi da un pelo di sbieco
+   *  la linea può passare mentre il colpo sfiora lo spigolo. Il bot
+   *  non deve indovinare perché: gli basta accorgersi che quel
+   *  bersaglio non risponde e passare al successivo. */
+  const wasted = new Map<string, number>();
+  const WASTE_MS = 3000;
 
   for (let t = 0; t < maxTicks; t++) {
     const p = world.state.player;
@@ -633,20 +656,173 @@ function botCross(
     // La turret viva più vicina che ci vede. Se c'è, si spara a quella
     // e basta: muoversi sotto tiro senza copertura è il modo di morire
     // che il bot non deve confondere con un livello impossibile.
-    let target: { x: number; y: number; d: number } | null = null;
+    // Le minacce che ci vedono, e soprattutto quali di esse possono
+    // *già* sparare: una turret in linea può sempre, un nemico solo
+    // dentro la sua portata. Il bot prende la più vicina fra quelle
+    // calde, e solo se non ce ne sono guarda le altre.
+    //
+    // Le due stesure precedenti sbagliavano qui, in modi diversi e
+    // istruttivi: la prima ignorava i nemici, la seconda dava loro la
+    // precedenza assoluta e il bot passava le partite a sparare a un
+    // Falco fuori portata in fondo alla stanza mentre la turret
+    // accanto lo abbatteva al checkpoint una volta ogni ricarica.
+    // Novantatré morti che non dicevano niente sul livello.
+    type Threat = {
+      x: number;
+      y: number;
+      d: number;
+      hot: boolean;
+      mobile: boolean;
+      angle: number;
+      arch?: EnemyArchetype;
+    };
+    const threats: Threat[] = [];
     for (const state of world.state.turrets) {
       if (!state.alive) continue;
       const def = level.turrets.find((d) => d.id === state.id)!;
       const { x, y } = centre(def.tx, def.ty);
       if (!campHasLOS(world.getTile, p.x, p.y, x, y, level.width, level.height)) continue;
-      const d = Math.hypot(x - p.x, y - p.y);
-      if (!target || d < target.d) target = { x, y, d };
+      threats.push({ x, y, d: Math.hypot(x - p.x, y - p.y), hot: true, mobile: false, angle: 0 });
+    }
+    for (const e of world.state.enemies) {
+      if (!e.alive) continue;
+      if (!campHasLOS(world.getTile, p.x, p.y, e.x, e.y, level.width, level.height)) continue;
+      const a = archetypeOf(e.kind);
+      const d = Math.hypot(e.x - p.x, e.y - p.y);
+      threats.push({
+        x: e.x,
+        y: e.y,
+        d,
+        hot: a.attack !== 'none' && d <= Math.max(a.rangeTiles, 1) * TILE,
+        mobile: true,
+        angle: e.angle,
+        arch: a,
+      });
+    }
+    // Fra le minacce calde si sceglie quella che costa meno colpi
+    // togliere, non la più vicina. Una turret se ne va con un colpo e
+    // resta andata; un nemico ne chiede uno o due — e se sta nella
+    // stanza del checkpoint, morire lo riporta in piedi intero.
+    //
+    // È la differenza fra un bot che risolve la stanza e uno che
+    // rimane in un anello: con la sola distanza, il bot uccideva lo
+    // stesso nemico a 1.8 tile ogni 816 ms, cioè una volta per
+    // respawn, mentre la turret a 4.5 tile lo abbatteva indisturbata.
+    // Centouno morti e la stanza mai finita.
+    const shotsToClear = (c: Threat): number => {
+      if (!c.arch) return 1;
+      const best = WEAK_SPOT_MULT * (c.arch.vulnerability === 'nessuna' ? 1 : VULNERABILITY_MULT);
+      return Math.max(1, Math.ceil(c.arch.hp / best));
+    };
+    const key = (c: Threat): string => `${Math.round(c.x)},${Math.round(c.y)}`;
+    const live = threats.filter((c) => (wasted.get(key(c)) ?? -Infinity) < t * TICK_MS);
+    const hot = live.filter((x) => x.hot);
+    const pool = hot.length > 0 ? hot : live;
+    let target: Threat | null = null;
+    for (const c of pool) {
+      if (!target) {
+        target = c;
+        continue;
+      }
+      // A parità di colpi vince la turret, anche se è più lontana:
+      // una turret abbattuta resta abbattuta, mentre un nemico nella
+      // stanza del checkpoint torna intero a ogni morte. Con la sola
+      // distanza il bot spendeva l'unico colpo per vita sul nemico a
+      // 1.8 tile e la turret a 4.7 lo abbatteva indisturbata, in
+      // eterno: centouno morti e la stanza mai finita.
+      const rank = (x: Threat): [number, number, number] => [
+        shotsToClear(x),
+        x.mobile ? 1 : 0,
+        x.d,
+      ];
+      const [ca, cb, cc] = rank(c);
+      const [ta, tb, tc] = rank(target);
+      if (ca < ta || (ca === ta && (cb < tb || (cb === tb && cc < tc)))) target = c;
+    }
+
+    // E non si spara *attraverso* qualcuno. La simulazione assegna il
+    // colpo al bersaglio più vicino lungo il raggio (vedi fireWeapon),
+    // quindi mirare alla turret dietro il nemico che hai in faccia
+    // vuol dire colpire il nemico. Il bot lo scopriva sprecando ogni
+    // colpo — un colpo ogni 1400 ms — e la stanza non finiva mai.
+    if (target) {
+      const bearing = Math.atan2(target.y - p.y, target.x - p.x);
+      for (const c of threats) {
+        if (c === target || c.d >= target.d) continue;
+        let diff = Math.abs(Math.atan2(c.y - p.y, c.x - p.x) - bearing) % (Math.PI * 2);
+        if (diff > Math.PI) diff = Math.PI * 2 - diff;
+        // Tolleranza angolare pari al raggio della sagoma alla sua
+        // distanza: è quanto occupa davvero sulla linea di tiro.
+        if (diff < Math.atan2(TILE * 0.4, Math.max(c.d, 1))) target = c;
+      }
     }
 
     let ev;
     if (target) {
       const aim = Math.atan2(target.y - p.y, target.x - p.x);
-      ev = world.step(input({ aimAngle: aim, fire: p.weaponCooldown <= 0 }));
+      let aimSlope = 0;
+      let ads = false;
+      let forward = 0;
+      let strafe = 0;
+      let fire = p.weaponCooldown <= 0;
+
+      if (target.arch) {
+        const a = target.arch;
+        const h = a.height * TILE;
+        const base = (a.floatZ ?? 0) * TILE;
+        if (a.weakSpot === 'core') {
+          aimSlope = (base + h * CORE_BAND_CENTRE - TILE / 2) / Math.max(target.d, 1);
+        } else if (a.weakSpot === 'head') {
+          aimSlope = (base + h * (HEAD_BAND_LOW + 0.08) - TILE / 2) / Math.max(target.d, 1);
+        }
+        ads = a.vulnerability === 'mirato';
+
+        // Traversata perpendicolare, lato alternato lentamente.
+        strafe = Math.floor(t / 45) % 2 === 0 ? 1 : -1;
+
+        if (a.weakSpot === 'rear') {
+          // Girando attorno si tiene un verso solo. Alternare, che
+          // contro tutti gli altri va benissimo, qui annulla il
+          // vantaggio: si guadagnano 0.009 rad per tick sul rateo di
+          // rotazione del nemico, e invertire ogni 45 tick li
+          // restituisce tutti. Il bot girava per novanta secondi senza
+          // mai arrivare dietro.
+          strafe = 1;
+          // Dorso: si gira attorno. Non è una furbizia del bot, è
+          // *la* risposta che il gioco chiede — e funziona solo da
+          // vicino, perché la velocità angolare di chi traversa cresce
+          // mentre la distanza cala, e il nemico ruota a rateo fisso.
+          // Il punto in cui il conto si inverte (~1.7 tile) è dove
+          // ENEMY_TURN_RATE è stato messo apposta.
+          if (target.d > TILE * 1.6) forward = 1;
+          else if (target.d < TILE * 1.1) forward = -1;
+          // Contro una piastra frontale sparare davanti è sprecare un
+          // colpo da 1400 ms: si aspetta di esserci dietro.
+          if (a.frontImmune) {
+            const toShooter = Math.atan2(p.y - target.y, p.x - target.x);
+            let diff = Math.abs(toShooter - target.angle) % (Math.PI * 2);
+            if (diff > Math.PI) diff = Math.PI * 2 - diff;
+            if (diff < Math.PI * 0.62) fire = false;
+          }
+        } else {
+          // La distanza di ingaggio la detta la vulnerabilità del
+          // bersaglio, che è esattamente ciò che il gioco chiede di
+          // fare a un giocatore: al Crogiolo si spara da lontano, al
+          // Ronzino da vicino. Un bot che ingaggia tutti alla stessa
+          // distanza misurerebbe un gioco diverso da quello scritto.
+          const wantMin =
+            a.vulnerability === 'distante' ? LONG_RANGE_TILES + 0.5 : 2.5;
+          const wantMax =
+            a.vulnerability === 'ravvicinato' ? CLOSE_RANGE_TILES - 0.5 : Infinity;
+          if (target.d < wantMin * TILE) forward = -1;
+          else if (target.d > wantMax * TILE) forward = 1;
+        }
+      }
+
+      ev = world.step(input({ aimAngle: aim, aimSlope, ads, fire, forward, strafe }));
+      if (fire && !ev.some((x) => x.type === 'enemyHit' || x.type === 'turretDown')) {
+        wasted.set(key(target), t * TICK_MS + WASTE_MS);
+      }
     } else {
       // Niente minacce: un passo lungo il percorso verso l'uscita.
       // Camminare "verso est" bastava finché i livelli erano tubi

@@ -25,6 +25,7 @@ import {
   molo,
   shieldOf,
   turretOf,
+  quiet,
 } from './testSupport';
 import { emptyCampaignInput, type CampaignInput } from './types';
 import { CampaignWorld } from './world';
@@ -73,7 +74,7 @@ describe('CampaignWorld — morte resetta solo il pericolo della propria stanza'
   // due livelli diversi.
 
   it('morire per il drone nel Magazzino non riarma la porta già sigillata', () => {
-    const world = attracco();
+    const world = quiet(attracco());
 
     // La porta è già stata superata e sigillata prima di arrivare qui.
     doorOf(world).state.armed = false;
@@ -263,7 +264,7 @@ describe('Sentinella del Molo — confine esatto dell\'arco vulnerabile', () => 
 
 describe('CampaignWorld — sparare a vuoto', () => {
   it('non genera eventi in una stanza senza nemici, ma consuma comunque il cooldown', () => {
-    const world = attracco();
+    const world = quiet(attracco());
     const stats = weaponStatsFor([]);
     // Attracco: né drone né boss.
     world.state.player.x = 3 * TILE;

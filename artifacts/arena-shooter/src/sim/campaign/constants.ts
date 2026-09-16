@@ -108,9 +108,55 @@ export const XP_CORE = 20;
 /** Vale per qualsiasi turret abbattuta, drone compreso: erano la
  *  stessa entità anche prima che lo dicesse il codice. */
 export const XP_TURRET_DOWN = 30;
+/** Un colpo andato sul punto debole paga *subito*, non solo quando il
+ *  nemico cade. È il modo in cui la debolezza si insegna senza
+ *  scriverla nella HUD: la prima volta che succede, il numero verde
+ *  arriva prima che si sia capito perché. */
+export const XP_ENEMY_WEAK_HIT = 8;
 export const XP_BOSS_HIT_SOLID = 25;
 export const XP_BOSS_HIT_GRAZE = 12;
 export const XP_BOSS_DEFEAT = 150;
+
+// ---- Nemici ----
+// I valori che stanno qui e non in enemies.ts sono quelli che non
+// appartengono a un archetipo ma al *gioco*: quanto dura una nube,
+// quanto resta visibile chi si occulta.
+
+/** ms in cui un nemico che si occulta resta comunque visibile dopo
+ *  aver sparato. Più lungo della finestra di sfiato (VENT_WINDOW_MS,
+ *  900): vedere un Araldo che non si può più punire dice dov'è
+ *  andato, ed è un'informazione, non una beffa. */
+/** Quota dell'occhio del giocatore, in px dal pavimento. Deve valere
+ *  quanto EYE_HEIGHT del renderer (render/camera.ts), che è dove il
+ *  mirino sta davvero: se i due divergono, il colpo alla testa parte
+ *  da una quota diversa da quella disegnata e il giocatore mira a una
+ *  cosa e ne colpisce un'altra. Ridichiararlo invece di importarlo
+ *  tiene la simulazione libera dal modulo di rendering — e un test lo
+ *  verifica, perché una costante copiata a mano senza un guardiano è
+ *  una costante che prima o poi diverge. */
+export const PLAYER_EYE_Z = TILE / 2;
+
+export const ENEMY_REVEAL_MS = 1500;
+
+/** Distanza minima, in tile, fra lo spawn di un livello e il nemico
+ *  più vicino. Un test la impone su tutte e nove le mappe. */
+export const ENEMY_SPAWN_CLEARANCE_TILES = 3;
+
+/** ms di intoccabilità all'ingresso in un livello.
+ *
+ *  Esisteva già per il respawn da checkpoint; serviva anche qui, e
+ *  per lo stesso identico motivo. Con le sole turret non si notava —
+ *  sono ferme e si vedono — ma un nemico che pattuglia può trovarsi
+ *  girato verso la porta nel momento in cui il livello comincia, e
+ *  farsi sparare prima di aver toccato un tasto non è una difficoltà,
+ *  è un dado. L'IA tratta il giocatore intoccabile come invisibile,
+ *  quindi la finestra non viene nemmeno consumata dai tempi di
+ *  reazione: comincia a contare quando comincia il gioco. */
+export const LEVEL_START_GRACE_MS = 1200;
+
+/** La nube del Crogiolo: raggio in tile e durata dell'accecamento. */
+export const CROGIOLO_CLOUD_TILES = 3.2;
+export const CROGIOLO_CLOUD_MS = 2200;
 
 /** XP cumulativa richiesta per raggiungere il livello (indice + 1).
  *

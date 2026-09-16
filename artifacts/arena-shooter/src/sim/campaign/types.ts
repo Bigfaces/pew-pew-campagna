@@ -13,6 +13,8 @@
 // per ogni copia dello stesso trabocchetto.
 // ================================================================
 
+import type { EnemyKind, Vulnerability, WeakSpot } from './enemies';
+
 export type RoomId = string;
 
 /** Le fasi della Sentinella e quelle del Custode in un tipo solo. Non
@@ -54,6 +56,18 @@ export interface CampaignInput {
    *  simulazione decide, il controller si limita a riferire che il
    *  tasto è stato premuto. */
   dash: boolean;
+  /** Pendenza verticale della mira: di quanti px sale il mirino per
+   *  ogni px di distanza. Serve ai colpi alla testa, l'unica cosa in
+   *  tutto il gioco che dia un senso all'inclinazione della visuale.
+   *
+   *  È una *pendenza* e non l'inclinazione grezza della camera di
+   *  proposito. L'orizzonte, in un raycaster a colonne, si sposta
+   *  invece di ruotare, e quanto mondo copra quello spostamento
+   *  dipende dalla proiezione — cioè dal viewport e dallo zoom
+   *  dell'ottica. Convertire nel controller, che il viewport ce l'ha,
+   *  tiene la simulazione senza DOM e fa sì che il mirino indichi lo
+   *  stesso punto a qualunque risoluzione. */
+  aimSlope: number;
 }
 
 export function emptyCampaignInput(): CampaignInput {
@@ -64,6 +78,7 @@ export function emptyCampaignInput(): CampaignInput {
     fire: false,
     ads: false,
     dash: false,
+    aimSlope: 0,
   };
 }
 
@@ -156,6 +171,62 @@ export interface ShieldPickupState {
   collected: boolean;
 }
 
+/** Un nemico mobile. Tutto quello che serve a rigiocare il tick da
+ *  un salvataggio sta qui: l'archetipo (`kind`) dice le costanti, lo
+ *  stato dice dove sta nella sua macchina.
+ *
+ *  `postX/postY` sono il posto di guardia, `patrolX/patrolY` l'altro
+ *  capo della spola. Tenerli sullo *stato* e non solo sulla
+ *  definizione serve al respawn: morire riporta i nemici della stanza
+ *  al loro posto, e il posto deve essere noto senza risalire al
+ *  livello. */
+export interface EnemyState {
+  id: string;
+  kind: EnemyKind;
+  alive: boolean;
+  x: number;
+  y: number;
+  angle: number;
+  /** In colpi corpo residui. Float perché i moltiplicatori del punto
+   *  debole e della vulnerabilità non sono interi fra loro. */
+  hp: number;
+  ai: 'patrol' | 'search' | 'engage';
+  /** ms di linea di vista ancora da tenere prima del colpo. */
+  reactionTimer: number;
+  attackCooldown: number;
+  /** ms residui di sfiato: la finestra dopo il colpo in cui incassa
+   *  il doppio, e in cui l'Araldo si vede. */
+  ventMs: number;
+  /** ms residui in cui resta visibile comunque, per chi si occulta.
+   *  Separato da `ventMs` perché il velo torna più tardi della
+   *  finestra di danno: vedere un nemico che non si può più punire è
+   *  un'informazione, non una beffa. */
+  revealMs: number;
+  /** ms residui di carica in corso, e la direzione congelata quando è
+   *  partita. Congelata perché una carica che corregge la rotta non
+   *  è schivabile, ed è tutto ciò che la rende leale. */
+  chargeMs: number;
+  chargeDirX: number;
+  chargeDirY: number;
+  postX: number | null;
+  postY: number | null;
+  patrolX: number | null;
+  patrolY: number | null;
+  goalX: number | null;
+  goalY: number | null;
+  patrolTimer: number;
+  lastSeenX: number | null;
+  lastSeenY: number | null;
+  /** Osservazioni sull'intenzione dell'ultimo tick. Stanno sullo
+   *  stato perché due lettori diversi ne hanno bisogno — la
+   *  risoluzione del colpo e il disegno — e ricalcolarle in due
+   *  posti vorrebbe dire che possono divergere. */
+  still: boolean;
+  closing: boolean;
+  /** Irrobustito da un Archivista vivo nel raggio. */
+  hardened: boolean;
+}
+
 export interface BossState {
   x: number;
   y: number;
@@ -239,6 +310,7 @@ export interface CampaignState {
   player: CampaignPlayer;
   doors: DoorState[];
   turrets: TurretState[];
+  enemies: EnemyState[];
   collapsingFloors: CollapsingFloorState[];
   chasms: ChasmState[];
   cores: CoreState[];
@@ -275,6 +347,20 @@ export type CampaignEvent =
   | { type: 'nodeUnlocked'; id: string }
   | { type: 'dashStarted' }
   | { type: 'turretDown'; id: string; kind: 'drone' | 'turret' }
+  | {
+      type: 'enemyHit';
+      id: string;
+      kind: EnemyKind;
+      damage: number;
+      /** Quali dei due assi hanno morso. La HUD li usa per dire
+       *  *perché* quel colpo è valso di più: un numero grande senza
+       *  motivo non insegna niente. */
+      weakSpot: WeakSpot | null;
+      vulnerability: Vulnerability | null;
+      hardened: boolean;
+    }
+  | { type: 'enemyDown'; id: string; kind: EnemyKind }
+  | { type: 'enemyAttack'; id: string; kind: EnemyKind }
   | { type: 'floorCollapsed'; id: string }
   | { type: 'fellIntoChasm'; id: string }
   | { type: 'gasEntered' }
@@ -289,4 +375,4 @@ export type CampaignEvent =
   | { type: 'bossCoreSealed' }
   | { type: 'bossDefeated' }
   | { type: 'levelCompleted'; levelId: string; next: string | null }
-  | { type: 'playerDied'; cause: 'turret' | 'boss' };
+  | { type: 'playerDied'; cause: 'turret' | 'boss' | 'enemy' };

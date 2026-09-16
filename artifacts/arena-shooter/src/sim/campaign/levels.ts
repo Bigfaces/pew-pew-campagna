@@ -102,6 +102,42 @@ export const LEVEL_ATTRACCO: LevelDef = {
       room: 'magazzino',
     },
   ],
+  // Due archetipi soli, e il primo livello li presenta uno per volta:
+  // il Ronzino che viene addosso nel corridoio stretto, la Vedetta che
+  // si pianta per sparare nel magazzino aperto. Nessuno dei due sta
+  // nella stanza di partenza — si comincia guardando, non incassando.
+  enemies: [
+    {
+      id: 'ronzino-corridoio',
+      kind: 'ronzino',
+      tx: 10,
+      ty: 5,
+      room: 'corridoio',
+      facing: Math.PI,
+      patrol: { tx: 7, ty: 5 },
+    },
+    {
+      id: 'vedetta-magazzino',
+      kind: 'vedetta',
+      tx: 14,
+      ty: 3,
+      room: 'magazzino',
+      facing: Math.PI,
+      patrol: { tx: 14, ty: 6 },
+    },
+    // Di spalle: la prima occasione di scoprire che il dorso di una
+    // Vedetta vale tre colpi, e di scoprirla per conto proprio.
+    { id: 'ronzino-transito', kind: 'ronzino', tx: 18, ty: 2, room: 'transito', facing: 0 },
+    {
+      id: 'vedetta-transito',
+      kind: 'vedetta',
+      tx: 19,
+      ty: 6,
+      room: 'transito',
+      facing: 0,
+      patrol: { tx: 19, ty: 3 },
+    },
+  ],
   collapsingFloors: [],
   gasZones: [],
   chasms: [],
@@ -204,6 +240,39 @@ export const LEVEL_CONDOTTI: LevelDef = {
   chasms: [],
   blackouts: [],
   gravityZones: [],
+  // Il Saldatore entra qui, e il pozzo è il posto giusto: insegue, e
+  // ciò che gli sta in mezzo è un pavimento che cede. Chi arretra
+  // dritto lo scopre.
+  enemies: [
+    {
+      id: 'vedetta-paratie',
+      kind: 'vedetta',
+      tx: 5,
+      ty: 3,
+      room: 'paratie',
+      facing: Math.PI,
+      patrol: { tx: 2, ty: 3 },
+    },
+    {
+      id: 'saldatore-pozzo',
+      kind: 'saldatore',
+      tx: 12,
+      ty: 3,
+      room: 'pozzo',
+      facing: Math.PI,
+      patrol: { tx: 9, ty: 3 },
+    },
+    {
+      id: 'vedetta-camera',
+      kind: 'vedetta',
+      tx: 17,
+      ty: 2,
+      room: 'camera',
+      facing: Math.PI,
+      patrol: { tx: 15, ty: 3 },
+    },
+    { id: 'saldatore-sas', kind: 'saldatore', tx: 21, ty: 9, room: 'sas', facing: -Math.PI / 2 },
+  ],
   collapsingFloors: [
     {
       id: 'pozzo',
@@ -330,6 +399,24 @@ export const LEVEL_MOLO: LevelDef = {
       room: 'galleria',
     },
   ],
+  // Livello del boss: tre nemici in tutto. La galleria a fuoco
+  // incrociato è già un problema di ritmo, e un Ronzino dentro basta
+  // a rimetterla in discussione — due l'avrebbero solo resa rumorosa.
+  enemies: [
+    {
+      id: 'ronzino-ingresso',
+      kind: 'ronzino',
+      tx: 4,
+      ty: 3,
+      room: 'ingresso',
+      facing: Math.PI,
+      patrol: { tx: 2, ty: 3 },
+    },
+    { id: 'ronzino-galleria', kind: 'ronzino', tx: 8, ty: 7, room: 'galleria', facing: Math.PI },
+    // Nella sala del boss, ma sul lato opposto: va tolto prima, non
+    // durante. Due minacce che caricano insieme non si leggono.
+    { id: 'saldatore-molo', kind: 'saldatore', tx: 18, ty: 2, room: 'molo', facing: 0 },
+  ],
   collapsingFloors: [],
   gasZones: [],
   chasms: [],
@@ -438,6 +525,30 @@ export const LEVEL_ANELLO: LevelDef = {
       room: 'pompe',
     },
   ],
+  // Fascia 2. Il Falco è più veloce del giocatore e il Ripetitore
+  // arretra: insieme rompono le due soluzioni dell'Atto I, che erano
+  // "scappa" e "chiudi la distanza". Il Ripetitore sul ponte spara
+  // attraverso il vuoto, dove inseguirlo costa uno scatto.
+  enemies: [
+    {
+      id: 'falco-sbarco',
+      kind: 'falco',
+      tx: 4,
+      ty: 3,
+      room: 'sbarco',
+      facing: Math.PI,
+      patrol: { tx: 2, ty: 3 },
+    },
+    { id: 'ripetitore-ponte', kind: 'ripetitore', tx: 14, ty: 3, room: 'ponte', facing: Math.PI },
+    // Nella sala pompe un nemico solo. Ce n'erano due, e il bot di
+    // attraversabilità ha spiegato perché non potevano starci: il
+    // checkpoint della stanza è già sotto il tiro di una turret — un
+    // problema che questa sala aveva avuto anche prima dei nemici, e
+    // che era costato un pilastro — e un secondo bersaglio mobile lì
+    // dentro trasforma ogni morte in un anello, perché rinascere
+    // rimette in piedi anche lui.
+    { id: 'ripetitore-pompe', kind: 'ripetitore', tx: 19, ty: 3, room: 'pompe', facing: Math.PI },
+  ],
   collapsingFloors: [],
   gasZones: [],
   chasms: [
@@ -537,6 +648,31 @@ export const LEVEL_REFRIGERANTE: LevelDef = {
       phaseMs: 0,
       room: 'fredda',
     },
+  ],
+  // Buio e gravità: due archetipi lenti e leggibili, perché la stanza
+  // toglie già abbastanza informazione. Il Guardiano al buio è il
+  // punto: aggirarlo vuol dire perdere di vista l'unica cosa che si
+  // vede. Il Crogiolo insegna a non ucciderlo in faccia — e lo
+  // insegna al primo tentativo.
+  enemies: [
+    // Due nemici in tutto, e nessuno nella sala della gravità.
+    //
+    // Ci si è arrivati per gradi, tutti misurati. Prima c'era un
+    // Guardiano lì dentro: si risolve solo girandogli attorno, ma in
+    // un settore invertito lo strafe è specchiato, quindi la stanza
+    // chiedeva di aggirare qualcuno mentre i comandi per aggirarlo
+    // erano capovolti. Scambiandolo con il Crogiolo il conto è
+    // migliorato ma non tornato: la sala ha già due turret, e il
+    // checkpoint ci sta dentro, quindi ogni morte rimetteva in piedi
+    // anche il nemico. La verità è che questa sala una lezione ce
+    // l'ha già, ed è la gravità.
+    { id: 'guardiano-ingresso', kind: 'guardiano', tx: 5, ty: 3, room: 'ingresso', facing: Math.PI },
+    // Nella camera fredda un Crogiolo e basta. Il Guardiano che c'era
+    // accanto chiedeva di aggirare qualcuno *al buio*, dove l'unica
+    // cosa che resta è la minimappa: la stanza già toglie la vista,
+    // e sommarci un nemico che si risolve solo con la posizione era
+    // chiedere due cose difficili con un senso in meno.
+    { id: 'crogiolo-fredda', kind: 'crogiolo', tx: 17, ty: 3, room: 'fredda', facing: Math.PI },
   ],
   collapsingFloors: [],
   gasZones: [],
@@ -658,6 +794,15 @@ export const LEVEL_NUCLEO: LevelDef = {
       room: 'nucleo',
     },
   ],
+  // Livello del Custode: tre nemici, uno per stanza. Il Crogiolo in
+  // galleria è deliberato — la sua nube acceca come il gas, e il
+  // Custode acceca come fase: chi impara a non farsi accecare qui
+  // arriva pronto.
+  enemies: [
+    { id: 'ripetitore-anticamera', kind: 'ripetitore', tx: 4, ty: 3, room: 'anticamera', facing: Math.PI },
+    { id: 'crogiolo-galleria', kind: 'crogiolo', tx: 8, ty: 5, room: 'galleria', facing: Math.PI },
+    { id: 'ripetitore-nucleo', kind: 'ripetitore', tx: 18, ty: 3, room: 'nucleo', facing: 0 },
+  ],
   collapsingFloors: [],
   gasZones: [
     { id: 'galleria', tiles: rect(11, 12, 5, 9), lingerMs: GAS_LINGER_MS, room: 'galleria' },
@@ -763,6 +908,24 @@ export const LEVEL_PLANCIA: LevelDef = {
       phaseMs: TURRET_COOLDOWN_MS / 2,
       room: 'plancia',
     },
+  ],
+  // Atto III. L'Araldo entra qui, accompagnato da un archetipo già
+  // noto: un livello che presenta due cose nuove insieme non insegna
+  // nessuna delle due. Nel pozzo — la stanza che si sale invece di
+  // attraversarla — l'Araldo occultato è il motivo per guardare in
+  // alto.
+  enemies: [
+    { id: 'guardiano-ingresso', kind: 'guardiano', tx: 7, ty: 12, room: 'ingresso', facing: 0 },
+    {
+      id: 'araldo-pozzo',
+      kind: 'araldo',
+      tx: 3,
+      ty: 5,
+      room: 'pozzo',
+      facing: Math.PI / 2,
+      patrol: { tx: 3, ty: 10 },
+    },
+    { id: 'araldo-plancia', kind: 'araldo', tx: 12, ty: 4, room: 'plancia', facing: Math.PI },
   ],
   collapsingFloors: [
     {
@@ -870,6 +1033,27 @@ export const LEVEL_ARCHIVIO: LevelDef = {
       room: 'sud',
     },
   ],
+  // Il livello più affollato della campagna, e l'unico con tre
+  // archetipi: è dove l'Archivista arriva, e un Archivista da solo
+  // non è niente. Il punto è la priorità di bersaglio — finché è
+  // vivo, il Martello accanto incassa poco più di un terzo. È la
+  // prima volta in tutta la campagna che conta *a chi* si spara
+  // prima.
+  enemies: [
+    {
+      id: 'falco-nord',
+      kind: 'falco',
+      tx: 10,
+      ty: 1,
+      room: 'nord',
+      facing: 0,
+      patrol: { tx: 16, ty: 1 },
+    },
+    { id: 'archivista-ovest', kind: 'archivista', tx: 3, ty: 7, room: 'ovest', facing: 0 },
+    { id: 'martello-est', kind: 'martello', tx: 17, ty: 5, room: 'est', facing: Math.PI },
+    { id: 'archivista-sud', kind: 'archivista', tx: 5, ty: 12, room: 'sud', facing: 0 },
+    { id: 'falco-sud', kind: 'falco', tx: 15, ty: 12, room: 'sud', facing: Math.PI },
+  ],
   collapsingFloors: [],
   gasZones: [
     { id: 'est', tiles: rect(16, 18, 6, 10), lingerMs: GAS_LINGER_MS, room: 'est' },
@@ -963,6 +1147,14 @@ export const LEVEL_NIDO: LevelDef = {
     phaseMs: (TURRET_COOLDOWN_MS * i) / 4,
     room: 'nido',
   })),
+  // Il nido di ARBITER: uno per archetipo e basta. La sala è già la
+  // più grande della campagna e il boss ha tre fasi — riempirla
+  // vorrebbe dire che nessuna delle due cose si legge.
+  enemies: [
+    { id: 'araldo-ingresso', kind: 'araldo', tx: 7, ty: 9, room: 'ingresso', facing: 0 },
+    { id: 'martello-nido', kind: 'martello', tx: 12, ty: 3, room: 'nido', facing: Math.PI / 2 },
+    { id: 'archivista-nido', kind: 'archivista', tx: 18, ty: 3, room: 'nido', facing: Math.PI / 2 },
+  ],
   collapsingFloors: [],
   gasZones: [],
   chasms: [],

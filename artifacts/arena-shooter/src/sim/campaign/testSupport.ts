@@ -23,6 +23,26 @@ import type { LevelDef } from './levelTypes';
 import type { CampaignProfile } from './types';
 import { CampaignWorld } from './world';
 
+/** Toglie di mezzo i nemici mobili e la finestra di grazia iniziale.
+ *
+ *  Serve ai test che parlano di *un'altra cosa*: una porta stagna, il
+ *  pavimento che cede, il gas. Quando la campagna aveva solo turret,
+ *  una stanza era uno sfondo fermo e questi test potevano ignorarla;
+ *  con un Ronzino nel corridoio dell'Attracco, il test della porta
+ *  misurava anche quanto sopravvive chi resta fermo a metà corridoio,
+ *  e falliva per la ragione sbagliata.
+ *
+ *  Non è nascondere la polvere sotto il tappeto: che i nemici
+ *  uccidano, inseguano e rinascano è provato altrove, in
+ *  enemies.test.ts e dal bot di attraversabilità su tutte e nove le
+ *  mappe. Qui si isola la variabile, che è il motivo per cui i test
+ *  esistono. */
+export function quiet(world: CampaignWorld): CampaignWorld {
+  world.state.enemies = [];
+  world.state.player.respawnInvulnerableMs = 0;
+  return world;
+}
+
 export function centre(tx: number, ty: number): { x: number; y: number } {
   return { x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE };
 }

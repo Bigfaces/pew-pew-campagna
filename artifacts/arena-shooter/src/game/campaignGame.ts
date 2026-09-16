@@ -552,6 +552,25 @@ export class CampaignGame {
     if (k.has('e') || k.has('arrowright')) this.yaw += turn;
   }
 
+  /** Da inclinazione della camera a pendenza del tiro: di quanti px
+   *  sale il mirino per ogni px di distanza.
+   *
+   *  La conversione sta qui e non nella simulazione perché richiede la
+   *  proiezione, che è roba di viewport. In un raycaster a colonne
+   *  l'inclinazione non ruota la camera: fa scorrere l'orizzonte
+   *  (vedi horizonY in render/camera.ts), e *quanto mondo* copra quello
+   *  scorrimento dipende da vp.projDist — quindi anche dallo zoom
+   *  dell'ottica. Uguagliando heightToScreenY al centro dello schermo
+   *  si ottiene proprio questo rapporto. Il risultato è che il mirino
+   *  indica lo stesso punto a qualunque risoluzione, e che la
+   *  simulazione resta senza DOM.
+   *
+   *  Dipende dall'aspetto? No: projDist è derivato da vp.height, e il
+   *  rapporto height/projDist si semplifica in 2·tan(FOV_V/2)/zoom. */
+  private aimSlope(): number {
+    return (this.fx.pitch * MAX_PITCH * this.vp.height) / this.vp.projDist;
+  }
+
   private buildInput(frameDt: number): CampaignInput {
     const k = this.keys;
     this.applyLook(frameDt);
@@ -575,6 +594,7 @@ export class CampaignGame {
       // flag (see applyMovement), so the controller must not also
       // scale the input — that would charge the cost twice.
       ads: this.adsHeld,
+      aimSlope: this.aimSlope(),
     };
     this.fireQueued = false;
     this.dashQueued = false;

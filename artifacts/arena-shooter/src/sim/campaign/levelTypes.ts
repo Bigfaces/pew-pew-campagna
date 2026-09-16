@@ -20,6 +20,9 @@
 // come si disegna e nient'altro.
 // ================================================================
 
+import { TILE } from '../constants';
+import type { EnemyKind } from './enemies';
+
 export interface TilePos {
   tx: number;
   ty: number;
@@ -192,6 +195,32 @@ export interface BossDef {
   moduleTurretIds?: readonly string[];
 }
 
+/** Un nemico piazzato sulla mappa.
+ *
+ *  `room` non è ridondante con la posizione: è il **guinzaglio**. Un
+ *  nemico non lascia la stanza in cui è stato messo, perché senza quel
+ *  limite bastava farsi vedere una volta per trascinarsi dietro il
+ *  livello intero — e il ciclo "entra, leggi la minaccia, risolvi"
+ *  diventava una fuga unica dall'inizio alla fine. Dichiararla invece
+ *  di dedurla dalla posizione permette anche di legare a una stanza
+ *  chi sta sulla soglia.
+ *
+ *  `patrol` è l'altro capo della spola. Assente = resta al suo posto e
+ *  scandaglia. Non esiste una pattuglia casuale di proposito:
+ *  sposterebbe i nemici fuori dalla composizione pensata per la
+ *  stanza, che è dove sta il level design. */
+export interface EnemySpawnDef {
+  id: string;
+  kind: EnemyKind;
+  tx: number;
+  ty: number;
+  room: string;
+  /** Angolo iniziale in radianti. Da dove guarda decide se la stanza
+   *  si apre con un avvistamento o con un'occasione. */
+  facing?: number;
+  patrol?: TilePos;
+}
+
 /** L'uscita di un livello senza boss. Raggiungerla chiude il livello:
  *  è il gemello della sconfitta del boss, non un caso a parte. */
 export interface ExitDef {
@@ -217,6 +246,7 @@ export interface LevelDef {
   rooms: readonly RoomDef[];
   doors: readonly DoorDef[];
   turrets: readonly TurretDef[];
+  enemies: readonly EnemySpawnDef[];
   collapsingFloors: readonly CollapsingFloorDef[];
   gasZones: readonly GasZoneDef[];
   chasms: readonly ChasmDef[];
@@ -267,6 +297,26 @@ export function roomAt(level: LevelDef, tx: number, ty: number): string {
 export function roomOrder(level: LevelDef, id: string): number {
   const i = level.rooms.findIndex((r) => r.id === id);
   return i < 0 ? 0 : i;
+}
+
+/** Il rettangolo di una stanza in px, che è il guinzaglio dei nemici
+ *  che ci stanno dentro. Mezzo tile di margine per lato: senza, un
+ *  nemico incollato al bordo risulterebbe già fuori e passerebbe la
+ *  vita a rientrare da dov'è. */
+export function roomBoundsPx(
+  level: LevelDef,
+  id: string,
+): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  const r = level.rooms.find((x) => x.id === id);
+  if (!r) return null;
+  const y0 = r.fromTy ?? 0;
+  const y1 = r.toTy ?? level.height - 1;
+  return {
+    minX: r.fromTx * TILE,
+    minY: y0 * TILE,
+    maxX: (r.toTx + 1) * TILE,
+    maxY: (y1 + 1) * TILE,
+  };
 }
 
 export function roomName(level: LevelDef, id: string): string {

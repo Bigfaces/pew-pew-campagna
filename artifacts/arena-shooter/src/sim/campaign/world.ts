@@ -72,17 +72,43 @@ import {
   XP_BOSS_HIT_SOLID,
   XP_CORE,
   XP_ROOM_ENTER,
+  XP_ENEMY_WEAK_HIT,
   XP_TURRET_DOWN,
+  CROGIOLO_CLOUD_MS,
+  CROGIOLO_CLOUD_TILES,
+  ENEMY_REVEAL_MS,
+  LEVEL_START_GRACE_MS,
+  PLAYER_EYE_Z,
   levelForXp,
 } from './constants';
 import {
   roomAt,
+  roomBoundsPx,
   roomOrder,
   tileAt,
   type BossKind,
+  type EnemySpawnDef,
   type LevelDef,
   type TurretDef,
 } from './levelTypes';
+import {
+  CLOSE_RANGE_TILES,
+  CORE_BAND_CENTRE,
+  CORE_BAND_HALF,
+  ENEMY_FRONT_PLATE_HALF,
+  ENEMY_REAR_ARC_HALF,
+  HARDENED_MULT,
+  HEAD_BAND_LOW,
+  LONG_RANGE_TILES,
+  VENT_WINDOW_MS,
+  VULNERABILITY_MULT,
+  WEAK_SPOT_MULT,
+  archetypeOf,
+  contactRange,
+  type Vulnerability,
+  type WeakSpot,
+} from './enemies';
+import { updateEnemyAi, type Leash } from './enemyAi';
 import { campMoveEntity, distanceAlongRayToCircle, type IsSolidFn } from './physics';
 import { campCastRay, campHasLOS } from './raycast';
 import {
@@ -102,6 +128,7 @@ import {
   emptyCampaignInput,
   type BossPhase,
   type CampaignEvent,
+  type EnemyState,
   type CampaignInput,
   type CampaignProfile,
   type CampaignState,
@@ -151,6 +178,98 @@ function resolveBossHit(
   return 0;
 }
 
+/** Da dove e quando arriva un colpo su un nemico. `aimZ` è la quota,
+ *  in px dal pavimento, a cui il mirino punta *alla distanza del
+ *  bersaglio*: la conversione da inclinazione della camera a pendenza
+ *  la fa il controller, che è l'unico ad avere il viewport (vedi
+ *  `aimSlope` in types.ts). */
+export interface EnemyShot {
+  shooterX: number;
+  shooterY: number;
+  aimZ: number;
+  dist: number;
+  ads: boolean;
+}
+
+export interface EnemyHitResult {
+  damage: number;
+  weakSpot: WeakSpot | null;
+  vulnerability: Vulnerability | null;
+}
+
+/** Quanto vale questo colpo, e perché.
+ *
+ *  Due assi indipendenti che moltiplicano: *dove* colpisci (il punto
+ *  debole) e *quando* (la vulnerabilità). Vedi la nota lunga in
+ *  enemies.ts sul perché non ci sono elementi.
+ *
+ *  Il corpo si colpisce sempre, qualunque sia l'alzo: richiedere anche
+ *  in verticale di stare dentro la sagoma avrebbe trasformato ogni
+ *  colpo in un tiro di precisione, e in un motore dove l'orizzonte
+ *  scorre invece di ruotare sarebbe stato un tiro che il giocatore non
+ *  può mirare onestamente. L'alzo decide se il colpo vale di più, non
+ *  se arriva.
+ *
+ *  Funzione di modulo e non metodo, come resolveBossHit qui sopra: non
+ *  legge niente del mondo, e provarla non deve richiedere di
+ *  costruirne uno — tanto più che nel tick reale l'IA muove i nemici
+ *  *prima* che il colpo parta, quindi da fuori non si riesce a tenere
+ *  ferma la scena abbastanza a lungo per interrogarla. */
+export function resolveEnemyHit(e: EnemyState, shot: EnemyShot): EnemyHitResult {
+  const a = archetypeOf(e.kind);
+  const toShooter = Math.atan2(shot.shooterY - e.y, shot.shooterX - e.x);
+  const frontDiff = Math.abs(angleDelta(e.angle, toShooter));
+
+  // La piastra del Guardiano è un'immunità, non una riduzione: una
+  // riduzione si supera sparando di più, e il punto è che non si debba
+  // poter risolvere sparando di più.
+  if (a.frontImmune && frontDiff <= ENEMY_FRONT_PLATE_HALF) {
+    return { damage: 0, weakSpot: null, vulnerability: null };
+  }
+
+  const h = a.height * TILE;
+  const base = (a.floatZ ?? 0) * TILE;
+
+  let weak: WeakSpot | null = null;
+  if (a.weakSpot === 'rear') {
+    if (Math.PI - frontDiff <= ENEMY_REAR_ARC_HALF) weak = 'rear';
+  } else if (a.weakSpot === 'core') {
+    if (Math.abs(shot.aimZ - (base + CORE_BAND_CENTRE * h)) <= CORE_BAND_HALF * h) weak = 'core';
+  } else if (shot.aimZ >= base + HEAD_BAND_LOW * h) {
+    weak = 'head';
+  }
+
+  let vuln: Vulnerability | null = null;
+  switch (a.vulnerability) {
+    case 'mirato':
+      if (shot.ads) vuln = 'mirato';
+      break;
+    case 'ravvicinato':
+      if (shot.dist <= CLOSE_RANGE_TILES * TILE) vuln = 'ravvicinato';
+      break;
+    case 'distante':
+      if (shot.dist >= LONG_RANGE_TILES * TILE) vuln = 'distante';
+      break;
+    case 'sfiatato':
+      if (e.ventMs > 0) vuln = 'sfiatato';
+      break;
+    case 'immobile':
+      if (e.still) vuln = 'immobile';
+      break;
+    case 'scoperto':
+      if (e.closing || e.chargeMs > 0) vuln = 'scoperto';
+      break;
+    default:
+      break;
+  }
+
+  let dmg = 1;
+  if (weak) dmg *= WEAK_SPOT_MULT;
+  if (vuln) dmg *= VULNERABILITY_MULT;
+  if (e.hardened) dmg *= HARDENED_MULT;
+  return { damage: dmg, weakSpot: weak, vulnerability: vuln };
+}
+
 export class CampaignWorld {
   readonly level: LevelDef;
   state: CampaignState;
@@ -178,6 +297,9 @@ export class CampaignWorld {
 
   private isSolid: IsSolidFn = (tx, ty) => this.getTile(tx, ty) !== 0;
 
+  /** I guinzagli sono una proprietà del livello, non del tick. */
+  private leashCache = new Map<string, Leash | null>();
+
   /** `profile` seeds a returning player: the character they built,
    *  never where they were standing (see CampaignProfile). Absent —
    *  or discarded as an unknown version — means a fresh start. */
@@ -203,7 +325,9 @@ export class CampaignWorld {
         angle: 0,
         pitch: 0,
         weaponCooldown: 0,
-        respawnInvulnerableMs: 0,
+        // Vedi LEVEL_START_GRACE_MS: entrare in un livello è un
+        // respawn come un altro, e merita lo stesso riguardo.
+        respawnInvulnerableMs: LEVEL_START_GRACE_MS,
         shieldCharges: 0,
         dashTimer: 0,
         dashCooldown: 0,
@@ -229,6 +353,45 @@ export class CampaignWorld {
         // ed è tutto ciò che serve per il fuoco incrociato.
         fireCooldown: t.phaseMs,
       })),
+      enemies: level.enemies.map((d) => {
+        const a = archetypeOf(d.kind);
+        const home = centreOf(d.tx, d.ty);
+        const patrol = d.patrol ? centreOf(d.patrol.tx, d.patrol.ty) : null;
+        return {
+          id: d.id,
+          kind: d.kind,
+          alive: true,
+          x: home.x,
+          y: home.y,
+          angle: d.facing ?? 0,
+          hp: a.hp,
+          ai: 'patrol' as const,
+          reactionTimer: a.reactionMs,
+          attackCooldown: 0,
+          ventMs: 0,
+          revealMs: 0,
+          chargeMs: 0,
+          chargeDirX: 0,
+          chargeDirY: 0,
+          postX: home.x,
+          postY: home.y,
+          patrolX: patrol ? patrol.x : null,
+          patrolY: patrol ? patrol.y : null,
+          goalX: null,
+          goalY: null,
+          patrolTimer: 0,
+          lastSeenX: null,
+          lastSeenY: null,
+          // Falso, non vero: `still` vuol dire "si è piantato
+          // apposta", ed è ciò che la vulnerabilità `immobile`
+          // premia. Inizializzarlo a vero regalava il moltiplicatore
+          // al primo colpo contro un nemico che non aveva ancora
+          // deciso niente.
+          still: false,
+          closing: false,
+          hardened: false,
+        };
+      }),
       collapsingFloors: level.collapsingFloors.map((f) => ({
         id: f.id,
         standingMs: 0,
@@ -373,6 +536,7 @@ export class CampaignWorld {
     this.updateCores();
     this.updateShieldPickups();
     this.updateTurrets();
+    this.updateEnemies();
     this.updateBoss();
     // Dopo il boss, non prima: il Custode capovolge la stanza come
     // fase, e leggere la gravità prima di aggiornarlo la lascerebbe
@@ -730,7 +894,7 @@ export class CampaignWorld {
    *  charge instead, if any are left. Tactical and disposable, unlike
    *  the skill tree: see GDD.md, "Potenziamenti vs progressione
    *  permanente". */
-  private damagePlayer(cause: 'turret' | 'boss'): void {
+  private damagePlayer(cause: 'turret' | 'boss' | 'enemy'): void {
     const p = this.state.player;
     if (p.shieldCharges > 0) {
       p.shieldCharges--;
@@ -738,6 +902,205 @@ export class CampaignWorld {
       return;
     }
     this.killPlayer(cause);
+  }
+
+  // ---- nemici --------------------------------------------------
+
+  private enemyDef(id: string): EnemySpawnDef {
+    return this.level.enemies.find((e) => e.id === id)!;
+  }
+
+  /** Il rettangolo oltre il quale un nemico non insegue, memorizzato
+   *  la prima volta: è una proprietà del livello, non del tick. */
+  private leashFor(room: string): Leash | null {
+    const cached = this.leashCache.get(room);
+    if (cached !== undefined) return cached;
+    const b = roomBoundsPx(this.level, room);
+    this.leashCache.set(room, b);
+    return b;
+  }
+
+  private hitEnemy(
+    id: string,
+    shooterX: number,
+    shooterY: number,
+    aimSlope: number,
+    dist: number,
+    ads: boolean,
+  ): void {
+    const e = this.state.enemies.find((x) => x.id === id)!;
+    const res = resolveEnemyHit(e, {
+      shooterX,
+      shooterY,
+      aimZ: PLAYER_EYE_Z + aimSlope * dist,
+      dist,
+      ads,
+    });
+
+    // Un colpo assorbito dalla piastra è comunque un evento: senza,
+    // sparare a un Guardiano di fronte sarebbe indistinguibile dallo
+    // sparare al muro, e la lezione non arriverebbe mai.
+    this.events.push({
+      type: 'enemyHit',
+      id: e.id,
+      kind: e.kind,
+      damage: res.damage,
+      weakSpot: res.weakSpot,
+      vulnerability: res.vulnerability,
+      hardened: e.hardened,
+    });
+    if (res.damage <= 0) return;
+
+    // Vedere il colpo giusto pagare *subito*, e non solo alla morte,
+    // è ciò che insegna il punto debole senza scriverlo nella HUD.
+    if (res.weakSpot) this.grantXp(XP_ENEMY_WEAK_HIT);
+
+    e.hp -= res.damage;
+    if (e.hp > 0) {
+      // Colpire da fuori dal cono visivo sveglia comunque: un nemico
+      // che incassa senza accorgersene sarebbe un bersaglio da poligono.
+      if (e.ai === 'patrol') {
+        e.ai = 'search';
+        e.lastSeenX = shooterX;
+        e.lastSeenY = shooterY;
+      }
+      return;
+    }
+
+    this.killEnemy(e);
+  }
+
+  private killEnemy(e: EnemyState): void {
+    const a = archetypeOf(e.kind);
+    e.alive = false;
+    e.hp = 0;
+    e.chargeMs = 0;
+    this.events.push({ type: 'enemyDown', id: e.id, kind: e.kind });
+    this.grantXp(a.xp);
+
+    if (!a.gasOnDeath) return;
+    // La nube del Crogiolo non è una zona nuova: è la stessa cecità
+    // del gas, concessa a chi era troppo vicino nel momento sbagliato.
+    // Tenere una nube persistente avrebbe richiesto uno stato e un
+    // disegno in più per una lezione che si impara al primo colpo —
+    // e la lezione è "non ucciderlo in faccia", che questa versione
+    // insegna identica.
+    const p = this.state.player;
+    if (Math.hypot(p.x - e.x, p.y - e.y) > CROGIOLO_CLOUD_TILES * TILE) return;
+    const wasBlind = p.empMs > 0;
+    p.empMs = Math.max(p.empMs, CROGIOLO_CLOUD_MS);
+    if (!wasBlind) this.events.push({ type: 'gasEntered' });
+  }
+
+  private updateEnemies(): void {
+    const p = this.state.player;
+    const anyAlive = this.state.enemies.some((e) => e.alive);
+    if (!anyAlive) return;
+
+    // L'Archivista si legge prima di muovere chiunque, così la
+    // riduzione vale per tutti nello stesso tick invece di dipendere
+    // dall'ordine della lista.
+    const minders = this.state.enemies.filter(
+      (e) => e.alive && archetypeOf(e.kind).hardensAlliesTiles !== undefined,
+    );
+    for (const e of this.state.enemies) {
+      if (!e.alive) continue;
+      e.hardened = minders.some((m) => {
+        if (m.id === e.id) return false;
+        const r = archetypeOf(m.kind).hardensAlliesTiles! * TILE;
+        return Math.hypot(m.x - e.x, m.y - e.y) <= r;
+      });
+    }
+
+    for (const e of this.state.enemies) {
+      if (!e.alive) continue;
+      const a = archetypeOf(e.kind);
+
+      const intent = updateEnemyAi(e, {
+        getTile: this.getTile,
+        mapW: this.level.width,
+        mapH: this.level.height,
+        playerX: p.x,
+        playerY: p.y,
+        playerTargetable: !this.invulnerable,
+        leash: this.leashFor(this.enemyDef(e.id).room),
+        dtMs: TICK_MS,
+      });
+
+      e.angle = intent.angle;
+      e.still = intent.still;
+      e.closing = intent.closing;
+
+      if (intent.moveX !== 0 || intent.moveY !== 0) {
+        const len = Math.hypot(intent.moveX, intent.moveY);
+        campMoveEntity(
+          this.isSolid,
+          e,
+          (intent.moveX / len) * intent.speed,
+          (intent.moveY / len) * intent.speed,
+          a.radius,
+        );
+      }
+
+      // La carica colpisce toccando, e si spegne appena tocca: altro
+      // che un treno che continua addosso a chi ha già incassato.
+      if (e.chargeMs > 0) {
+        if (Math.hypot(p.x - e.x, p.y - e.y) <= a.radius + ENTITY_RADIUS) {
+          e.chargeMs = 0;
+          e.attackCooldown = a.cooldownMs;
+          if (!this.invulnerable) this.damagePlayer('enemy');
+        }
+        continue;
+      }
+
+      if (!intent.attack) continue;
+
+      this.events.push({ type: 'enemyAttack', id: e.id, kind: e.kind });
+      e.ventMs = VENT_WINDOW_MS;
+      e.revealMs = ENEMY_REVEAL_MS;
+      if (this.invulnerable) continue;
+
+      if (a.attack === 'contact') {
+        if (Math.hypot(p.x - e.x, p.y - e.y) <= contactRange(a) + ENTITY_RADIUS) {
+          this.damagePlayer('enemy');
+        }
+        continue;
+      }
+      // A distanza è un hitscan con preavviso, lo stesso contratto
+      // delle turret. La linea di vista l'ha già verificata l'IA: qui
+      // ricontrollarla vorrebbe dire poterla trovare rotta dopo che il
+      // colpo è partito, cioè un colpo annunciato che poi non arriva.
+      this.damagePlayer('enemy');
+    }
+  }
+
+  /** Riporta al loro posto i nemici della stanza del checkpoint. */
+  private resetEnemiesIn(room: string): void {
+    for (const e of this.state.enemies) {
+      const def = this.enemyDef(e.id);
+      if (def.room !== room) continue;
+      const home = centreOf(def.tx, def.ty);
+      const a = archetypeOf(e.kind);
+      e.alive = true;
+      e.hp = a.hp;
+      e.x = home.x;
+      e.y = home.y;
+      e.angle = def.facing ?? 0;
+      e.ai = 'patrol';
+      e.reactionTimer = a.reactionMs;
+      e.attackCooldown = 0;
+      e.ventMs = 0;
+      e.revealMs = 0;
+      e.chargeMs = 0;
+      e.goalX = null;
+      e.goalY = null;
+      e.patrolTimer = 0;
+      e.lastSeenX = null;
+      e.lastSeenY = null;
+      e.still = true;
+      e.closing = false;
+      e.hardened = false;
+    }
   }
 
   private updateTurrets(): void {
@@ -1057,7 +1420,7 @@ export class CampaignWorld {
     // room looked equivalent, but a player standing *on* a doorway
     // tile belongs to the room behind them, so shots taken while
     // peeking through a threshold silently did nothing.
-    let best: { dist: number; turretId: string | null } | null = null;
+    let best: { dist: number; turretId: string | null; enemyId: string | null } | null = null;
 
     for (const t of this.state.turrets) {
       if (!t.alive) continue;
@@ -1065,7 +1428,21 @@ export class CampaignWorld {
       const { x, y } = centreOf(def.tx, def.ty);
       const d = distanceAlongRayToCircle(p.x, p.y, input.aimAngle, x, y, TURRET_RADIUS);
       if (d === null || d > wall.dist) continue;
-      if (!best || d < best.dist) best = { dist: d, turretId: t.id };
+      if (!best || d < best.dist) best = { dist: d, turretId: t.id, enemyId: null };
+    }
+
+    for (const e of this.state.enemies) {
+      if (!e.alive) continue;
+      const d = distanceAlongRayToCircle(
+        p.x,
+        p.y,
+        input.aimAngle,
+        e.x,
+        e.y,
+        archetypeOf(e.kind).radius,
+      );
+      if (d === null || d > wall.dist) continue;
+      if (!best || d < best.dist) best = { dist: d, turretId: null, enemyId: e.id };
     }
 
     const boss = this.state.boss;
@@ -1085,7 +1462,7 @@ export class CampaignWorld {
       // Bersaglio più vicino vince: non si spara attraverso una
       // turret per arrivare al boss.
       if (d !== null && d <= wall.dist && (!best || d < best.dist)) {
-        best = { dist: d, turretId: null };
+        best = { dist: d, turretId: null, enemyId: null };
       }
     }
 
@@ -1096,6 +1473,11 @@ export class CampaignWorld {
       t.alive = false;
       this.events.push({ type: 'turretDown', id: t.id, kind: this.turretDef(t.id).kind });
       this.grantXp(XP_TURRET_DOWN);
+      return;
+    }
+
+    if (best.enemyId !== null) {
+      this.hitEnemy(best.enemyId, p.x, p.y, input.aimSlope, best.dist, input.ads);
       return;
     }
 
@@ -1177,7 +1559,7 @@ export class CampaignWorld {
     }
   }
 
-  private killPlayer(cause: 'turret' | 'boss'): void {
+  private killPlayer(cause: 'turret' | 'boss' | 'enemy'): void {
     const p = this.state.player;
     const cp = this.state.checkpoint;
 
@@ -1228,6 +1610,7 @@ export class CampaignWorld {
       t.reactionTimer = def.reactionMs;
       t.fireCooldown = def.phaseMs;
     }
+    this.resetEnemiesIn(cp.room);
     for (const f of this.state.collapsingFloors) {
       if (this.level.collapsingFloors.find((x) => x.id === f.id)!.room !== cp.room) continue;
       f.collapsed = false;

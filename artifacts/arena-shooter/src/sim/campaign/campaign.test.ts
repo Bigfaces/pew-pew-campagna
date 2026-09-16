@@ -48,6 +48,7 @@ import {
   molo,
   shieldOf,
   turretOf,
+  quiet,
 } from './testSupport';
 import { ACT_ONE, ALL_LEVELS, LEVEL_ATTRACCO } from './levels';
 import { roomAt } from './levelTypes';
@@ -260,7 +261,9 @@ describe('CampaignWorld — profilo salvato', () => {
 
 describe('CampaignWorld — porta stagna a tempo', () => {
   it('seals after the delay and blocks the corridor', () => {
-    const world = attracco();
+    // quiet(): questo test parla della porta, non del Ronzino che ora
+    // pattuglia lo stesso corridoio. Vedi testSupport.
+    const world = quiet(attracco());
     // Walk straight into the corridor sensor without touching the door.
     world.state.player.x = 7.2 * TILE;
     world.state.player.y = 5.5 * TILE;
@@ -321,7 +324,7 @@ describe('CampaignWorld — core e skill tree', () => {
 
 describe('CampaignWorld — drone del Magazzino', () => {
   it('kills the player after holding line of sight, then respawns at the checkpoint', () => {
-    const world = attracco();
+    const world = quiet(attracco());
     world.state.checkpoint = {
       room: 'magazzino',
       x: 13.5 * TILE,
@@ -347,7 +350,7 @@ describe('CampaignWorld — drone del Magazzino', () => {
 
 describe('CampaignWorld — scudo tattico', () => {
   it('absorbs a drone hit instead of killing the player, then is spent', () => {
-    const world = attracco();
+    const world = quiet(attracco());
     world.state.checkpoint = {
       room: 'magazzino',
       x: 13.5 * TILE,
@@ -389,7 +392,7 @@ describe('CampaignWorld — scudo tattico', () => {
   });
 
   it('is collectable again after a death resets its room', () => {
-    const world = attracco();
+    const world = quiet(attracco());
     world.state.checkpoint = {
       room: 'magazzino',
       x: 13.5 * TILE,
