@@ -12,10 +12,12 @@
 // è stata scritta, e mente in silenzio dal primo livello che cambia.
 // ================================================================
 
-import { BULLET_COOLDOWN, TICK_MS } from '../src/sim/constants';
+import { BULLET_COOLDOWN, TICK_MS, TILE } from '../src/sim/constants';
 import {
   ALL_SKILL_NODES,
   BEACON_LIFETIME_MS,
+  BEACON_LURE_TILES,
+  BEACON_RANGE_TILES,
   NODE_OTTURATORE_COOLDOWN_MS,
   BOSS_CHARGE_MS,
   BOSS_ENRAGED_CHARGES,
@@ -47,10 +49,13 @@ import {
 } from '../src/sim/campaign/constants';
 import {
   ALL_ENEMY_KINDS,
+  ENEMY_REAR_ARC_HALF,
   VULNERABILITY_MULT,
   WEAK_SPOT_MULT,
   archetypeOf,
 } from '../src/sim/campaign/enemies';
+import { updateEnemyAi } from '../src/sim/campaign/enemyAi';
+import type { EnemyState } from '../src/sim/campaign/types';
 import { ACTS, ALL_LEVELS } from '../src/sim/campaign/levels';
 import { roomAt } from '../src/sim/campaign/levelTypes';
 
@@ -377,4 +382,152 @@ console.log(
     '  non si abbatte affatto sparandogli davanti, e con la sola arma base\n' +
     "  un'esca non basta a chiuderlo. È il conto che tiene il Trasponditore\n" +
     '  dalla parte giusta — apre una possibilità, non spegne un nemico.',
+);
+
+// ================================================================
+// BANCO DELL'ARCO POSTERIORE
+// ================================================================
+// La tabella qui sopra fa aritmetica sugli HP: dice quanti colpi
+// servono *se* li metti dietro. Non dice se dietro ci si arriva.
+//
+// Questa sezione non fa conti: fa girare l'IA vera per tutta la vita
+// dell'esca e misura per quanti tick il giocatore si trova davvero
+// nell'arco posteriore — la stessa disuguaglianza che usa
+// resolveEnemyHit, non una sua parafrasi.
+//
+// Serve perché "il nemico si volta" e "il colpo vale tre volte" sono
+// due cose diverse, e fra le due c'è ENEMY_TURN_RATE. Un archetipo
+// può voltarsi di centoventi gradi e non restarci abbastanza da
+// permettere di premere il grilletto: con 1400 ms di ricarica, una
+// finestra da 280 ms è un colpo solo, e solo a chi era già carico e
+// già puntato.
+
+/** Un nemico appena nato del tipo dato, fermo al suo posto e girato
+ *  verso il giocatore. Non passa da CampaignWorld di proposito: qui
+ *  interessa l'IA, non il livello che la ospita. */
+function benchEnemy(kind: (typeof ALL_ENEMY_KINDS)[number], x: number, y: number): EnemyState {
+  const a = archetypeOf(kind);
+  return {
+    id: 'banco', kind, alive: true, x, y, angle: Math.PI, hp: a.hp,
+    ai: 'patrol', reactionTimer: a.reactionMs, attackCooldown: 0,
+    ventMs: 0, revealMs: 0, chargeMs: 0, chargeDirX: 0, chargeDirY: 0,
+    postX: x, postY: y, patrolX: null, patrolY: null, goalX: null, goalY: null,
+    patrolTimer: 0, lastSeenX: null, lastSeenY: null,
+    still: false, closing: false, lured: false, hardened: false,
+  } as EnemyState;
+}
+
+const norm = (r: number): number => Math.atan2(Math.sin(r), Math.cos(r));
+
+/** Stanza aperta: niente muri. Isola il richiamo dalla geometria di
+ *  un livello, che cambierebbe il risultato senza dire niente
+ *  sull'arma. */
+const openRoom = (): number => 0;
+
+interface RearWindow {
+  /** Tick in cui il giocatore è nell'arco posteriore. */
+  rear: number;
+  /** Di quelli, i tick in cui vale anche una vulnerabilità (×6). */
+  rearAndVuln: number;
+  /** Distanza fra l'esca e il nemico, in tile: sopra
+   *  BEACON_LURE_TILES il richiamo non aggancia affatto. */
+  gapTiles: number;
+}
+
+/** Lancia l'esca a `thetaDeg` dalla congiungente giocatore–nemico e
+ *  misura la finestra che si apre. Il giocatore resta fermo: chi si
+ *  muove può fare di meglio, quindi questi numeri sono il pavimento,
+ *  non il soffitto. */
+function rearWindow(
+  kind: (typeof ALL_ENEMY_KINDS)[number],
+  thetaDeg: number,
+  enemyTiles = 4,
+): RearWindow {
+  const px = 0;
+  const py = 0;
+  const ex = px + enemyTiles * TILE;
+  const ey = py;
+  const th = (thetaDeg * Math.PI) / 180;
+  const bx = px + Math.cos(th) * BEACON_RANGE_TILES * TILE;
+  const by = py + Math.sin(th) * BEACON_RANGE_TILES * TILE;
+
+  const e = benchEnemy(kind, ex, ey);
+  const ticks = Math.round(BEACON_LIFETIME_MS / TICK_MS);
+  let rear = 0;
+  let rearAndVuln = 0;
+  for (let t = 0; t < ticks; t++) {
+    const intent = updateEnemyAi(e, {
+      getTile: openRoom, mapW: 64, mapH: 64,
+      playerX: px, playerY: py, playerTargetable: true,
+      lure: { x: bx, y: by }, leash: null, dtMs: TICK_MS,
+    });
+    e.angle = intent.angle;
+    e.lured = intent.lured;
+    e.x += intent.moveX * intent.speed;
+    e.y += intent.moveY * intent.speed;
+    // La stessa forma di resolveEnemyHit: `weak = 'rear'` quando
+    // PI meno lo scarto sta dentro il mezzo-arco.
+    const off = Math.abs(norm(Math.atan2(py - e.y, px - e.x) - e.angle));
+    if (Math.PI - off <= ENEMY_REAR_ARC_HALF) {
+      rear++;
+      if (intent.closing || intent.still) rearAndVuln++;
+    }
+  }
+  return { rear, rearAndVuln, gapTiles: Math.hypot(bx - ex, by - ey) / TILE };
+}
+
+console.log('\n\n══ Arco posteriore: quanto dura davvero ══');
+console.log(
+  `  L'esca vola ${BEACON_RANGE_TILES} tile dritta davanti e richiama entro ${BEACON_LURE_TILES}.\n` +
+    '  θ è di quanto si sposta la mira di lato al momento del lancio.\n',
+);
+
+const REAR_KINDS = ALL_ENEMY_KINDS.filter((k) => archetypeOf(k).weakSpot === 'rear');
+console.log(
+  `  Archetipi con il punto debole dietro: ${REAR_KINDS.length} su ${ALL_ENEMY_KINDS.length}` +
+    ` (${REAR_KINDS.map((k) => archetypeOf(k).name).join(', ')}).\n` +
+    "  Sugli altri il Trasponditore non apre un moltiplicatore: toglie\n" +
+    '  un nemico dal fuoco, che è un altro mestiere.\n',
+);
+
+for (const kind of REAR_KINDS) {
+  const a = archetypeOf(kind);
+  let best = { theta: 0, ms: 0, msVuln: 0 };
+  const row: string[] = [];
+  for (let theta = 0; theta <= 60; theta += 10) {
+    const w = rearWindow(kind, theta);
+    const ms = w.rear * TICK_MS;
+    const agganciato = w.gapTiles <= BEACON_LURE_TILES;
+    if (agganciato && ms > best.ms) {
+      best = { theta, ms, msVuln: w.rearAndVuln * TICK_MS };
+    }
+    row.push(
+      `    ${String(theta).padStart(2)}°  ${w.gapTiles.toFixed(2)} tile  ` +
+        `${String(Math.round(ms)).padStart(4)} ms` +
+        `${agganciato ? '' : '  (esca fuori raggio: non aggancia)'}`,
+    );
+  }
+  console.log(`  ── ${a.name} ──`);
+  console.log(row.join('\n'));
+  // Se la finestra è più corta di una ricarica non ci sta un ciclo
+  // intero: chi arriva scarico non spara affatto. Il margine è la
+  // cifra che dice *quanto* manca, ed è quella da riguardare se un
+  // giorno si tocca BULLET_COOLDOWN.
+  const shots = best.ms >= BULLET_COOLDOWN ? Math.floor(best.ms / BULLET_COOLDOWN) : 0;
+  const margine = Math.round(best.ms - BULLET_COOLDOWN);
+  console.log(
+    `    migliore: ${Math.round(best.ms)} ms a ${best.theta}°` +
+      `, di cui ${Math.round(best.msVuln)} ms anche in vulnerabilità (×6).` +
+      `\n    Contro ${BULLET_COOLDOWN} ms di ricarica: ${margine >= 0 ? `+${margine}` : margine} ms` +
+      ` → ${shots} colp${shots === 1 ? 'o' : 'i'} a ciclo pieno` +
+      (shots === 0 ? ', quindi vale solo per chi arriva già carico e già puntato.' : '.'),
+  );
+  console.log('');
+}
+
+console.log(
+  '  Il numero da guardare è il "migliore" di ciascuno, e sono tre numeri\n' +
+    '  diversi per tre archetipi: chi sta fermo va superato, chi carica va\n' +
+    "  preso di lato. Se un giorno diventassero tutti uguali, l'esca sarebbe\n" +
+    '  diventata un interruttore.',
 );

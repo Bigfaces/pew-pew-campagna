@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { TILE } from '../constants';
+import { BULLET_COOLDOWN, TICK_MS, TILE } from '../constants';
 import { angleDelta } from '../raycast';
 import {
   BEACON_CHARGES_MAX,
@@ -22,7 +22,7 @@ import {
   BEACON_WALL_MARGIN,
   TURRET_REACTION_MS,
 } from './constants';
-import { archetypeOf } from './enemies';
+import { ALL_ENEMY_KINDS, ENEMY_REAR_ARC_HALF, archetypeOf } from './enemies';
 import { updateEnemyAi, type EnemyAiCtx } from './enemyAi';
 import { ALL_LEVELS } from './levels';
 import { campCastRay } from './raycast';
@@ -570,5 +570,118 @@ describe('Trasponditore — raccoglibile', () => {
 
     expect(events.some((ev) => ev.type === 'beaconPickup')).toBe(true);
     expect(w.state.player.beaconCharges).toBe(BEACON_CHARGES_MAX);
+  });
+});
+
+// ================================================================
+// IL SOFFITTO — l'esca apre, non spegne
+// ================================================================
+// L'aritmetica in cima al file dice quanti colpi stanno nella
+// *finestra dell'esca*. Questo blocco misura una cosa più stretta e
+// più vera: quanti ne stanno nell'ARCO POSTERIORE, che è il solo
+// punto in cui il colpo vale tre volte.
+//
+// Le due cose divergono per via di ENEMY_TURN_RATE. Un nemico può
+// restare richiamato per tutti i 2600 ms e mostrarmi la schiena per
+// molti meno: girarsi costa tempo, e chi cammina verso l'esca si
+// porta dietro il rilevamento mentre si sposta.
+//
+// L'invariante da tenere è un soffitto, non un valore: nessun
+// archetipo deve arrivare a contenere DUE ricariche intere nel suo
+// arco posteriore. Il giorno in cui ci arrivasse, un'esca da sola
+// basterebbe a chiudere un nemico — e il Trasponditore avrebbe
+// smesso di essere un'apertura per diventare un interruttore, che è
+// esattamente ciò che BEACON_LIFETIME_MS esiste per impedire.
+//
+// Un soffitto e non un'uguaglianza di proposito: le cifre esatte le
+// stampa `balance:campaign`, che le ricalcola. Un test che le
+// fissasse diventerebbe rosso a ogni ritocco di taratura senza che
+// niente si sia rotto davvero.
+
+/** Un nemico appena nato, fermo al suo posto e girato verso il
+ *  giocatore: il caso peggiore per chi lancia, perché parte da zero
+ *  gradi di rotazione da guadagnare. */
+function freshEnemy(kind: EnemyState['kind'], x: number, y: number): EnemyState {
+  const a = archetypeOf(kind);
+  return {
+    id: 'soffitto', kind, alive: true, x, y, angle: Math.PI, hp: a.hp,
+    ai: 'patrol', reactionTimer: a.reactionMs, attackCooldown: 0,
+    ventMs: 0, revealMs: 0, chargeMs: 0, chargeDirX: 0, chargeDirY: 0,
+    postX: x, postY: y, patrolX: null, patrolY: null, goalX: null, goalY: null,
+    patrolTimer: 0, lastSeenX: null, lastSeenY: null,
+    still: false, closing: false, lured: false, hardened: false,
+  } as EnemyState;
+}
+
+/** Millisecondi in cui il giocatore sta nell'arco posteriore, con
+ *  l'esca lanciata a `thetaDeg` dalla congiungente. Stanza aperta: la
+ *  geometria di un livello cambierebbe il numero senza dire niente
+ *  sull'arma. */
+function rearArcMs(kind: EnemyState['kind'], thetaDeg: number): number {
+  const px = 0;
+  const py = 0;
+  const e = freshEnemy(kind, px + 4 * TILE, py);
+  const th = (thetaDeg * Math.PI) / 180;
+  const lure = {
+    x: px + Math.cos(th) * BEACON_RANGE_TILES * TILE,
+    y: py + Math.sin(th) * BEACON_RANGE_TILES * TILE,
+  };
+  // Un'esca caduta oltre il raggio di richiamo non aggancia: non è
+  // una finestra corta, è nessuna finestra.
+  if (Math.hypot(lure.x - e.x, lure.y - e.y) > BEACON_LURE_TILES * TILE) return 0;
+
+  const ctx: EnemyAiCtx = {
+    getTile: () => 0, mapW: 64, mapH: 64,
+    playerX: px, playerY: py, playerTargetable: true,
+    lure, leash: null, dtMs: TICK_MS,
+  };
+  let ticks = 0;
+  for (let t = 0; t < Math.round(BEACON_LIFETIME_MS / TICK_MS); t++) {
+    const intent = updateEnemyAi(e, ctx);
+    e.angle = intent.angle;
+    e.lured = intent.lured;
+    e.x += intent.moveX * intent.speed;
+    e.y += intent.moveY * intent.speed;
+    // La stessa disuguaglianza di resolveEnemyHit, non una parafrasi.
+    const off = Math.abs(angleDelta(Math.atan2(py - e.y, px - e.x), e.angle));
+    if (Math.PI - off <= ENEMY_REAR_ARC_HALF) ticks++;
+  }
+  return ticks * TICK_MS;
+}
+
+/** La finestra migliore di un archetipo su tutti gli angoli di lancio
+ *  praticabili — cioè il meglio che un giocatore perfetto può fare. */
+function bestRearArcMs(kind: EnemyState['kind']): number {
+  let best = 0;
+  for (let theta = 0; theta <= 60; theta += 5) {
+    const ms = rearArcMs(kind, theta);
+    if (ms > best) best = ms;
+  }
+  return best;
+}
+
+describe("Trasponditore — il soffitto dell'arco posteriore", () => {
+  const REAR_KINDS = ALL_ENEMY_KINDS.filter((k) => archetypeOf(k).weakSpot === 'rear');
+
+  it('riguarda solo gli archetipi col punto debole dietro', () => {
+    // Se un giorno fossero tutti, il blocco qui sotto misurerebbe
+    // dieci volte la stessa cosa e questo test lo direbbe.
+    expect(REAR_KINDS.length).toBeGreaterThan(0);
+    expect(REAR_KINDS.length).toBeLessThan(ALL_ENEMY_KINDS.length);
+  });
+
+  it.each(ALL_ENEMY_KINDS.filter((k) => archetypeOf(k).weakSpot === 'rear'))(
+    "%s: l'arco posteriore non contiene due ricariche intere",
+    (kind) => {
+      const best = bestRearArcMs(kind);
+      expect(best).toBeLessThan(BULLET_COOLDOWN * 2);
+    },
+  );
+
+  it('almeno un archetipo ha una finestra usabile: altrimenti l\'arma non apre niente', () => {
+    // Il gemello del soffitto. Senza questo, azzerare BEACON_LURE_TILES
+    // renderebbe verdi tutti i test qui sopra.
+    const usable = REAR_KINDS.filter((k) => bestRearArcMs(k) >= BULLET_COOLDOWN);
+    expect(usable.length).toBeGreaterThan(0);
   });
 });
