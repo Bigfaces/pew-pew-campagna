@@ -1081,3 +1081,31 @@ dall'uno all'altro. Sono già divergenti in un punto, e la divergenza è un
 miglioramento che l'Arena *non* ha. Finché la campagna resta il solo ramo
 vivo non è un problema; il giorno in cui si toccasse anche l'Arena,
 riportare a mano quella firma sarebbe la prima cosa da fare.
+
+**Il file rischioso non è quello grosso.** `world.ts` è il file più grande
+della campagna — 1880 righe — ma ha **un solo import esterno**
+(`sim/constants.ts`): tutto il resto viene da dentro `campaign/`. È grande
+e isolato, e le sue quattro superfici pubbliche (`step`, `toProfile`,
+`tryUnlockNode`, `getTile`) sono tutte chiamate direttamente da un test.
+
+Il file da tenere d'occhio è `campaignGame.ts`. Ha **undici import
+esterni** — è il vero punto di giunzione fra simulazione, scena, audio,
+HUD e salvataggio — è cresciuto del **17,6% della sua dimensione attuale
+negli ultimi otto commit** (la crescita relativa più alta dopo `types.ts`,
+e in righe nette quasi quanto `world.ts`: +234 contro +238 nella stessa
+finestra), e ha **zero test diretti**: la suite gira senza jsdom e la
+classe usa `canvas` e `document`.
+
+È anche, per costruzione, il file in cui vivrebbe la schermata di un
+negozio. Chi lo tocca lavora senza rete. Le due risposte possibili sono
+aggiungere jsdom alla suite, oppure continuare con lo schema già usato per
+`campaignNarrative.ts`: estrarre la logica in funzioni pure testabili e
+lasciare nella classe solo l'innesto sul DOM. La seconda è coerente con
+quello che il progetto fa già, e non costa una dipendenza.
+
+L'accoppiamento è comunque a senso unico e verificato: **nessun file
+dell'arena importa niente dalla campagna**, in nessun punto. Sette moduli
+sono condivisi dai due lati, e tre di questi (`sim/constants.ts`,
+`sim/raycast.ts`, `render/scene.ts`) sono nella lista da non toccare:
+sono quelli su cui una modifica per la campagna diventa automaticamente
+una modifica all'arena.
