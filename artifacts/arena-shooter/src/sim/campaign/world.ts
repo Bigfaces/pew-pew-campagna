@@ -76,6 +76,11 @@ import {
   XP_TURRET_DOWN,
   CROGIOLO_CLOUD_MS,
   BEACON_CHARGES_START,
+  BEACON_CHARGES_MAX,
+  BEACON_LIFETIME_MS,
+  BEACON_LURE_TILES,
+  BEACON_RANGE_TILES,
+  BEACON_WALL_MARGIN,
   CROGIOLO_CLOUD_TILES,
   ENEMY_REVEAL_MS,
   LEVEL_START_GRACE_MS,
@@ -113,6 +118,7 @@ import { updateEnemyAi, type Leash } from './enemyAi';
 import { campMoveEntity, distanceAlongRayToCircle, type IsSolidFn } from './physics';
 import { campCastRay, campHasLOS } from './raycast';
 import {
+  beaconRevealsCloaked,
   hasGrazeDamage,
   isValidNode,
   movementStatsFor,
@@ -122,6 +128,7 @@ import {
   prereqMet,
   refillsShieldOnRoomEnter,
   shieldCapacity,
+  shieldRefundsShot,
   weaponStatsFor,
 } from './skills';
 import {
@@ -562,6 +569,14 @@ export class CampaignWorld {
     this.updateChasms();
     this.updateCores();
     this.updateShieldPickups();
+    this.updateBeaconPickups();
+    // Prima di updateEnemies: se l'esca parte questo tick, il richiamo
+    // deve valere già in questo stesso tick, non in quello dopo — e
+    // deve valere anche prima di fireWeapon, così un lancio e un colpo
+    // premuti insieme si risolvono nell'ordine giusto (vedi
+    // throwBeacon).
+    this.throwBeacon(input);
+    this.updateBeacon();
     this.updateTurrets();
     this.updateEnemies();
     this.updateBoss();
@@ -662,8 +677,38 @@ export class CampaignWorld {
     // fissata alla partenza: se seguisse l'input sarebbe una corsa
     // veloce sterzabile, mentre quello che serve al giocatore è uno
     // strappo da puntare *prima*, e da temporizzare.
+    //
+    // Col nodo Scatto Angolare questo si allenta, ma di poco: la
+    // direzione insegue quella desiderata al massimo di dashSteerRate
+    // radianti per tick, che a fine scatto fa circa un radiante in
+    // tutto — abbastanza per finire dietro un bersaglio, non per
+    // invertire la rotta a metà (vedi NODE_DASH_STEER_RATE).
     if (p.dashTimer > 0) {
       p.dashTimer = Math.max(0, p.dashTimer - TICK_MS);
+      const steerRate = movementStatsFor(this.state.unlockedNodes).dashSteerRate;
+      if (steerRate > 0 && (input.forward !== 0 || input.strafe !== 0)) {
+        // Stessa costruzione della direzione desiderata di
+        // startDashIfRequested: quella in cui si sta spingendo, in
+        // spazio mondo.
+        const fx = Math.cos(input.aimAngle);
+        const fy = Math.sin(input.aimAngle);
+        const rx = -Math.sin(input.aimAngle);
+        const ry = Math.cos(input.aimAngle);
+        let wx = fx * input.forward + rx * input.strafe;
+        let wy = fy * input.forward + ry * input.strafe;
+        const wlen = Math.hypot(wx, wy);
+        if (wlen > 1e-6) {
+          wx /= wlen;
+          wy /= wlen;
+          const cur = Math.atan2(p.dashDirY, p.dashDirX);
+          const want = Math.atan2(wy, wx);
+          const delta = angleDelta(cur, want);
+          const step = Math.max(-steerRate, Math.min(steerRate, delta));
+          const next = cur + step;
+          p.dashDirX = Math.cos(next);
+          p.dashDirY = Math.sin(next);
+        }
+      }
       campMoveEntity(this.isSolid, p, p.dashDirX * p.dashSpeed, p.dashDirY * p.dashSpeed);
       return;
     }
@@ -926,9 +971,112 @@ export class CampaignWorld {
     if (p.shieldCharges > 0) {
       p.shieldCharges--;
       this.events.push({ type: 'shieldBreak', chargesLeft: p.shieldCharges });
+      // Piastra Reattiva: il colpo assorbito paga la finestra che
+      // l'attaccante ha appena aperto su di sé. shieldBreak resta
+      // comunque — sono due cose diverse da dire, e la seconda esiste
+      // solo col nodo.
+      if (shieldRefundsShot(this.state.unlockedNodes)) {
+        p.weaponCooldown = 0;
+        this.events.push({ type: 'shieldReactive' });
+      }
       return;
     }
     this.killPlayer(cause);
+  }
+
+  /** Il Trasponditore: lancia un'esca che ruba il bersaglio ai nemici
+   *  entro il suo raggio (vedi enemyAi.ts e updateEnemies più sotto).
+   *
+   *  Chiamato prima di fireWeapon apposta: se le due pressioni arrivano
+   *  nello stesso tick il lancio vince, e il colpo cade da solo sul
+   *  cooldown che il lancio ha appena impostato. Due mani sole — non se
+   *  ne fanno due cose insieme. */
+  private throwBeacon(input: CampaignInput): void {
+    if (!input.beacon) return;
+    const p = this.state.player;
+    if (p.beaconCharges <= 0) return;
+    // Si ricarica ancora dall'ultimo colpo: niente lancio finché le
+    // mani non sono libere.
+    if (p.weaponCooldown > 0) return;
+
+    p.beaconCharges--;
+    // Lanciare costa anche il tempo di un colpo: è il vincolo su cui è
+    // tarata tutta la finestra (vedi BEACON_LIFETIME_MS in
+    // constants.ts).
+    p.weaponCooldown = weaponStatsFor(this.state.unlockedNodes).cooldownMs;
+
+    const wall = campCastRay(
+      this.getTile,
+      p.x,
+      p.y,
+      input.aimAngle,
+      BEACON_RANGE_TILES * TILE,
+      this.level.width,
+      this.level.height,
+    );
+    // Si tira indietro dal muro di BEACON_WALL_MARGIN, o finirebbe
+    // dentro la geometria; mai sotto zero, per un muro attaccato al
+    // giocatore stesso.
+    //
+    // Il margine vale *solo se un muro c'è davvero*. Senza il controllo
+    // su `wall.hit` si sottraeva anche in campo aperto — dove
+    // campCastRay riporta comunque `dist = maxDist` — e l'esca non
+    // arrivava mai alla portata dichiarata, ma sempre sei pixel prima.
+    // Non è un difetto che si vede giocando: è un difetto che si vede
+    // solo confrontando il codice con la costante che dice 6 tile.
+    const range = BEACON_RANGE_TILES * TILE;
+    const dist = wall.hit ? Math.max(0, Math.min(wall.dist - BEACON_WALL_MARGIN, range)) : range;
+    const x = p.x + Math.cos(input.aimAngle) * dist;
+    const y = p.y + Math.sin(input.aimAngle) * dist;
+
+    // Un'esca sola: due esche vorrebbero dire che il giocatore decide
+    // dove guardano due gruppi diversi nello stesso momento, e la
+    // finestra smetterebbe di essere una decisione per diventare una
+    // regia.
+    this.state.beacon = { active: true, x, y, ms: BEACON_LIFETIME_MS };
+    this.events.push({ type: 'beaconThrown', x, y });
+  }
+
+  /** Vita dell'esca piantata: scende ogni tick, e mentre è viva rivela
+   *  chi si occulta col nodo Eco. */
+  private updateBeacon(): void {
+    const b = this.state.beacon;
+    if (!b.active) return;
+
+    b.ms -= TICK_MS;
+    if (b.ms <= 0) {
+      this.state.beacon = { active: false, x: 0, y: 0, ms: 0 };
+      this.events.push({ type: 'beaconExpired' });
+      return;
+    }
+
+    // Eco. Senza il nodo il Trasponditore non fa *niente* all'Araldo —
+    // è un buco lasciato apposta (vedi skills.ts beaconRevealsCloaked):
+    // il nemico più tardo della campagna resta un problema aperto
+    // anche a chi ha comprato tutto il resto dell'albero.
+    if (!beaconRevealsCloaked(this.state.unlockedNodes)) return;
+    for (const e of this.state.enemies) {
+      if (!e.alive || !archetypeOf(e.kind).cloaks) continue;
+      if (Math.hypot(e.x - b.x, e.y - b.y) > BEACON_LURE_TILES * TILE) continue;
+      if (!campHasLOS(this.getTile, e.x, e.y, b.x, b.y, this.level.width, this.level.height)) {
+        continue;
+      }
+      e.revealMs = Math.max(e.revealMs, ENEMY_REVEAL_MS);
+    }
+  }
+
+  /** Raccoglibile del Trasponditore. Stessa forma di updateShieldPickups:
+   *  una carica in più, mai oltre il tetto. */
+  private updateBeaconPickups(): void {
+    const p = this.state.player;
+    for (const b of this.state.beaconPickups) {
+      if (b.collected) continue;
+      if (Math.hypot(p.x - b.x, p.y - b.y) <= SHIELD_PICKUP_RADIUS) {
+        b.collected = true;
+        p.beaconCharges = Math.min(BEACON_CHARGES_MAX, p.beaconCharges + 1);
+        this.events.push({ type: 'beaconPickup', charges: p.beaconCharges });
+      }
+    }
   }
 
   // ---- nemici --------------------------------------------------
@@ -1050,6 +1198,7 @@ export class CampaignWorld {
         playerX: p.x,
         playerY: p.y,
         playerTargetable: !this.invulnerable,
+        lure: this.state.beacon.active ? { x: this.state.beacon.x, y: this.state.beacon.y } : null,
         leash: this.leashFor(this.enemyDef(e.id).room),
         dtMs: TICK_MS,
       });
@@ -1057,6 +1206,13 @@ export class CampaignWorld {
       e.angle = intent.angle;
       e.still = intent.still;
       e.closing = intent.closing;
+      // Sul fronte di salita soltanto: un evento per ogni tick di
+      // richiamo sarebbe rumore, e quello che serve — al suono e alla
+      // HUD — è l'istante in cui il nemico si volta.
+      if (intent.lured && !e.lured) {
+        this.events.push({ type: 'enemyLured', id: e.id, kind: e.kind });
+      }
+      e.lured = intent.lured;
 
       if (intent.moveX !== 0 || intent.moveY !== 0) {
         const len = Math.hypot(intent.moveX, intent.moveY);
@@ -1075,7 +1231,11 @@ export class CampaignWorld {
         if (Math.hypot(p.x - e.x, p.y - e.y) <= a.radius + ENTITY_RADIUS) {
           e.chargeMs = 0;
           e.attackCooldown = a.cooldownMs;
-          if (!this.invulnerable) this.damagePlayer('enemy');
+          // Una carica partita mentre il nemico era già richiamato
+          // resta diretta verso l'esca (vedi enemyAi.ts): se travolge
+          // comunque il giocatore per coincidenza geometrica, non deve
+          // fargli male lo stesso.
+          if (!this.invulnerable && !e.lured) this.damagePlayer('enemy');
         }
         continue;
       }
@@ -1086,6 +1246,15 @@ export class CampaignWorld {
       e.ventMs = VENT_WINDOW_MS;
       e.revealMs = ENEMY_REVEAL_MS;
       if (this.invulnerable) continue;
+
+      // Il richiamo si prende il bersaglio ma non il colpo: un nemico
+      // attirato spara o carica verso l'esca, e quel punto non sente
+      // niente. È voluto che l'evento, ventMs e revealMs restino sopra
+      // comunque — un nemico richiamato apre la bocchetta di sfiato
+      // esattamente come uno che ha sparato al giocatore vero, e la
+      // vulnerabilità `sfiatato` resta sfruttabile. Senza contropartita
+      // il Trasponditore sarebbe uno scudo assoluto, non un'arma.
+      if (e.lured) continue;
 
       if (a.attack === 'contact') {
         if (Math.hypot(p.x - e.x, p.y - e.y) <= contactRange(a) + ENTITY_RADIUS) {
@@ -1591,6 +1760,15 @@ export class CampaignWorld {
   }
 
   private killPlayer(cause: 'turret' | 'boss' | 'enemy'): void {
+    // Un'esca rimasta per terra dopo un respawn sarebbe un fantasma: il
+    // giocatore è altrove, ma il richiamo (e l'evento) resterebbero
+    // agganciati a un punto che non racconta più niente. Le cariche
+    // restano intatte — è il lancio che si paga, non il tentativo.
+    if (this.state.beacon.active) {
+      this.state.beacon = { active: false, x: 0, y: 0, ms: 0 };
+      this.events.push({ type: 'beaconExpired' });
+    }
+
     if (this.state.difficulty === 'roguelike') {
       // "Morire fa ripartire l'intero atto" (GDD.md sezione 9): questo
       // mondo simula un livello solo (vedi il commento in cima al

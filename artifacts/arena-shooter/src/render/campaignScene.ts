@@ -9,6 +9,7 @@
 
 import { TILE } from '../sim/constants';
 import {
+  BEACON_LIFETIME_MS,
   BOSS_GRAZE_ARC_HALF,
   BOSS_REAR_ARC_HALF,
   COLLAPSE_HOLD_MS,
@@ -162,6 +163,113 @@ function drawShield(
   ctx.restore();
 
   drawDiamond(ctx, screenX, cy, size, '#44ccff', nowMs * 0.0018);
+}
+
+/** Tinta del Trasponditore: un magenta che non appartiene a nessun'altra
+ *  cosa disegnata in campagna (core teal, scudo blu, turret rosso,
+ *  finestre gialle) — l'esca è un segnale rubato, deve leggersi come
+ *  un'anomalia sul resto della palette, non come un'altra risorsa da
+ *  raccogliere. */
+const BEACON_COLOR = '#ff4fd8';
+const BEACON_COLOR_SOFT = '#ff9be8';
+
+/** L'esca piantata: un segnale, non un oggetto — per questo non prende
+ *  la forma del diamante che core e scudo condividono (drawCore,
+ *  drawShield). Un diamante direbbe "raccoglimi"; qui la lettura giusta
+ *  è "guarda qui", quindi due anelli a terra che pulsano più un'antenna
+ *  verticale, come un ping radar piantato nel pavimento.
+ *
+ *  Il battito è agganciato a `ms / BEACON_LIFETIME_MS`, non a un
+ *  contatore a parte: più la finestra si stringe più il segnale
+ *  lampeggia in fretta, ed è il modo di far sentire il tempo che scade
+ *  senza scrivere un numero in HUD. Nell'ultimo 18% della vita smette
+ *  di lampeggiare e si spegne invece — un'esca che sparisse di colpo al
+ *  cambio di tick sembrerebbe un bug, una che si affievolisce si legge
+ *  come una carica che finisce, cioè quello che è davvero. */
+function drawBeacon(
+  ctx: CanvasRenderingContext2D,
+  screenX: number,
+  floorY: number,
+  tileH: number,
+  ms: number,
+  nowMs: number,
+): void {
+  const t = Math.max(0, Math.min(1, ms / BEACON_LIFETIME_MS));
+  const freq = 0.006 + (1 - t) * 0.02;
+  const pulse = 0.5 + Math.sin(nowMs * freq) * 0.5;
+  const FADE_WINDOW = 0.18;
+  const fade = t < FADE_WINDOW ? t / FADE_WINDOW : 1;
+
+  const h = tileH * 0.85;
+  ctx.save();
+
+  // L'antenna: alla distanza in cui gli anelli a terra sono schiacciati
+  // dalla prospettiva a una riga sottile, la colonna verticale resta
+  // leggibile.
+  ctx.globalAlpha = (0.3 + pulse * 0.35) * fade;
+  ctx.fillStyle = BEACON_COLOR;
+  ctx.fillRect(
+    screenX - Math.max(1, tileH * 0.03),
+    floorY - h,
+    Math.max(2, tileH * 0.06),
+    h,
+  );
+
+  // Due anelli concentrici a terra, non uno: un anello solo pulsa,
+  // due che si susseguono danno l'idea di un'onda che si espande, ed è
+  // quell'idea — "sta trasmettendo adesso" — che deve arrivare prima di
+  // ogni altro dettaglio.
+  for (const ring of [0, 1] as const) {
+    const spread = (pulse + ring * 0.45) % 1;
+    ctx.globalAlpha = (0.55 - spread * 0.5) * fade;
+    ctx.strokeStyle = BEACON_COLOR_SOFT;
+    ctx.lineWidth = Math.max(1, tileH * 0.03);
+    ctx.beginPath();
+    ctx.ellipse(
+      screenX,
+      floorY - 1,
+      tileH * (0.16 + spread * 0.3),
+      tileH * (0.05 + spread * 0.1),
+      0,
+      0,
+      Math.PI * 2,
+    );
+    ctx.stroke();
+  }
+
+  // La punta: il punto più chiaro dell'antenna, dove l'occhio deve
+  // cadere per primo.
+  ctx.globalAlpha = (0.75 + pulse * 0.25) * fade;
+  ctx.fillStyle = '#fff0fb';
+  ctx.beginPath();
+  ctx.arc(screenX, floorY - h * 0.96, Math.max(1.5, tileH * 0.05), 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+/** Una carica di Trasponditore a terra, non ancora raccolta. Stessa
+ *  tinta dell'esca accesa — sono la stessa cosa, spenta — ma senza
+ *  battito né anelli: è un raccoglibile fermo, come core e scudo
+ *  (drawCore, drawShield), e deve leggersi con la stessa calma di
+ *  quelli. La sola differenza voluta è il colore, che dice "questo è
+ *  Trasponditore" prima ancora di avvicinarsi. */
+function drawBeaconPickup(
+  ctx: CanvasRenderingContext2D,
+  screenX: number,
+  cy: number,
+  size: number,
+  nowMs: number,
+): void {
+  ctx.save();
+  ctx.globalAlpha = 0.22 + Math.sin(nowMs * 0.004) * 0.08;
+  ctx.fillStyle = BEACON_COLOR;
+  ctx.beginPath();
+  ctx.arc(screenX, cy, size * 1.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  drawDiamond(ctx, screenX, cy, size, BEACON_COLOR_SOFT, nowMs * 0.0018);
 }
 
 function drawTurret(
@@ -391,6 +499,25 @@ function drawEnemy(
     ctx.lineWidth = Math.max(1, w * 0.05);
     ctx.setLineDash([Math.max(2, w * 0.14), Math.max(2, w * 0.1)]);
     ctx.strokeRect(screenX - w * 0.72, topY - h * 0.08, w * 1.44, h * 1.16);
+    ctx.restore();
+  }
+
+  // Il richiamo ha funzionato: il nemico sta già dando le spalle da
+  // solo, il disegno dice quasi tutto — questo è solo la conferma, non
+  // una spiegazione. Un piccolo segno sopra la testa, nella tinta del
+  // Trasponditore così è chiaro *perché* si è girato senza aggiungere
+  // una seconda cosa da leggere: gli overlay di telegrafo, punto debole
+  // e piastra vivono sul torso, quindi qui in alto non li copre mai.
+  if (e.lured) {
+    ctx.save();
+    ctx.globalAlpha = 0.7 * veil;
+    ctx.fillStyle = BEACON_COLOR;
+    ctx.beginPath();
+    ctx.moveTo(screenX, topY - h * 0.1);
+    ctx.lineTo(screenX - w * 0.14, topY - h * 0.02);
+    ctx.lineTo(screenX + w * 0.14, topY - h * 0.02);
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   }
 
@@ -865,6 +992,25 @@ export function renderCampaignScenery(
       const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + sh.x) * TILE * 0.08;
       const cy = heightToScreenY(vp, fx, perp, bobZ);
       return () => drawShield(ctx, screenX, cy, tileH * 0.36, nowMs);
+    });
+  }
+
+  for (const bp of state.beaconPickups) {
+    if (bp.collected) continue;
+    push(bp.x, bp.y, 1, (screenX, _y, tileH, perp) => {
+      const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + bp.x) * TILE * 0.08;
+      const cy = heightToScreenY(vp, fx, perp, bobZ);
+      return () => drawBeaconPickup(ctx, screenX, cy, tileH * 0.36, nowMs);
+    });
+  }
+
+  if (state.beacon.active) {
+    const beacon = state.beacon;
+    // A terra come l'uscita (drawExitMarker), non a mezz'aria come i
+    // raccoglibili: è piantata, non fluttua.
+    push(beacon.x, beacon.y, 0.5, (screenX, _y, tileH, perp) => {
+      const floorY = heightToScreenY(vp, fx, perp, 0);
+      return () => drawBeacon(ctx, screenX, floorY, tileH, beacon.ms, nowMs);
     });
   }
 

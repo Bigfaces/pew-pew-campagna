@@ -745,6 +745,7 @@
 .touch-joystick,
 .touch-ads,
 .touch-dash,
+.touch-beacon,
 .touch-fire {
   z-index: 1;
 }
@@ -934,7 +935,8 @@
 }
 
 /* ---- Campaign: touch dash button ---- */
-.touch-dash {
+.touch-dash,
+.touch-beacon {
   display: none;
 }
 
@@ -965,6 +967,38 @@
   /* In ricarica resta visibile ma chiaramente inerte: farlo sparire
      sposterebbe un bersaglio sotto il pollice a metà combattimento. */
   .touch-dash[data-ready='false'] {
+    opacity: 0.35;
+  }
+
+  /* Sopra SCATTO, stessa colonna: il pollice destro ha già imparato
+     dove sta quella fila, e SPARA occupa bottom 28..100 nella colonna
+     accanto. A zero cariche si spegne e basta — vale la stessa
+     ragione scritta sopra per lo scatto. */
+  .touch-beacon {
+    position: absolute;
+    right: 106px;
+    bottom: 100px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    /* Stesso magenta con cui la scena disegna l'esca (#ff4fd8): il
+       pulsante, l'indicatore della HUD e l'oggetto a terra sono la
+       stessa arma. */
+    background: rgba(255, 79, 216, 0.16);
+    border: 1px solid rgba(255, 79, 216, 0.55);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    pointer-events: auto;
+    touch-action: none;
+    user-select: none;
+  }
+
+  .touch-beacon[data-ready='false'] {
     opacity: 0.35;
   }
 }

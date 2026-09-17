@@ -831,3 +831,162 @@ tempo, uno nella Stanza B (Magazzino), uno garantito alla sconfitta della
 Sentinella. Ogni nodo costa 1 core: chi esplora un minimo sblocca l'intero
 ramo Precisione in questa slice. La scarsità reale (dover scegliere cosa
 sbloccare) arriva quando ci saranno più rami tra cui distribuire i core.
+
+---
+
+## 11. Il Trasponditore (arma secondaria)
+
+### Perché non è una seconda canna
+
+Il gioco ha avuto per tutta la sua vita **un'arma sola**: il fucile a
+otturatore, 1400 ms fra un colpo e l'altro. Non è una limitazione rimasta
+lì per pigrizia, è la costante su cui è tarato tutto il resto — i tempi di
+reazione dei nemici (650–950 ms) sono lunghi *perché* un colpo mancato
+costa un secondo e mezzo di silenzio, e i punti deboli moltiplicano ×3
+*perché* senza di loro un nemico da 4 HP sarebbe quattro colpi, cioè quasi
+sei secondi fermi a sparare.
+
+Aggiungere una seconda canna avrebbe voluto dire ritarare tutto questo. E
+avrebbe scavalcato il sistema costruito nella sezione 4: punto debole ×3,
+vulnerabilità ×2, colpo perfetto ×6. Un'arma che uccide compete col
+fucile; un'arma che **crea le condizioni** che quel sistema già premia lo
+moltiplica.
+
+### Cosa fa
+
+Si pianta un identificativo rubato — le macchine di ARBITER si riconoscono
+per segnale, ed è la finzione che il *registro* apre fin dal primo livello.
+Per 2600 ms quel punto del pavimento è più il giocatore del giocatore: chi
+lo vede si volta verso di esso, cioè **mostra la schiena**, che è dove il
+moltiplicatore del punto debole vive già.
+
+Non fa un solo punto di danno.
+
+| | |
+|---|---|
+| Tasto | `F` (da telefono, il pulsante ESCA) |
+| Tiro | hitscan lungo la mira, si pianta sul primo muro o a 6 tile |
+| Raggio del richiamo | 5 tile, **con linea di vista**: non si insegue un segnale che non si vede |
+| Durata | 2600 ms |
+| Cariche | 2 a inizio livello, tetto 3, altre se ne raccolgono per terra |
+| Costo | 1 carica **più il tempo di un colpo** |
+
+### L'aritmetica che lo tiene onesto
+
+Lanciare mette l'arma in ricarica come se si fosse sparato: **si hanno due
+mani sole**. Da lì discende tutto, e `balance:campaign` lo ricalcola invece
+di crederci sulla parola:
+
+```
+lancio a 0 ms  →  fucile pronto a 1400  →  secondo colpo a 2800
+```
+
+A 2600 ms il secondo colpo cade **fuori** dalla finestra. Un'esca vale
+esattamente un colpo — e sono l'aritmetica e non una regola scritta a parte
+a impedire che il Trasponditore sia un interruttore che spegne il
+Guardiano. Con Otturatore Rapido (1150 ms) i colpi diventano due, ed è
+voluto: è il ramo Precisione che si ripaga su un'arma che non è il fucile.
+
+Il conto, misurato:
+
+| nemico | di fronte | alla schiena | esche (base / Otturatore) |
+|---|---|---|---|
+| Guardiano | **mai** | 2 colpi | 2 / 1 |
+| Martello | 5 colpi | 2 colpi, **1 se carica** (×6) | 2 / 1 |
+| Vedetta | 2 colpi | 1 colpo | 1 / 1 |
+
+Il Guardiano è il caso che giustifica l'arma: immune di fronte, e con la
+sola arma base **un'esca non basta** a chiuderlo. Apre una possibilità,
+non spegne un nemico.
+
+### Cosa fa a ciascun archetipo — tutto emergente
+
+Nessuno di questi effetti è scritto da qualche parte: sono conseguenze del
+cambiare bersaglio a un'IA che esisteva già.
+
+- **Guardiano** — si volta. L'unico modo affidabile di aprirlo dove non
+  c'è una via per aggirarlo.
+- **Martello** — carica *l'esca*, e mentre avanza è `scoperto`: schiena ×3
+  per scoperto ×2 fa ×6, cioè un colpo solo.
+- **Crogiolo** — lo si tira via e lo si uccide dove la sua nube non
+  chiude la strada. L'esca come attrezzo di pulizia.
+- **Archivista** — le scorte escono dalla bolla dei 5 tile e tornano a
+  incassare danno pieno invece di 0.4×.
+- **Ripetitore** — smette di arretrare.
+- **Chiunque venga richiamato** apre comunque le bocchette quando "spara"
+  all'esca, quindi la vulnerabilità `sfiatato` diventa sfruttabile. È una
+  conseguenza, non una funzione: nessuno l'ha progettata.
+- **Araldo** — **niente**. Buco lasciato apposta: il nemico più tardo
+  della campagna resta un problema aperto anche a chi ha comprato tutto,
+  finché non prende il nodo Eco.
+
+Un nemico richiamato non fa male al giocatore — né a contatto, né con la
+carica, né a distanza. Sta sparando all'esca.
+
+## 12. Terzo anello dello skill tree (Atto III)
+
+L'albero aveva due anelli: il primo aperto dall'Atto I, il secondo
+dall'Atto II. **L'Atto III non apriva niente** — l'albero smetteva di
+crescere esattamente dove il gioco diventa più duro, e si riempiva tutto
+entro il secondo atto.
+
+- **Scatto Angolare** (Mobilità, dietro Scatto) — lo scatto si può
+  sterzare mentre è in corso, ~0.1 rad/tick, cioè circa sessanta gradi in
+  tutto. È abbastanza per girare attorno a un nemico e finirgli dietro —
+  che è il solo motivo per cui esiste — e non abbastanza per invertire la
+  rotta, il che renderebbe lo scatto una corsa sterzabile invece di uno
+  strappo da puntare prima. È l'unico nodo di movimento che si paga in
+  danno invece che in metri.
+- **Piastra Reattiva** (Sopravvivenza, dietro Piastra Aggiuntiva) — quando
+  lo scudo assorbe un colpo, il fucile torna pronto all'istante. Ribalta il
+  momento peggiore del gioco: incassare smetteva di essere solo una
+  perdita e paga la finestra che l'attaccante ha appena aperto su di sé.
+  È difesa scritta nell'unica valuta che questo gioco abbia, il tempo fra
+  due colpi.
+- **Eco** (Percezione, dietro Sensori Inerziali) — l'esca svela anche chi
+  si occulta. Sta in Percezione e non fra i nodi dell'arma perché quello
+  che fa è *vedere*.
+
+### Diciassette nodi, quattordici punti
+
+`LEVEL_XP_THRESHOLDS` **non** è stata alzata, ed è la decisione, non una
+dimenticanza. Finché i punti bastavano per ogni nodo, l'albero era una
+lista della spesa che si riempiva da sola entro l'Atto II — difetto già
+corretto una volta ritarando le soglie. Tre nodi che non si possono avere
+sono ciò che trasforma una lista in una build, e una seconda partita in una
+partita diversa.
+
+L'invariante è sorvegliata da un test: i punti devono coprire **esattamente**
+i primi due anelli, e i tre id del terzo devono esistere davvero. Se un
+giorno qualcuno alzasse la tabella per "finire l'albero", è quella riga a
+fermarlo.
+
+---
+
+## 13. Sviluppi futuri (da valutare, non pianificati)
+
+Idee raccolte ma **non** progettate né messe in roadmap. Stanno qui perché
+un'idea dimenticata costa più di una riga di documento, non perché siano
+state approvate.
+
+### Un negozio
+
+Una spesa che non sia l'albero. L'albero è progressione permanente e
+irreversibile per scelta (vedi sezione 6); un negozio sarebbe l'altra metà —
+consumabili, cariche di Trasponditore, scudi — comprati con una valuta che
+si perde alla morte. La domanda aperta non è come farlo, è **con quale
+valuta**: l'XP paga già i nodi, e una moneta che paga due cose diverse
+finisce per rendere obbligatoria la più forte delle due.
+
+### Ricompense dai boss, per le modalità avanzate
+
+Abbattere un boss oggi paga XP e basta, uguale in tutte e tre le modalità.
+In Medio e soprattutto in Roguelike — dove la morte costa l'atto intero —
+un boss potrebbe lasciare qualcosa che vale il rischio: una carica in più
+di scudo per l'atto successivo, un nodo prestato fino alla fine del run,
+una scorta di Trasponditore.
+
+La cautela da tenere presente: una ricompensa che rende *più facile* il
+seguito toglie proprio la tensione che la Roguelike esiste per creare. Se
+si fa, probabilmente va nella direzione opposta — una ricompensa che apre
+una **possibilità** invece di alzare una statistica.

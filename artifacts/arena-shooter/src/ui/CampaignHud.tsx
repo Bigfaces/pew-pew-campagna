@@ -170,6 +170,56 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
             SCUDO{snap.shieldCharges > 1 ? ` ×${snap.shieldCharges}` : ''}
           </div>
         )}
+        {/* A differenza di scudo e scatto, il Trasponditore è innato:
+            l'indicatore resta anche a zero cariche, perché "non te ne
+            restano" è un'informazione che serve — sapere di dover
+            raccoglierne una per terra prima di poter piazzare l'esca —
+            non qualcosa da nascondere come se l'arma non esistesse. */}
+        {/* Il magenta non è una scelta estetica: è la tinta con cui la
+            scena disegna l'esca (BEACON_COLOR in render/campaignScene),
+            e l'indicatore e l'oggetto devono essere la stessa cosa. La
+            prima versione di questa riga era ambra, che nella scena
+            confina con due colori già in uso — e due tinte diverse per
+            la stessa arma si vedono benissimo su uno schermo mentre nel
+            codice non si notano. */}
+        <div
+          className="hud-clock"
+          style={
+            snap.beaconCharges > 0
+              ? { color: '#ff4fd8', borderColor: '#ff4fd8' }
+              : { color: 'var(--dim)' }
+          }
+        >
+          TRASPONDITORE {snap.beaconCharges > 0 ? `×${snap.beaconCharges}` : '—'}
+        </div>
+        {/* Finché l'esca è viva restano al massimo 2600ms in tutto — il
+            tempo di un solo colpo — quindi la finestra si legge come una
+            barra che si svuota e non come un numero da inseguire: niente
+            cifre, solo un "quanto resta" leggibile con la coda
+            dell'occhio. Il pulse è lo stesso keyframe di .hud-hint /
+            .hud-clock[data-urgent] già in ui.css, richiamato per nome
+            invece che duplicato — qui però segnala un'occasione da
+            sfruttare, non un pericolo, perciò niente rosso. Quando
+            beaconWindow torna null la riga scompare di netto: la
+            finestra chiusa non merita una dissolvenza che la faccia
+            sembrare ancora un poco aperta. */}
+        {snap.beaconWindow !== null && (
+          <div
+            className="hud-clock"
+            style={{
+              color: '#ff4fd8',
+              borderColor: '#ff4fd8',
+              animation: 'pulse 1s ease-in-out infinite',
+            }}
+          >
+            <span style={{ display: 'block', fontSize: 10, letterSpacing: '0.1em' }}>
+              ESCA ATTIVA
+            </span>
+            <span className="power-bar" style={{ display: 'block', width: 64, marginTop: 4 }}>
+              <i style={{ width: `${snap.beaconWindow * 100}%`, background: '#ff4fd8' }} />
+            </span>
+          </div>
+        )}
         {/* Solo col nodo Scatto sbloccato: un indicatore per una
             meccanica che non possiedi è rumore. */}
         {snap.dashReady !== null && (

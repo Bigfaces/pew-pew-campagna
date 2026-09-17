@@ -24,6 +24,10 @@ import { describe, expect, it } from 'vitest';
 import { ALL_ENEMY_KINDS } from '../sim/campaign/enemies';
 import {
   ACT_RESTART,
+  BEACON_EXPIRED,
+  BEACON_PICKUP,
+  BEACON_PULSE,
+  BEACON_THROWN,
   BLACKOUT,
   BOSS_PHASE_CHANGE_BY_STAGE,
   BOSS_VULNERABLE_OPEN,
@@ -32,6 +36,7 @@ import {
   ENEMY_DOWN,
   ENEMY_HIT_BODY,
   ENEMY_HIT_WEAK_SPOT,
+  ENEMY_LURED,
   ENEMY_RANGED_SHOT_BY_TIER,
   ENEMY_REVEALED,
   GAS_HAZARD,
@@ -40,6 +45,7 @@ import {
   LEVEL_COMPLETE,
   PLATE_ABSORBED,
   PLAYER_DASH,
+  SHIELD_REACTIVE,
   peakFrequency,
   tierOf,
   totalDuration,
@@ -373,5 +379,325 @@ describe('CampaignVoice — fine livello e riavvio dell\'atto', () => {
 
   it('il completamento del livello e il riavvio dell\'atto sono spec diversi', () => {
     expect(layersAreDistinct(LEVEL_COMPLETE, ACT_RESTART)).toBe(true);
+  });
+});
+
+// ---- 4. Trasponditore, Piastra Reattiva, nemico richiamato --------------
+//
+// Stessa disciplina delle famiglie sopra: prima che il modulo regga
+// senza AudioContext anche per le voci nuove, poi che ci sia un
+// metodo per ciascun evento nuovo, poi che i suoni si sentano diversi
+// — qui verificato con l'idea specifica di ciascuno invece che con la
+// batteria generale di distinguibilità, che arriva subito dopo.
+
+describe('CampaignVoice — voci nuove, senza AudioContext', () => {
+  it('sono silenziosamente innocue senza contesto', () => {
+    const voice = new CampaignVoice();
+    voice.init();
+    expect(() => {
+      voice.beaconThrown(10, 20);
+      voice.beaconThrown(); // senza posizione: deve reggere anche questa forma
+      voice.beaconPulse(10, 20);
+      voice.beaconExpired();
+      voice.beaconPickup();
+      voice.enemyLured(10, 20);
+      voice.shieldReactive(10, 20);
+      voice.shieldReactive();
+    }).not.toThrow();
+  });
+});
+
+describe('CampaignVoice — copertura degli eventi nuovi', () => {
+  it('espone un metodo per ciascun evento nuovo', () => {
+    const voice = new CampaignVoice();
+    const required = [
+      'beaconThrown',
+      'beaconPulse',
+      'beaconExpired',
+      'beaconPickup',
+      'enemyLured',
+      'shieldReactive',
+    ] as const;
+    for (const name of required) {
+      expect(typeof voice[name], `manca ${name}`).toBe('function');
+    }
+  });
+});
+
+describe('CampaignVoice — Trasponditore', () => {
+  it('il lancio e la carica raccolta sono imparentati (stessa onda) ma non identici', () => {
+    // "Parente ma chiaramente un guadagno" del compito: stesso timbro
+    // di base (triangolo + rumore), rampa e registro diversi.
+    expect(layersAreDistinct(BEACON_THROWN, BEACON_PICKUP)).toBe(true);
+    const thrownTone = BEACON_THROWN.layers.find((l) => l.kind === 'tone');
+    const pickupTone = BEACON_PICKUP.layers.find((l) => l.kind === 'tone');
+    expect(thrownTone?.kind === 'tone' && thrownTone.wave).toBe('triangle');
+    expect(pickupTone?.kind === 'tone' && pickupTone.wave).toBe('triangle');
+  });
+
+  it('il lancio scende (parte dalla mano), la raccolta sale (è un guadagno)', () => {
+    const thrownTone = BEACON_THROWN.layers.find((l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone');
+    const pickupTone = BEACON_PICKUP.layers.find((l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone');
+    expect(thrownTone!.freqTo).toBeLessThan(thrownTone!.freqFrom);
+    expect(pickupTone!.freqTo).toBeGreaterThan(pickupTone!.freqFrom);
+  });
+
+  it('il battito è il suono più corto del modulo: deve poter ripetere senza affaticare', () => {
+    // Confrontato con ogni altra spec del file, incluse le nuove: se
+    // un giorno se ne aggiungesse una ancora più corta del battito
+    // varrebbe la pena chiedersi se è davvero pensata per ripetere.
+    for (const spec of ALL_SPECS) {
+      if (spec === BEACON_PULSE) continue;
+      expect(totalDuration(BEACON_PULSE)).toBeLessThanOrEqual(totalDuration(spec));
+    }
+  });
+
+  it('l\'esaurimento non è uno "scivola verso il basso" come ENEMY_DOWN: si ferma, non cala di colpo', () => {
+    // ENEMY_DOWN e BLACKOUT usano entrambi una scivolata di rumore
+    // (sweepTo) per dire "impatto"/"si spegne qualcosa che c'era".
+    // BEACON_EXPIRED deve poter condividere l'idea di "scende" nel
+    // tono senza leggere come un impatto: qui si verifica solo che
+    // non sia una copia di ENEMY_DOWN.
+    expect(layersAreDistinct(BEACON_EXPIRED, ENEMY_DOWN)).toBe(true);
+  });
+
+  it('l\'esaurimento non riusa BEACON_THROWN travestito da altro evento', () => {
+    expect(layersAreDistinct(BEACON_EXPIRED, BEACON_THROWN)).toBe(true);
+  });
+});
+
+describe('CampaignVoice — nemico richiamato dall\'esca', () => {
+  it('è il suono più corto fra gli eventi di combattimento: deve tagliare in una sparatoria', () => {
+    expect(totalDuration(ENEMY_LURED)).toBeLessThan(totalDuration(ENEMY_HIT_BODY));
+    expect(totalDuration(ENEMY_LURED)).toBeLessThan(totalDuration(ENEMY_REVEALED));
+  });
+
+  it('è un accordo di toni puliti (square), non un rumore a banda come ENEMY_REVEALED', () => {
+    const hasNoise = ENEMY_LURED.layers.some((l) => l.kind === 'noise');
+    expect(hasNoise).toBe(false);
+    expect(layersAreDistinct(ENEMY_LURED, ENEMY_REVEALED)).toBe(true);
+  });
+});
+
+describe('CampaignVoice — Piastra Reattiva', () => {
+  it('non è una copia di PLATE_ABSORBED: suona molto più in alto', () => {
+    expect(layersAreDistinct(SHIELD_REACTIVE, PLATE_ABSORBED)).toBe(true);
+    // La garanzia di PLATE_ABSORBED è di restare sotto i 350 Hz (vedi
+    // il suo commento): la piastra reattiva deve stare nettamente
+    // sopra quella soglia, altrimenti le due si confonderebbero
+    // proprio nel momento in cui suonano insieme.
+    expect(peakFrequency(SHIELD_REACTIVE)).toBeGreaterThan(peakFrequency(PLATE_ABSORBED) * 5);
+  });
+
+  it('ha un ritardo di fase incorporato: è la seconda metà del gesto, non il suo inizio', () => {
+    // Ogni strato parte dopo lo start del suono, cosicché — anche se
+    // il chiamante suona plateAbsorbed() e shieldReactive() nello
+    // stesso istante — lo scatto arrivi un attimo dopo il tonfo.
+    for (const layer of SHIELD_REACTIVE.layers) {
+      expect(layer.delay).toBeGreaterThan(0);
+    }
+  });
+
+  it('non è uno sparo del fucile del giocatore travestito (niente onda quadra 220→60 Hz)', () => {
+    const clash = SHIELD_REACTIVE.layers.some(
+      (l) => l.kind === 'tone' && l.wave === 'square' && l.freqFrom === 220 && l.freqTo === 60,
+    );
+    expect(clash).toBe(false);
+  });
+});
+
+// ---- 5. Distinguibilità globale: ogni coppia di spec esportate ----------
+//
+// I test sopra e quelli storici verificano coppie scelte a mano — le
+// stesse che chi ha scritto ogni suono aveva in mente. Non bastano:
+// un suono nuovo può assomigliare per caso a uno vecchio che nessuno
+// ha pensato di confrontarci. Qui si mettono in tabella tutte e 25 le
+// spec esportate — le 19 storiche più le 6 di questo compito — e si
+// misura la terna (peakFrequency, totalGain, totalDuration) di ogni
+// coppia possibile.
+//
+// ---- La soglia, e perché è quella e non un'altra -----------------------
+//
+// Due suoni sono "troppo vicini" solo se lo sono su TUTTE E TRE le
+// metriche insieme (vedi il compito): vicini su una sola non basta,
+// perché due suoni legittimamente diversi condividono spesso un asse
+// (due impatti della stessa durata, due toni allo stesso volume). Le
+// soglie sono:
+//
+//   • peakFrequency: differenza relativa < 5% (rispetto al più alto
+//     dei due) — un quinto della più piccola separazione "voluta" già
+//     presente nel modulo (il punto debole deve superare il corpo di
+//     almeno il 50%, vedi il test sopra), quindi abbastanza stretta
+//     da non prendere per vicini due timbri che l'autore ha
+//     deliberatamente distanziato anche di poco.
+//   • totalGain: differenza assoluta < 0.03 — sotto la più piccola
+//     differenza di guadagno che il file usa apposta per distinguere
+//     due fasce (0.06 fra `ENEMY_RANGED_SHOT_BY_TIER[1]` e la coda
+//     rumore della fascia 2, per dire): se due suoni sono più vicini
+//     di quello, nessuno li ha separati apposta.
+//   • totalDuration: differenza assoluta < 0.02s — un quarto del
+//     "attacco" minimo di un inviluppo in questo motore (`0.004`–
+//     `0.005` di rampa, vedi `tone`/`noise` in coda al file): sotto
+//     questa soglia la differenza di durata non è più percepibile
+//     come tale, è rumore di misura.
+//
+// Sotto tutte e tre insieme, due spec diverse sono un difetto: un
+// suono nuovo che il giocatore non può distinguere da uno vecchio
+// senza guardare lo schermo.
+//
+// ---- L'eccezione dichiarata: GRAVITY_FLIP_INVERTED / RESTORED -----------
+//
+// Le due hanno la stessa terna esatta (0 di distanza su tutti e tre
+// gli assi): sono lo stesso incrocio di due rampe con i livelli
+// scambiati (vedi il commento sulle due spec in campaignVoice.ts).
+// L'orecchio le distingue benissimo — la prima sale-poi-scende, la
+// seconda scende-poi-sale, ed è un ribaltamento quindi la direzione
+// stessa è l'informazione — ma `peakFrequency`/`totalGain`/
+// `totalDuration` sono cieche alla direzione di una rampa per
+// costruzione: guardano solo gli estremi tondi, mai l'ordine in cui
+// li si attraversa. Non è il difetto che questo test cerca, è il
+// limite dichiarato della metrica; per questo la coppia è esentata
+// per nome invece di essere silenziata alzando la soglia (che
+// nasconderebbe anche difetti veri).
+const EXEMPT_PAIRS = new Set<string>(['gravità invertita↔gravità ripristinata']);
+
+const ALL_SPECS: readonly VoiceSpec[] = [
+  ENEMY_RANGED_SHOT_BY_TIER[1],
+  ENEMY_RANGED_SHOT_BY_TIER[2],
+  ENEMY_RANGED_SHOT_BY_TIER[3],
+  ENEMY_HIT_BODY,
+  ENEMY_HIT_WEAK_SPOT,
+  PLATE_ABSORBED,
+  ENEMY_DOWN,
+  ENEMY_REVEALED,
+  PLAYER_DASH,
+  BOSS_PHASE_CHANGE_BY_STAGE[2],
+  BOSS_PHASE_CHANGE_BY_STAGE[3],
+  BOSS_VULNERABLE_OPEN,
+  DOOR_SEAL,
+  GAS_HAZARD,
+  GRAVITY_FLIP_INVERTED,
+  GRAVITY_FLIP_RESTORED,
+  BLACKOUT,
+  LEVEL_COMPLETE,
+  ACT_RESTART,
+  BEACON_THROWN,
+  BEACON_PULSE,
+  BEACON_EXPIRED,
+  BEACON_PICKUP,
+  ENEMY_LURED,
+  SHIELD_REACTIVE,
+];
+
+const FREQ_REL_THRESHOLD = 0.05;
+const GAIN_ABS_THRESHOLD = 0.03;
+const DURATION_ABS_THRESHOLD = 0.02;
+
+function tooClose(a: VoiceSpec, b: VoiceSpec): boolean {
+  const pa = peakFrequency(a);
+  const pb = peakFrequency(b);
+  const freqClose = Math.abs(pa - pb) / Math.max(pa, pb, 1) < FREQ_REL_THRESHOLD;
+  const gainClose = Math.abs(totalGain(a) - totalGain(b)) < GAIN_ABS_THRESHOLD;
+  const durationClose = Math.abs(totalDuration(a) - totalDuration(b)) < DURATION_ABS_THRESHOLD;
+  return freqClose && gainClose && durationClose;
+}
+
+describe('CampaignVoice — distinguibilità globale (tutte le spec esportate)', () => {
+  it('nessuna coppia di spec diverse è vicina su frequenza, guadagno e durata insieme', () => {
+    const offenders: string[] = [];
+    for (let i = 0; i < ALL_SPECS.length; i++) {
+      for (let j = i + 1; j < ALL_SPECS.length; j++) {
+        const a = ALL_SPECS[i];
+        const b = ALL_SPECS[j];
+        if (a === b) continue; // GRAVITY_FLIP_* per tier condivisi, se mai capitasse
+        const pairKey = `${a.label}↔${b.label}`;
+        if (tooClose(a, b) && !EXEMPT_PAIRS.has(pairKey)) {
+          offenders.push(
+            `${pairKey}: peak=${peakFrequency(a).toFixed(0)}/${peakFrequency(b).toFixed(0)}Hz ` +
+              `gain=${totalGain(a).toFixed(2)}/${totalGain(b).toFixed(2)} ` +
+              `dur=${totalDuration(a).toFixed(3)}/${totalDuration(b).toFixed(3)}s`,
+          );
+        }
+      }
+    }
+    expect(offenders, offenders.join('\n')).toEqual([]);
+  });
+
+  /** La stessa domanda, con un metro diverso — e il motivo per cui ne
+   *  serve un secondo.
+   *
+   *  `peakFrequency` prende la frequenza **più alta** fra gli strati,
+   *  non la più **forte**. Un click di rumore acuto a guadagno 0.08
+   *  sopra un tono a 0.18 fa leggere il suono come acuto anche se
+   *  all'orecchio è grave: è successo davvero con BEACON_PULSE, che il
+   *  picco dà a 1800 Hz mentre quello che si sente è un seno a 700.
+   *
+   *  Una metrica cieca al guadagno può quindi sbagliare in entrambi i
+   *  versi: segnalare una collisione che non c'è (il caso qui sopra), e
+   *  — più pericoloso — **mancarne una vera**, se due suoni molto
+   *  simili si distinguono solo per uno strato che nessuno dei due fa
+   *  davvero sentire. Questo secondo test guarda la frequenza dominante
+   *  pesata per il guadagno, e usa soglie più larghe di proposito: se
+   *  due suoni sono vicini anche con questo metro, sono vicini davvero.
+   *
+   *  Che il suono più importante da separare passi entrambi i metri non
+   *  è ovvio, ed è la ragione per cui questo test esiste invece di un
+   *  commento che dice che va bene. */
+  it('nessuna coppia è vicina nemmeno pesando la frequenza per il guadagno', () => {
+    const dominant = (spec: VoiceSpec): number => {
+      let num = 0;
+      let den = 0;
+      for (const l of spec.layers as readonly Record<string, number | string>[]) {
+        const f =
+          l.kind === 'tone'
+            ? ((l.freqFrom as number) + ((l.freqTo as number) ?? (l.freqFrom as number))) / 2
+            : ((l.freq as number) ?? 0);
+        const g = (l.gain as number) ?? 0;
+        if (f > 0) {
+          num += f * g;
+          den += g;
+        }
+      }
+      return den ? num / den : 0;
+    };
+    const offenders: string[] = [];
+    for (let i = 0; i < ALL_SPECS.length; i++) {
+      for (let j = i + 1; j < ALL_SPECS.length; j++) {
+        const a = ALL_SPECS[i]!;
+        const b = ALL_SPECS[j]!;
+        const da = dominant(a);
+        const db = dominant(b);
+        const close =
+          Math.abs(da - db) / Math.max(da, db, 1) < 0.08 &&
+          Math.abs(totalGain(a) - totalGain(b)) < 0.06 &&
+          Math.abs(totalDuration(a) - totalDuration(b)) < 0.03;
+        if (close && !EXEMPT_PAIRS.has(`${a.label}↔${b.label}`)) {
+          offenders.push(
+            `${a.label}↔${b.label}: dominante=${da.toFixed(0)}/${db.toFixed(0)}Hz`,
+          );
+        }
+      }
+    }
+    expect(offenders, offenders.join('\n')).toEqual([]);
+  });
+
+  /** I due suoni che, per progetto, escono **insieme**: la piastra che
+   *  si rompe e il colpo che torna pronto. Una misura a coppie non può
+   *  accorgersi che due suoni coesistono — lo sa solo chi ha scritto il
+   *  nodo — quindi la separazione va chiesta qui, esplicitamente, e
+   *  molto più larga della soglia generale. */
+  it('la piastra rotta e la piastra reattiva stanno in due registri diversi', () => {
+    const lo = peakFrequency(PLATE_ABSORBED);
+    const hi = peakFrequency(SHIELD_REACTIVE);
+    expect(hi / lo).toBeGreaterThan(4);
+  });
+
+  it('la coppia esentata esiste davvero ed è quella attesa (altrimenti l\'eccezione è morta)', () => {
+    // Se questo fallisse, EXEMPT_PAIRS conterrebbe una chiave che non
+    // corrisponde più a nulla — per esempio perché un'etichetta è
+    // cambiata — e il test sopra tornerebbe silenziosamente più
+    // severo di quanto dichiarato.
+    expect(tooClose(GRAVITY_FLIP_INVERTED, GRAVITY_FLIP_RESTORED)).toBe(true);
+    expect(EXEMPT_PAIRS.has(`${GRAVITY_FLIP_INVERTED.label}↔${GRAVITY_FLIP_RESTORED.label}`)).toBe(true);
   });
 });

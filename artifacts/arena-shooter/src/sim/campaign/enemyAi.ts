@@ -35,6 +35,7 @@
 
 import { TILE } from '../constants';
 import { angleDelta } from '../raycast';
+import { BEACON_LURE_TILES } from './constants';
 import { archetypeOf, type EnemyArchetype } from './enemies';
 import { campCastRay, campHasLOS, type GetTileFn } from './raycast';
 import type { EnemyState } from './types';
@@ -92,6 +93,12 @@ export interface EnemyAiCtx {
    *  checkpoint: sparargli addosso in quella finestra sarebbe un
    *  colpo che non può fare danno, cioè rumore. */
   playerTargetable: boolean;
+  /** L'esca del Trasponditore, se ce n'è una viva. Un nemico che la
+   *  vede e la può raggiungere le ruba il bersaglio al giocatore —
+   *  anche a `playerTargetable` false: l'esca non è "il giocatore
+   *  travestito", è un bersaglio suo, indipendente dall'invulnerabilità
+   *  da respawn. */
+  lure: { x: number; y: number } | null;
   leash: Leash | null;
   dtMs: number;
 }
@@ -114,6 +121,10 @@ export interface EnemyIntent {
   /** Sta accorciando le distanze o caricando: vulnerabilità
    *  `scoperto`. */
   closing: boolean;
+  /** Sta inseguendo l'esca invece del giocatore. Il mondo la legge per
+   *  non far arrivare addosso al giocatore vero un colpo diretto
+   *  altrove — vedi CampaignWorld.updateEnemies. */
+  lured: boolean;
 }
 
 function idleIntent(e: EnemyState): EnemyIntent {
@@ -125,6 +136,7 @@ function idleIntent(e: EnemyState): EnemyIntent {
     attack: false,
     still: true,
     closing: false,
+    lured: false,
   };
 }
 
@@ -169,18 +181,30 @@ function clampToLeash(leash: Leash | null, x: number, y: number): { x: number; y
   };
 }
 
-/** Vede il giocatore? Linea libera *e* dentro il cono, come i bot
- *  dell'Arena. La distanza limite è la portata più un margine. */
-function canSeePlayer(ctx: EnemyAiCtx, e: EnemyState, a: EnemyArchetype): boolean {
+/** Vede il bersaglio (giocatore o esca)? Linea libera *e* dentro il
+ *  cono, come i bot dell'Arena. La distanza limite è la portata più un
+ *  margine.
+ *
+ *  Usata solo per il giocatore: il richiamo dell'esca ha già la sua
+ *  condizione di visibilità (distanza + LOS, senza cono né margine —
+ *  vedi updateEnemyAi), e la sostituisce del tutto invece di sommarsi
+ *  a questa. */
+function canSeeTarget(
+  ctx: EnemyAiCtx,
+  e: EnemyState,
+  a: EnemyArchetype,
+  targetX: number,
+  targetY: number,
+): boolean {
   if (!ctx.playerTargetable) return false;
-  const dx = ctx.playerX - e.x;
-  const dy = ctx.playerY - e.y;
+  const dx = targetX - e.x;
+  const dy = targetY - e.y;
   const dist = Math.hypot(dx, dy);
   const visionTiles =
     (a.attack === 'none' ? 9 : Math.max(a.rangeTiles, 4)) + ENEMY_VISION_MARGIN_TILES;
   if (dist > visionTiles * TILE) return false;
   if (Math.abs(angleDelta(e.angle, Math.atan2(dy, dx))) > ENEMY_HALF_FOV) return false;
-  return campHasLOS(ctx.getTile, e.x, e.y, ctx.playerX, ctx.playerY, ctx.mapW, ctx.mapH);
+  return campHasLOS(ctx.getTile, e.x, e.y, targetX, targetY, ctx.mapW, ctx.mapH);
 }
 
 /** Un tick di intenzione per un nemico.
@@ -201,7 +225,8 @@ export function updateEnemyAi(e: EnemyState, ctx: EnemyAiCtx): EnemyIntent {
   // ---- La carica del Martello vince su tutto -------------------
   // Una volta partita non si corregge: è quello che la rende
   // schivabile. Una carica che insegue sarebbe solo un nemico
-  // veloce.
+  // veloce. `lured` non si ricalcola nemmeno lui: dice verso cosa la
+  // carica è partita, non verso cosa punterebbe adesso.
   if (e.chargeMs > 0) {
     e.chargeMs = Math.max(0, e.chargeMs - dt);
     if (e.chargeMs === 0) e.attackCooldown = a.cooldownMs;
@@ -213,14 +238,38 @@ export function updateEnemyAi(e: EnemyState, ctx: EnemyAiCtx): EnemyIntent {
       attack: false,
       still: false,
       closing: true,
+      lured: e.lured,
     };
   }
 
-  const dx = ctx.playerX - e.x;
-  const dy = ctx.playerY - e.y;
+  // ---- Il bersaglio: l'esca o il giocatore -----------------------
+  // Il richiamo vince anche su un nemico già ingaggiato — è tutto il
+  // punto dell'arma — quindi la scelta non guarda affatto `e.ai`. E
+  // vince pure su `playerTargetable`: l'esca è un bersaglio suo, non
+  // "il giocatore travestito". Nessun cono né margine di visione qui,
+  // solo distanza e LOS: un nemico si volta verso l'esca anche se la
+  // aveva alle spalle un istante prima, perché voltarsi *è* l'effetto.
+  let targetX = ctx.playerX;
+  let targetY = ctx.playerY;
+  let lured = false;
+  if (
+    ctx.lure &&
+    Math.hypot(ctx.lure.x - e.x, ctx.lure.y - e.y) <= BEACON_LURE_TILES * TILE &&
+    campHasLOS(ctx.getTile, e.x, e.y, ctx.lure.x, ctx.lure.y, ctx.mapW, ctx.mapH)
+  ) {
+    targetX = ctx.lure.x;
+    targetY = ctx.lure.y;
+    lured = true;
+  }
+
+  const dx = targetX - e.x;
+  const dy = targetY - e.y;
   const dist = Math.hypot(dx, dy);
   const bearing = Math.atan2(dy, dx);
-  const sees = canSeePlayer(ctx, e, a);
+  // Lured bypassa canSeeTarget: la sua condizione di visibilità è già
+  // verificata sopra, e non deve passare anche dal cono o da
+  // playerTargetable.
+  const sees = lured || canSeeTarget(ctx, e, a, targetX, targetY);
 
   if (sees) {
     // Riacquisire lo stesso bersaglio non fa ripartire la reazione.
@@ -232,8 +281,8 @@ export function updateEnemyAi(e: EnemyState, ctx: EnemyAiCtx): EnemyIntent {
       e.ai = 'engage';
       e.reactionTimer = a.reactionMs;
     }
-    e.lastSeenX = ctx.playerX;
-    e.lastSeenY = ctx.playerY;
+    e.lastSeenX = targetX;
+    e.lastSeenY = targetY;
   } else if (e.ai === 'engage') {
     e.ai = 'search';
     e.reactionTimer = a.reactionMs;
@@ -415,5 +464,6 @@ export function updateEnemyAi(e: EnemyState, ctx: EnemyAiCtx): EnemyIntent {
     attack,
     still: plant || (moveX === 0 && moveY === 0),
     closing,
+    lured,
   };
 }

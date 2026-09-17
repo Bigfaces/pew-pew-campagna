@@ -328,6 +328,7 @@ export default function App(): React.ReactElement {
             game={campaignRef.current}
             adsActive={campaignSnap.adsActive}
             dashReady={campaignSnap.dashReady}
+            beaconCharges={campaignSnap.beaconCharges}
           />
         </>
       )}

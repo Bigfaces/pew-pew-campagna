@@ -299,7 +299,10 @@ export const LEVEL_CONDOTTI: LevelDef = {
     { id: 'condotti/nube', tx: 17, ty: 6 },
   ],
   shields: [{ id: 'condotti/camera', tx: 16, ty: 10 }],
-  beacons: [],
+  // Una carica nelle Paratie, fuori dal corridoio principale. Qui non
+  // serve a niente: è il livello in cui si impara che le cariche si
+  // raccolgono, e lo si impara dove sbagliare non costa.
+  beacons: [{ id: 'condotti/paratie', tx: 2, ty: 10 }],
   boss: null,
   exit: { tx: 22, ty: 6, radius: EXIT_RADIUS },
   next: 'molo',
@@ -700,7 +703,12 @@ export const LEVEL_REFRIGERANTE: LevelDef = {
     { id: 'refrigerante/fredda', tx: 18, ty: 6 },
   ],
   shields: [{ id: 'refrigerante/fredda', tx: 16, ty: 10 }],
-  beacons: [],
+  // Il Guardiano di questo livello sta nell'Ingresso, ed è immune di
+  // fronte: si risolve solo mostrandogli la schiena. La carica sta
+  // nella stessa stanza ma dall'altra parte, in basso — cioè il
+  // giocatore la vede *mentre* ha il problema davanti, che è l'unico
+  // momento in cui l'attrezzo insegna qualcosa.
+  beacons: [{ id: 'refrigerante/ingresso', tx: 2, ty: 10 }],
   boss: null,
   exit: { tx: 22, ty: 6, radius: EXIT_RADIUS },
   next: 'nucleo',
@@ -823,7 +831,10 @@ export const LEVEL_NUCLEO: LevelDef = {
   gravityZones: [],
   cores: [{ id: 'nucleo/arena', tx: 24, ty: 2 }],
   shields: [{ id: 'nucleo/soglia', tx: 16, ty: 12 }],
-  beacons: [],
+  // In fondo al cunicolo nord della Galleria, che non è di strada.
+  // Prima del Nucleo, dove il Ripetitore tiene le distanze: l'esca è
+  // il modo di farlo smettere di arretrare.
+  beacons: [{ id: 'nucleo/galleria', tx: 12, ty: 1 }],
   boss: { id: 'custode', kind: 'custode', tx: 20, ty: 7, room: 'nucleo' },
   exit: null,
   next: 'plancia',
@@ -1179,7 +1190,11 @@ export const LEVEL_NIDO: LevelDef = {
   gravityZones: [],
   cores: [{ id: 'nido/arena', tx: 22, ty: 3 }],
   shields: [{ id: 'nido/soglia', tx: 9, ty: 14 }],
-  beacons: [],
+  // L'ultima, e la più importante: nell'Ingresso, un passo prima del
+  // Nido, dove aspettano insieme un Martello che carica e un
+  // Archivista che irrobustisce tutto quello che gli sta intorno.
+  // È la stanza per cui il Trasponditore è stato progettato.
+  beacons: [{ id: 'nido/ingresso', tx: 5, ty: 10 }],
   boss: {
     id: 'arbiter',
     kind: 'arbiter',

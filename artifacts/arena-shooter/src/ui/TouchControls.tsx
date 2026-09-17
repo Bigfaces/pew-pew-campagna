@@ -43,6 +43,7 @@ export function TouchControls({
   game,
   adsActive,
   dashReady,
+  beaconCharges,
 }: {
   game: CampaignGame | null;
   adsActive: boolean;
@@ -50,6 +51,12 @@ export function TouchControls({
    *  esiste finché la meccanica non esiste. 0..1 quando c'è, 1 =
    *  pronto. */
   dashReady: number | null;
+  /** Lanci di Trasponditore rimasti. A differenza dello scatto non è
+   *  mai `null`: l'arma è innata, quindi il pulsante c'è dal primo
+   *  livello e a zero cariche si spegne invece di sparire — un
+   *  bersaglio che scompare da sotto il pollice a metà combattimento è
+   *  peggio di uno inerte. */
+  beaconCharges: number;
 }): React.ReactElement {
   const knobRef = useRef<HTMLDivElement | null>(null);
   const joyOrigin = useRef<{ x: number; y: number } | null>(null);
@@ -140,6 +147,16 @@ export function TouchControls({
           SCATTO
         </div>
       )}
+      <div
+        className="touch-beacon"
+        data-ready={beaconCharges > 0 ? 'true' : 'false'}
+        onPointerDown={(e) => {
+          captureQuietly(e);
+          game?.queueBeacon();
+        }}
+      >
+        ESCA
+      </div>
       <div
         className="touch-fire"
         onPointerDown={(e) => {

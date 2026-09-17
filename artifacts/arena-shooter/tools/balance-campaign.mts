@@ -12,9 +12,11 @@
 // è stata scritta, e mente in silenzio dal primo livello che cambia.
 // ================================================================
 
-import { TICK_MS } from '../src/sim/constants';
+import { BULLET_COOLDOWN, TICK_MS } from '../src/sim/constants';
 import {
   ALL_SKILL_NODES,
+  BEACON_LIFETIME_MS,
+  NODE_OTTURATORE_COOLDOWN_MS,
   BOSS_CHARGE_MS,
   BOSS_ENRAGED_CHARGES,
   BOSS_ENRAGE_AT,
@@ -43,7 +45,12 @@ import {
   XP_TURRET_DOWN,
   levelForXp,
 } from '../src/sim/campaign/constants';
-import { archetypeOf } from '../src/sim/campaign/enemies';
+import {
+  ALL_ENEMY_KINDS,
+  VULNERABILITY_MULT,
+  WEAK_SPOT_MULT,
+  archetypeOf,
+} from '../src/sim/campaign/enemies';
 import { ACTS, ALL_LEVELS } from '../src/sim/campaign/levels';
 import { roomAt } from '../src/sim/campaign/levelTypes';
 
@@ -313,4 +320,61 @@ console.log(
     '  Sentinella: non stringere il ritmo aprendo di più, ma stringere la\n' +
     "  finestra. La Sentinella alterata diventa più aggressiva, il Custode\n" +
     '  più avaro — due idee diverse di seconda fase, non la stessa due volte.',
+);
+
+// ================================================================
+// Banco del Trasponditore
+// ================================================================
+// L'arma secondaria non fa danno: apre una finestra in cui il nemico
+// mostra la schiena. Quindi la domanda giusta non è "quanto danno
+// fa", è **quanti colpi buoni servono per abbattere ciascun
+// archetipo, e quanti ne entrano in una finestra**.
+//
+// Il conto è tutto qui, e vale la pena vederlo scritto: lanciare
+// costa anche il tempo di un colpo, quindi da BEACON_LIFETIME_MS e
+// dal cooldown dell'arma discende quante volte si può premere il
+// grilletto prima che la finestra si chiuda. Se quel numero coprisse
+// gli HP di un nemico, il Trasponditore smetterebbe di essere
+// un'apertura e diventerebbe un interruttore.
+
+function shotsInWindow(cooldownMs: number): number {
+  // Il lancio mette l'arma in cooldown; il primo colpo cade a
+  // `cooldownMs`, il secondo a `2 * cooldownMs`, e così via — finché
+  // stanno dentro la finestra.
+  let n = 0;
+  for (let t = cooldownMs; t <= BEACON_LIFETIME_MS; t += cooldownMs) n++;
+  return n;
+}
+
+console.log('\n\n══ Trasponditore ══');
+console.log(`  finestra                  ${(BEACON_LIFETIME_MS / 1000).toFixed(1)} s`);
+console.log(`  colpi in finestra         ${shotsInWindow(BULLET_COOLDOWN)} (arma base, ${BULLET_COOLDOWN} ms)`);
+console.log(
+  `                            ${shotsInWindow(NODE_OTTURATORE_COOLDOWN_MS)} con Otturatore Rapido (${NODE_OTTURATORE_COOLDOWN_MS} ms)`,
+);
+
+console.log('\n  Colpi per abbattere, per archetipo:');
+console.log('    nemico       hp   corpo  debole  debole+vuln   esche (base / otturatore)');
+for (const kind of ALL_ENEMY_KINDS) {
+  const a = archetypeOf(kind);
+  const body = a.frontImmune ? Infinity : Math.ceil(a.hp / 1);
+  const weak = Math.ceil(a.hp / WEAK_SPOT_MULT);
+  const both = Math.ceil(a.hp / (WEAK_SPOT_MULT * VULNERABILITY_MULT));
+  // Un'esca serve solo a chi ha il punto debole dietro: sugli altri
+  // il colpo giusto si prende comunque, girando la mira e non il
+  // giocatore.
+  const needsBeacon = a.weakSpot === 'rear';
+  const esche = needsBeacon
+    ? `${Math.ceil(weak / shotsInWindow(BULLET_COOLDOWN))} / ${Math.ceil(weak / shotsInWindow(NODE_OTTURATORE_COOLDOWN_MS))}`
+    : '—';
+  console.log(
+    `    ${a.name.padEnd(12)} ${String(a.hp).padStart(2)}   ${String(body === Infinity ? 'mai' : body).padStart(5)}  ${String(weak).padStart(6)}  ${String(both).padStart(11)}   ${esche}`,
+  );
+}
+
+console.log(
+  "\n  Le due colonne che contano sono l'ultima e la prima: il Guardiano\n" +
+    '  non si abbatte affatto sparandogli davanti, e con la sola arma base\n' +
+    "  un'esca non basta a chiuderlo. È il conto che tiene il Trasponditore\n" +
+    '  dalla parte giusta — apre una possibilità, non spegne un nemico.',
 );

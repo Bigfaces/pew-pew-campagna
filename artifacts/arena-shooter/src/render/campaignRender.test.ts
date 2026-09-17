@@ -15,10 +15,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { TILE } from '../sim/constants';
+import { BEACON_LIFETIME_MS } from '../sim/campaign/constants';
 import { ALL_LEVELS, levelById } from '../sim/campaign/levels';
 import { emptyCampaignInput } from '../sim/campaign/types';
 import { CampaignWorld } from '../sim/campaign/world';
-import { CameraFx, computeViewport } from './camera';
+import { CameraFx, SLICE_W, computeViewport, projectPoint } from './camera';
 import { renderCampaignScenery } from './campaignScene';
 
 interface Recorder {
@@ -185,5 +186,219 @@ describe('scena della campagna', () => {
     }
     expect(rec.bad, rec.bad.slice(0, 2).join(' | ')).toHaveLength(0);
     expect(rec.calls.filter((c) => c === 'drawImage').length).toBeGreaterThan(8);
+  });
+});
+
+// ================================================================
+// TRASPONDITORE — l'esca piantata, le cariche a terra, i richiamati
+// ================================================================
+// 'attracco' è scelto apposta: non ha gas, voragini né pavimenti che
+// cedono (levels.ts), quindi ogni chiamata di disegno nello scenario
+// isolato che segue è attribuibile solo a quello che il test ha messo
+// in scena — nessuna decalcomania di livello a confondere il conteggio.
+describe('Trasponditore', () => {
+  let rec: Recorder;
+  let ctx: CanvasRenderingContext2D;
+
+  beforeEach(() => {
+    rec = { calls: [], bad: [] };
+    installDom(rec);
+    ctx = makeCtx(rec);
+  });
+
+  /** Un mondo vuoto tranne per quello che il test aggiunge: nessun
+   *  core, scudo, turret, nemico o boss a produrre disegni non
+   *  pertinenti al Trasponditore. */
+  function bareWorld(): CampaignWorld {
+    const world = new CampaignWorld(levelById('attracco'));
+    world.state.cores = [];
+    world.state.shields = [];
+    world.state.turrets = [];
+    world.state.enemies = [];
+    world.state.boss = null;
+    world.state.beaconPickups = [];
+    world.state.beacon = { active: false, x: 0, y: 0, ms: 0 };
+    return world;
+  }
+
+  function render(world: CampaignWorld, depth?: Float32Array): Recorder {
+    rec = { calls: [], bad: [] };
+    ctx = makeCtx(rec);
+    const vp = computeViewport(960, 540, 1);
+    const fx = new CameraFx();
+    const p = world.state.player;
+    const d = depth ?? new Float32Array(vp.numRays).fill(1e6);
+    renderCampaignScenery(
+      ctx,
+      vp,
+      fx,
+      { x: p.x, y: p.y, angle: p.angle },
+      d,
+      world.level,
+      world.state,
+      true,
+      true,
+      500,
+    );
+    return rec;
+  }
+
+  it("l'esca attiva viene disegnata; inattiva no", () => {
+    const world = bareWorld();
+    const p = world.state.player;
+    const beaconX = p.x + TILE * 3;
+    const beaconY = p.y;
+
+    const inactive = render(world);
+    expect(inactive.bad).toHaveLength(0);
+    const inactiveArcs = inactive.calls.filter((c) => c === 'arc').length;
+
+    world.state.beacon = { active: true, x: beaconX, y: beaconY, ms: BEACON_LIFETIME_MS };
+    const active = render(world);
+    expect(active.bad).toHaveLength(0);
+    const activeArcs = active.calls.filter((c) => c === 'arc').length;
+
+    // La punta dell'antenna e le finestre di raccoglibili assenti sono
+    // l'unica fonte di 'arc' in questa scena spoglia: se sale, è l'esca.
+    expect(activeArcs).toBeGreaterThan(inactiveArcs);
+  });
+
+  it('la carica raccolta non viene disegnata, quella libera sì', () => {
+    const world = bareWorld();
+    const p = world.state.player;
+    const chargeX = p.x + TILE * 2;
+    const chargeY = p.y;
+
+    world.state.beaconPickups = [{ id: 'test-charge', x: chargeX, y: chargeY, collected: true }];
+    const collected = render(world);
+    expect(collected.bad).toHaveLength(0);
+    const collectedArcs = collected.calls.filter((c) => c === 'arc').length;
+
+    world.state.beaconPickups = [{ id: 'test-charge', x: chargeX, y: chargeY, collected: false }];
+    const free = render(world);
+    expect(free.bad).toHaveLength(0);
+    const freeArcs = free.calls.filter((c) => c === 'arc').length;
+
+    expect(collectedArcs).toBe(0);
+    expect(freeArcs).toBeGreaterThan(0);
+  });
+
+  it("l'esca dietro un muro è occlusa", () => {
+    const world = bareWorld();
+    const p = world.state.player;
+    p.angle = 0;
+    const beaconX = p.x + TILE * 3;
+    const beaconY = p.y;
+    world.state.beacon = { active: true, x: beaconX, y: beaconY, ms: BEACON_LIFETIME_MS };
+
+    const vp = computeViewport(960, 540, 1);
+    const fx = new CameraFx();
+    const cam = { x: p.x, y: p.y, angle: p.angle };
+    // Nessuno shake/bob in gioco (CameraFx appena creata): la colonna
+    // che occlude l'esca è quella del suo screenX grezzo, senza offset.
+    const proj = projectPoint(vp, fx, cam.x, cam.y, cam.angle, beaconX, beaconY, 0.5);
+    expect(proj.visible).toBe(true);
+    const col = Math.round(proj.screenX / SLICE_W);
+
+    const visibleDepth = new Float32Array(vp.numRays).fill(1e6);
+    const visible = render(world, visibleDepth);
+    expect(visible.bad).toHaveLength(0);
+    expect(visible.calls.filter((c) => c === 'arc').length).toBeGreaterThan(0);
+
+    // Un muro più vicino dell'esca su quella sola colonna: la stessa
+    // regola di profondità che occlude core, scudi e nemici (vedi
+    // `occluded` in campaignScene.ts).
+    const occludedDepth = new Float32Array(vp.numRays).fill(1e6);
+    occludedDepth[col] = proj.perp - 50;
+    const occluded = render(world, occludedDepth);
+    expect(occluded.bad).toHaveLength(0);
+    expect(occluded.calls.filter((c) => c === 'arc').length).toBe(0);
+  });
+
+  it('un nemico richiamato mostra il segno del richiamo', () => {
+    const world = new CampaignWorld(levelById('attracco'));
+    world.state.cores = [];
+    world.state.shields = [];
+    world.state.turrets = [];
+    world.state.boss = null;
+    world.state.beaconPickups = [];
+    world.state.beacon = { active: false, x: 0, y: 0, ms: 0 };
+
+    const e = world.state.enemies[0]!;
+    const p = world.state.player;
+    p.x = e.x - TILE * 3;
+    p.y = e.y;
+    p.angle = 0;
+    world.state.enemies = [e];
+
+    e.lured = false;
+    const notLured = render(world);
+    expect(notLured.bad).toHaveLength(0);
+
+    e.lured = true;
+    const lured = render(world);
+    expect(lured.bad).toHaveLength(0);
+
+    // Il segno è un triangolo pieno sopra la testa: un beginPath/fill in
+    // più rispetto al caso non richiamato, senza toccare gli altri
+    // overlay (punto debole, piastra, finestra), che restano identici a
+    // parità di stato del nemico per il resto.
+    expect(lured.calls.filter((c) => c === 'fill').length).toBeGreaterThan(
+      notLured.calls.filter((c) => c === 'fill').length,
+    );
+  });
+
+  it('non altera lo sfondo dietro l\'esca: nessun composito diverso da source-over', () => {
+    // La trappola già pagata (vedi drawTintedFrame in spriteBaker.ts):
+    // `source-atop` compone contro l'intera tela, non contro l'ultimo
+    // disegno. Il mock qui non tiene un vero framebuffer, quindi non può
+    // leggere "il pixel del muro non è cambiato" alla lettera — ma può
+    // dimostrare che il disegno del Trasponditore non usa mai quella
+    // tecnica: se non cambia mai `globalCompositeOperation`, non può
+    // comporre contro nulla che non sia l'ultimo tratto, quindi non può
+    // tingere lo sfondo. Il velo dei boss (drawBossBody) resta l'unico
+    // punto che usa un composito diverso, ed è fuori da questo test.
+    const world = bareWorld();
+    const p = world.state.player;
+    world.state.beacon = {
+      active: true,
+      x: p.x + TILE * 3,
+      y: p.y,
+      ms: BEACON_LIFETIME_MS,
+    };
+    world.state.beaconPickups = [
+      { id: 'c', x: p.x + TILE * 2, y: p.y + TILE, collected: false },
+    ];
+
+    const composites: string[] = [];
+    const c = ctx as unknown as { globalCompositeOperation: string };
+    let value = 'source-over';
+    Object.defineProperty(c, 'globalCompositeOperation', {
+      configurable: true,
+      get: () => value,
+      set: (v: string) => {
+        value = v;
+        composites.push(v);
+      },
+    });
+
+    const vp = computeViewport(960, 540, 1);
+    const fx = new CameraFx();
+    const depth = new Float32Array(vp.numRays).fill(1e6);
+    renderCampaignScenery(
+      ctx,
+      vp,
+      fx,
+      { x: p.x, y: p.y, angle: p.angle },
+      depth,
+      world.level,
+      world.state,
+      true,
+      true,
+      500,
+    );
+
+    expect(rec.bad).toHaveLength(0);
+    expect(composites.every((v) => v === 'source-over')).toBe(true);
   });
 });

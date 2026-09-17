@@ -385,6 +385,120 @@ export const ACT_RESTART: VoiceSpec = {
   ],
 };
 
+// ---- Trasponditore: lancio, battito, esaurimento, carica raccolta ----
+//
+// Il Trasponditore non fa danno: pianta un'esca che per un tempo
+// limitato ruba l'attenzione dei nemici. Sono quattro momenti diversi
+// da riconoscere senza guardare la HUD, e nessuno dei quattro può
+// suonare come un impatto — l'esca non colpisce niente:
+//
+//   • il LANCIO è un oggetto che lascia la mano e si pianta: due
+//     stadi, come DOOR_SEAL, ma timbro opposto (triangolo che scende
+//     seguito da un tonfo grave, non rumore che sale). Posizionato
+//     dove atterra, non da dove parte — è lì che il giocatore deve
+//     imparare a guardare.
+//   • il BATTITO è l'impulso che chi la innesta richiama a ripetizione
+//     finché l'esca resta accesa: deve restare piccolo (un ping, non
+//     un evento) perché suonerà molte volte di fila, e la sua
+//     `totalDuration` è la più corta di tutto il modulo apposta per
+//     questo. Il metodo suona *un solo* impulso — vedi il commento
+//     sul metodo `beaconPulse` più sotto sul perché non è un loop.
+//   • l'ESAURIMENTO è la fine della finestra: deve leggersi come "è
+//     finita", quindi scende e si ferma, non come ENEMY_DOWN (che
+//     scende ma è un impatto: qui non c'è mai stato un colpo).
+//   • la RACCOLTA di una carica è la parente positiva del lancio —
+//     stessa onda triangolare, stessa idea di "un oggetto si muove" —
+//     ma sale invece di scendere e si accende con un rumore acuto:
+//     è un guadagno, non un gesto.
+export const BEACON_THROWN: VoiceSpec = {
+  label: 'trasponditore — lancio',
+  layers: [
+    // La mano che lo scaglia: breve, discendente, opposto dello
+    // scatto (che sale) perché qui non è il giocatore a muoversi.
+    { kind: 'tone', wave: 'triangle', freqFrom: 900, freqTo: 500, delay: 0, duration: 0.08, gain: 0.22 },
+    { kind: 'noise', filterType: 'bandpass', freq: 1600, q: 2, delay: 0, duration: 0.06, gain: 0.18 },
+    // Il secondo stadio comincia dove finisce il primo (0.08s), non
+    // insieme: è l'oggetto che tocca terra dopo il volo, non un
+    // secondo strato dello stesso istante.
+    { kind: 'noise', filterType: 'lowpass', freq: 240, delay: 0.08, duration: 0.12, gain: 0.3 },
+  ],
+};
+
+export const BEACON_PULSE: VoiceSpec = {
+  label: 'trasponditore — battito',
+  layers: [
+    { kind: 'tone', wave: 'sine', freqFrom: 700, freqTo: 700, delay: 0, duration: 0.05, gain: 0.18 },
+    { kind: 'noise', filterType: 'bandpass', freq: 1800, q: 3, delay: 0, duration: 0.03, gain: 0.08 },
+  ],
+};
+
+/** Non un impatto: niente scivolata di rumore (quella è la firma di
+ *  ENEMY_DOWN e BLACKOUT), solo un tono che si ferma. "È finita", non
+ *  "è successo qualcosa". */
+export const BEACON_EXPIRED: VoiceSpec = {
+  label: 'trasponditore — esaurito',
+  layers: [
+    { kind: 'tone', wave: 'triangle', freqFrom: 620, freqTo: 180, delay: 0, duration: 0.28, gain: 0.26 },
+    { kind: 'noise', filterType: 'lowpass', freq: 500, sweepTo: 150, delay: 0, duration: 0.32, gain: 0.2 },
+  ],
+};
+
+export const BEACON_PICKUP: VoiceSpec = {
+  label: 'trasponditore — carica raccolta',
+  layers: [
+    // Stessa onda triangolare del lancio, ma la rampa è invertita:
+    // sale invece di scendere.
+    { kind: 'tone', wave: 'triangle', freqFrom: 500, freqTo: 1100, delay: 0, duration: 0.1, gain: 0.22 },
+    { kind: 'noise', filterType: 'highpass', freq: 2500, delay: 0.02, duration: 0.05, gain: 0.14 },
+  ],
+};
+
+// ---- Nemico richiamato dall'esca --------------------------------------
+//
+// Deve essere l'opposto di ENEMY_REVEALED per costruzione, non solo
+// per numeri: quello è un rumore che scivola (una scoperta lenta),
+// questo è un accordo di due toni netti e cortissimi (una conferma
+// immediata). In una sparatoria con rumori a banda ovunque, due toni
+// quadri puliti sono l'unica cosa che taglia — è la stessa logica del
+// punto debole (ENEMY_HIT_WEAK_SPOT), qui applicata a una durata
+// ancora più corta perché non è una ricompensa da assaporare, è
+// un'informazione tattica da cogliere al volo.
+export const ENEMY_LURED: VoiceSpec = {
+  label: 'nemico richiamato dall\'esca',
+  layers: [
+    { kind: 'tone', wave: 'square', freqFrom: 1050, freqTo: 1050, delay: 0, duration: 0.035, gain: 0.2 },
+    { kind: 'tone', wave: 'square', freqFrom: 1550, freqTo: 1550, delay: 0.035, duration: 0.03, gain: 0.16 },
+  ],
+};
+
+// ---- Piastra Reattiva ---------------------------------------------------
+//
+// Il nodo fa una cosa sola: quando lo scudo assorbe, il fucile torna
+// subito pronto. `PLATE_ABSORBED` suona comunque — lo scudo si è
+// comunque rotto — e questo si somma sopra, non lo sostituisce: è la
+// seconda metà dello stesso gesto, non un evento a sé. Per questo ha
+// un piccolo ritardo incorporato nei propri strati (0.03s) invece di
+// partire a `delay: 0`: anche se il controller chiama `plateAbsorbed`
+// e `shieldReactive` nello stesso istante, lo scatto arriva un attimo
+// dopo il tonfo, come uno scatto che segue un colpo invece di
+// accavallarcisi.
+//
+// Il registro è l'opposto della piastra apposta: PLATE_ABSORBED non
+// supera i 320 Hz per costruzione (vedi il commento lì sopra), quindi
+// tutto quello che sta sopra questo file in quella frequenza legge
+// automaticamente come "altro". Qui si sale fino a 3400 Hz — più in
+// alto di qualunque altro suono del modulo — un clic meccanico secco,
+// non uno sparo: niente scivolata lunga, niente rumore a banda che
+// ricordi un impatto. Deve leggersi come "l'arma scatta", non come
+// "qualcosa colpisce ancora".
+export const SHIELD_REACTIVE: VoiceSpec = {
+  label: 'piastra reattiva',
+  layers: [
+    { kind: 'tone', wave: 'square', freqFrom: 1800, freqTo: 900, delay: 0.03, duration: 0.05, gain: 0.26 },
+    { kind: 'noise', filterType: 'highpass', freq: 3400, delay: 0.03, duration: 0.03, gain: 0.16 },
+  ],
+};
+
 // ================================================================
 // Il motore — replica minima di engine.ts, non un'estensione
 // ================================================================
@@ -628,5 +742,52 @@ export class CampaignVoice {
 
   actRestart(): void {
     this.play(ACT_RESTART);
+  }
+
+  /** Posizionato dove atterra l'esca, non da dove parte: vedi il
+   *  commento su BEACON_THROWN. */
+  beaconThrown(x?: number, y?: number): void {
+    this.play(BEACON_THROWN, x, y);
+  }
+
+  /** Un impulso solo. Chi tiene viva l'esca chiama questo metodo a
+   *  ripetizione con il proprio timer finché resta accesa, e la ferma
+   *  semplicemente smettendo di chiamarlo — non c'è qui alcun
+   *  oscillatore che resti acceso tra una chiamata e l'altra, ogni
+   *  invocazione crea e chiude i propri nodi Web Audio come qualunque
+   *  altra voce del modulo (vedi `play`/`tone`/`noise`). Un loop
+   *  interno legherebbe la vita del suono a quella dell'esca in un
+   *  posto che il controller non può fermare dall'esterno. */
+  beaconPulse(x?: number, y?: number): void {
+    this.play(BEACON_PULSE, x, y);
+  }
+
+  /** Non posizionato: non è un evento nel mondo ma la fine di uno
+   *  stato dell'arma del giocatore, come un caricatore vuoto — lo si
+   *  deve sapere a prescindere da dove si stia guardando. */
+  beaconExpired(): void {
+    this.play(BEACON_EXPIRED);
+  }
+
+  /** Non posizionato: la carica si raccoglie passandoci sopra, quindi
+   *  la sorgente coinciderebbe sempre con l'ascoltatore — un panner
+   *  qui non farebbe udire nulla che un suono fisso non dica già. */
+  beaconPickup(): void {
+    this.play(BEACON_PICKUP);
+  }
+
+  /** Posizionato sul nemico che si volta, non sull'esca: è la macchina
+   *  che si fa ingannare, e deve suonare da dove sta la macchina. */
+  enemyLured(x?: number, y?: number): void {
+    this.play(ENEMY_LURED, x, y);
+  }
+
+  /** Stessa posizione di `plateAbsorbed` — è la seconda metà dello
+   *  stesso colpo, non un evento a sé — con il piccolo ritardo di
+   *  fase già incorporato nello spec (vedi il commento su
+   *  SHIELD_REACTIVE). Il chiamante suona entrambi nello stesso
+   *  istante quando arrivano 'shieldBreak' e 'shieldReactive' insieme. */
+  shieldReactive(x?: number, y?: number): void {
+    this.play(SHIELD_REACTIVE, x, y);
   }
 }
