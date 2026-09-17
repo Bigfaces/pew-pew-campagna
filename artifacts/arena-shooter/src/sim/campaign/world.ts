@@ -75,6 +75,7 @@ import {
   XP_ENEMY_WEAK_HIT,
   XP_TURRET_DOWN,
   CROGIOLO_CLOUD_MS,
+  BEACON_CHARGES_START,
   CROGIOLO_CLOUD_TILES,
   ENEMY_REVEAL_MS,
   LEVEL_START_GRACE_MS,
@@ -352,6 +353,7 @@ export class CampaignWorld {
         empMs: 0,
         darkMs: 0,
         gravityFlipped: false,
+        beaconCharges: BEACON_CHARGES_START,
       },
       doors: level.doors.map((d) => ({
         id: d.id,
@@ -404,6 +406,7 @@ export class CampaignWorld {
           // deciso niente.
           still: false,
           closing: false,
+          lured: false,
           hardened: false,
         };
       }),
@@ -424,6 +427,12 @@ export class CampaignWorld {
         ...centreOf(d.tx, d.ty),
         collected: false,
       })),
+      beaconPickups: level.beacons.map((d) => ({
+        id: d.id,
+        ...centreOf(d.tx, d.ty),
+        collected: false,
+      })),
+      beacon: { active: false, x: 0, y: 0, ms: 0 },
       coresCollected: collected.size,
       roomsAwarded: [...(profile?.roomsAwarded ?? [])],
       completedLevels: [...(profile?.completedLevels ?? [])],
@@ -1120,6 +1129,7 @@ export class CampaignWorld {
       e.lastSeenY = null;
       e.still = true;
       e.closing = false;
+      e.lured = false;
       e.hardened = false;
     }
   }

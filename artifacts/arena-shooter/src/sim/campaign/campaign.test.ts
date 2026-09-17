@@ -94,6 +94,11 @@ describe('skills — ramo Precisione', () => {
   });
 });
 
+/** I tre nodi del terzo anello, quelli che un run solo non può
+ *  permettersi. Elencati a mano di proposito: derivarli dall'albero
+ *  vorrebbe dire che il test verifica l'albero contro sé stesso. */
+const TERZO_ANELLO = ['scatto-angolare', 'piastra-reattiva', 'eco'] as const;
+
 describe('esperienza e livelli', () => {
   it('levelForXp follows the threshold table', () => {
     expect(levelForXp(0)).toBe(1);
@@ -200,15 +205,37 @@ describe('esperienza e livelli', () => {
     );
     const rushed = ALL_LEVELS.reduce((sum, l) => sum + levelXp(l, false) + bossXp(l), 0);
     expect(levelForXp(rushed) - 1).toBeLessThan(levelForXp(thorough) - 1);
-    // E chi esplora arriva in fondo con l'albero pieno.
-    expect(levelForXp(thorough) - 1).toBe(ALL_SKILL_NODES.length);
+    // E chi esplora arriva in fondo avendo potuto comprare tutto
+    // tranne il terzo anello.
+    expect(levelForXp(thorough) - 1).toBe(ALL_SKILL_NODES.length - TERZO_ANELLO.length);
   });
 
-  /** Nessun punto deve restare senza un nodo su cui finire: la tabella
-   *  dei livelli e l'albero devono avere la stessa misura. */
-  it('tops out at exactly one point per node in the tree', () => {
+  /** Nessun punto deve restare senza un nodo su cui finire — e da
+   *  quando esiste il terzo anello, nessun anello dev'essere
+   *  comprabile per intero in un run solo.
+   *
+   *  L'invariante di prima era "un punto per nodo", e valeva finché
+   *  l'albero si fermava all'Atto II. Adesso si è spostata di un
+   *  piano: i punti coprono esattamente i primi due anelli, e i tre
+   *  nodi dell'Atto III sono la scelta che resta — cioè la ragione
+   *  stessa per cui il terzo anello è stato aggiunto, visto che
+   *  l'albero si riempiva da solo entro il secondo atto.
+   *
+   *  Il test è scritto qui e non nel commento della tabella perché un
+   *  commento non si accorge di niente: se un giorno qualcuno alzasse
+   *  LEVEL_XP_THRESHOLDS per "finire l'albero", è questa riga a
+   *  fermarlo. */
+  it('leaves exactly the third ring unaffordable in a single run', () => {
     const maxPoints = LEVEL_XP_THRESHOLDS.length - 1;
-    expect(maxPoints).toBe(ALL_SKILL_NODES.length);
+    expect(maxPoints).toBe(ALL_SKILL_NODES.length - TERZO_ANELLO.length);
+    // E i tre nodi devono esistere davvero: un anello che sparisce
+    // farebbe tornare verde il test svuotandolo di significato.
+    for (const id of TERZO_ANELLO) {
+      expect(
+        ALL_SKILL_NODES.some((n) => n.id === id),
+        `${id} non è più nell'albero`,
+      ).toBe(true);
+    }
   });
 });
 

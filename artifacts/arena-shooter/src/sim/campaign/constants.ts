@@ -158,13 +158,68 @@ export const LEVEL_START_GRACE_MS = 1200;
 export const CROGIOLO_CLOUD_TILES = 3.2;
 export const CROGIOLO_CLOUD_MS = 2200;
 
+// ---- Trasponditore ----
+// L'arma secondaria, e non è una seconda canna: non fa un solo punto
+// di danno. Pianta un identificativo rubato, e per una finestra breve
+// quel punto del pavimento è più il giocatore del giocatore. Le
+// macchine si voltano — cioè mostrano la schiena, che è dove il
+// moltiplicatore del punto debole già vive.
+//
+// Il motivo per cui non fa danno è lo stesso per cui i nemici non
+// hanno elementi (vedi enemies.ts): un'arma che uccide competerebbe
+// col fucile e scavalcherebbe il sistema punto debole x3 /
+// vulnerabilità x2. Questa lo *alimenta*.
+
+/** Quanto lontano si pianta, se non trova un muro prima. */
+export const BEACON_RANGE_TILES = 6;
+
+/** Raggio del richiamo. Serve anche la linea di vista: un nemico non
+ *  insegue un segnale che non può vedere. */
+export const BEACON_LURE_TILES = 5;
+
+/** Quanto dura il richiamo.
+ *
+ *  Non è un numero scelto a sentimento: è calibrato *contro il
+ *  cooldown del fucile*, che è l'unico orologio che questo gioco
+ *  abbia. Lanciare costa anche il tempo di un colpo (vedi
+ *  CampaignWorld.throwBeacon), quindi la finestra si legge così:
+ *
+ *    lancio a 0 ms  ->  fucile pronto a 1400  ->  secondo colpo a 2800
+ *
+ *  A 2600 ms il secondo colpo cade *fuori* dalla finestra: un'esca
+ *  vale esattamente un colpo. È questa aritmetica, e non una regola
+ *  scritta a parte, a impedire che il Trasponditore sia un
+ *  interruttore che spegne il Guardiano — costringe a far sì che
+ *  quel colpo sia quello da x6.
+ *
+ *  Con Otturatore Rapido (1150 ms) i colpi dentro la finestra
+ *  diventano due, ed è voluto: è il ramo Precisione che si ripaga
+ *  su un'arma che non è il fucile. */
+export const BEACON_LIFETIME_MS = 2600;
+
+/** Cariche all'inizio di ogni livello, e tetto massimo. Poche di
+ *  proposito: due lanci per livello sono due decisioni, sei sarebbero
+ *  un secondo grilletto. */
+export const BEACON_CHARGES_START = 2;
+export const BEACON_CHARGES_MAX = 3;
+
+/** Di quanto si tira indietro l'esca dal muro che ha colpito, perché
+ *  non finisca dentro la geometria. */
+export const BEACON_WALL_MARGIN = 6;
+
 /** XP cumulativa richiesta per raggiungere il livello (indice + 1).
  *
- *  Quindici livelli, cioè quattordici punti: esattamente i nodi
- *  dell'albero.
- *  Un livello oltre l'ultimo nodo darebbe punti da spendere su niente
- *  — è lo stesso motivo per cui la tabella si fermava a quattro
- *  quando il ramo costruito era solo Precisione.
+ *  Quindici livelli, cioè quattordici punti — e da quando esiste il
+ *  terzo anello i nodi sono diciassette. La differenza è voluta, ed è
+ *  la ragione stessa per cui il terzo anello esiste: finché i punti
+ *  bastavano per tutto, l'albero era una lista della spesa che si
+ *  riempiva da sola entro l'Atto II. Tre nodi che non si possono
+ *  avere sono ciò che trasforma una lista in una build, e una seconda
+ *  partita in una partita diversa.
+ *
+ *  Il tetto resta comunque legato all'albero: alzarlo fino a coprire
+ *  diciassette nodi rifarebbe il difetto che questa tabella era stata
+ *  ritarata per togliere.
  *
  *  Le prime quattro soglie sono rimaste dov'erano: erano calibrate su
  *  cosa si raggiunge *prima* che il boss muoia (la prima versione
@@ -260,7 +315,13 @@ export type SkillNodeId =
   | 'mira-stabile'
   | 'slancio'
   | 'ancoraggio'
-  | 'sensori-inerziali';
+  | 'sensori-inerziali'
+  // Terzo anello, aperto dall'Atto III. Fino a ieri l'albero smetteva
+  // di crescere alla fine del secondo atto, cioe' proprio dove il
+  // gioco diventa piu' duro.
+  | 'scatto-angolare'
+  | 'piastra-reattiva'
+  | 'eco';
 
 export interface SkillNodeDef {
   id: SkillNodeId;
@@ -350,6 +411,13 @@ export const SKILL_TREE: readonly SkillBranchDef[] = [
         desc: 'Scatto più lungo: le passerelle più larghe diventano passabili.',
         requires: 'scatto',
       },
+      {
+        id: 'scatto-angolare',
+        cost: NODE_COST,
+        name: 'Scatto Angolare',
+        desc: 'Lo scatto si può sterzare: si finisce dietro, non oltre.',
+        requires: 'scatto',
+      },
     ],
   },
   {
@@ -375,6 +443,13 @@ export const SKILL_TREE: readonly SkillBranchDef[] = [
         name: 'Ancoraggio',
         desc: 'La gravità invertita non ti specchia più i comandi.',
         requires: 'riserva-di-bordo',
+      },
+      {
+        id: 'piastra-reattiva',
+        cost: NODE_COST,
+        name: 'Piastra Reattiva',
+        desc: 'Un colpo assorbito ti restituisce subito il colpo.',
+        requires: 'piastra-aggiuntiva',
       },
     ],
   },
@@ -402,6 +477,13 @@ export const SKILL_TREE: readonly SkillBranchDef[] = [
         name: 'Sensori Inerziali',
         desc: 'Lo scanner regge anche dentro il contaminante.',
         requires: 'lettura-termica',
+      },
+      {
+        id: 'eco',
+        cost: NODE_COST,
+        name: 'Eco',
+        desc: "L'esca svela anche chi si occulta.",
+        requires: 'sensori-inerziali',
       },
     ],
   },
@@ -443,6 +525,24 @@ export const SHIELD_CHARGES_UPGRADED = 2;
  *  velocità si guadagnano tutte e due le cose insieme — più distanza
  *  *e* meno tempo sul vuoto. */
 export const NODE_SLANCIO_SPEED_MULT = 1.5;
+
+// Terzo anello (Atto III)
+// Tre nodi, tre rami. Non migliorano un numero che era già buono:
+// ognuno risponde a una minaccia che l'Atto III porta in tavola —
+// il Guardiano immune di fronte, il Martello che carica, l'Araldo
+// che si occulta.
+
+/** Scatto Angolare: quanto si può sterzare per tick durante lo
+ *  scatto.
+ *
+ *  Il valore conta più di quanto sembri. Lo scatto dura 170 ms,
+ *  cioè poco più di dieci tick: a 0.10 rad/tick si curva di circa un
+ *  radiante in tutto, sessanta gradi. È abbastanza per girare attorno
+ *  a un nemico e finirgli dietro — che è il solo motivo per cui
+ *  questo nodo esiste — e non abbastanza per invertire la rotta, che
+ *  renderebbe lo scatto una corsa sterzabile invece di uno strappo da
+ *  puntare prima. */
+export const NODE_DASH_STEER_RATE = 0.1;
 
 
 // ---- Boss: Sentinella del Molo ----

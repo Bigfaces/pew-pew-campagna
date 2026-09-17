@@ -45,6 +45,7 @@ import {
   clampSensitivity,
 } from '../sim/constants';
 import {
+  BEACON_LIFETIME_MS,
   BOSS_HITS_TO_DEFEAT,
   DASH_COOLDOWN_MS,
   GAS_LINGER_MS,
@@ -112,6 +113,13 @@ export interface CampaignHudSnapshot {
   availableSkillPoints: number;
   /** Cariche di scudo rimaste — 0 significa nessuno scudo. */
   shieldCharges: number;
+  /** Lanci di Trasponditore rimasti. */
+  beaconCharges: number;
+  /** Quanto resta della finestra dell'esca, 0..1, o null se non ce
+   *  n'è una viva. La HUD ne ha bisogno come frazione e non come ms
+   *  perché quello che il giocatore deve leggere in mezzo a una
+   *  stanza è "quanto tempo ho ancora", non un numero. */
+  beaconWindow: number | null;
   adsActive: boolean;
   /** Presente solo col nodo Scatto: 0..1, 1 = pronto. La HUD non deve
    *  mostrare un indicatore per una meccanica che il giocatore non ha
@@ -206,6 +214,7 @@ export class CampaignGame {
    *  come una pressione, non come uno stato tenuto, altrimenti
    *  tenerlo giù farebbe ripartire lo scatto a ogni fine cooldown. */
   private dashQueued = false;
+  private beaconQueued = false;
 
   private pointerLocked = false;
   private mouseDX = 0;
@@ -357,6 +366,13 @@ export class CampaignGame {
    *  duplica quella regola. */
   queueDash(): void {
     if (this.phase === 'playing') this.dashQueued = true;
+  }
+
+  /** Lancio del Trasponditore. Stesso contratto dello scatto: il
+   *  controller riferisce la pressione, la simulazione decide se
+   *  c'erano cariche. */
+  queueBeacon(): void {
+    if (this.phase === 'playing') this.beaconQueued = true;
   }
 
   /** Raise or lower the scope. The mouse holds it; the on-screen
@@ -604,6 +620,7 @@ export class CampaignGame {
     // senza questo filtro tenere premuto MAIUSC accoderebbe uno
     // scatto per ogni ripetizione.
     if (k === 'shift' && !e.repeat) this.queueDash();
+    if (k === 'f' && !e.repeat) this.queueBeacon();
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
@@ -782,6 +799,7 @@ export class CampaignGame {
       aimAngle: this.yaw,
       fire: this.fireQueued,
       dash: this.dashQueued,
+      beacon: this.beaconQueued,
       // The simulation applies the movement penalty itself from this
       // flag (see applyMovement), so the controller must not also
       // scale the input — that would charge the cost twice.
@@ -790,6 +808,7 @@ export class CampaignGame {
     };
     this.fireQueued = false;
     this.dashQueued = false;
+    this.beaconQueued = false;
     return input;
   }
 
@@ -1263,6 +1282,8 @@ export class CampaignGame {
       xpForNextLevel: xpForNextLevel(s.level),
       availableSkillPoints: this.world.availableSkillPoints,
       shieldCharges: s.player.shieldCharges,
+      beaconCharges: s.player.beaconCharges,
+      beaconWindow: s.beacon.active ? s.beacon.ms / BEACON_LIFETIME_MS : null,
       adsActive: this.adsHeld,
       dashReady: movementStatsFor(s.unlockedNodes).hasDash
         ? 1 - Math.min(1, s.player.dashCooldown / DASH_COOLDOWN_MS)

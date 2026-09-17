@@ -175,6 +175,17 @@ export interface ShieldPickupDef {
   ty: number;
 }
 
+/** Una carica di Trasponditore per terra. Stessa forma dello scudo
+ *  perché è la stessa cosa: un consumabile che il level design
+ *  posiziona, non una statistica. Dove sta è la leva vera — una
+ *  carica appena prima di una stanza con un Guardiano dice al
+ *  giocatore cosa gli serve senza scriverglielo. */
+export interface BeaconPickupDef {
+  id: string;
+  tx: number;
+  ty: number;
+}
+
 /** Tre boss, tre macchine a stati. La Sentinella insegue e si scopre
  *  caricando; il Custode non si muove e si scopre fra una
  *  manipolazione e l'altra; ARBITER attraversa tre fasi che riusano
@@ -263,6 +274,7 @@ export interface LevelDef {
   gravityZones: readonly GravityZoneDef[];
   cores: readonly CoreDef[];
   shields: readonly ShieldPickupDef[];
+  beacons: readonly BeaconPickupDef[];
   boss: BossDef | null;
   exit: ExitDef | null;
   /** Livello successivo, o null se è l'ultimo dell'atto. */

@@ -18,6 +18,7 @@ import {
   NODE_AGGANCIO_MOVE_MULT,
   NODE_AGGANCIO_TRANSITION_MS,
   DASH_SPEED,
+  NODE_DASH_STEER_RATE,
   NODE_OTTURATORE_COOLDOWN_MS,
   NODE_PASSO_LUNGO_MULT,
   NODE_SLANCIO_SPEED_MULT,
@@ -60,6 +61,10 @@ export interface MovementStats {
   dashSpeed: number;
   /** Whether an active dash makes the player untouchable. */
   dashInvulnerable: boolean;
+  /** rad/tick di sterzata concessi durante lo scatto. Zero senza il
+   *  nodo Scatto Angolare, che è il caso in cui lo scatto resta la
+   *  linea retta che è sempre stato. */
+  dashSteerRate: number;
 }
 
 export function movementStatsFor(unlocked: readonly string[]): MovementStats {
@@ -76,6 +81,8 @@ export function movementStatsFor(unlocked: readonly string[]): MovementStats {
         ? DASH_SPEED * NODE_SLANCIO_SPEED_MULT
         : DASH_SPEED,
     dashInvulnerable: hasDash && unlocked.includes('scatto-evasivo'),
+    dashSteerRate:
+      hasDash && unlocked.includes('scatto-angolare') ? NODE_DASH_STEER_RATE : 0,
   };
 }
 
@@ -100,6 +107,32 @@ export function resistsGravityFlip(unlocked: readonly string[]): boolean {
 /** Sensori Inerziali: lo scanner regge dentro il contaminante. */
 export function scannerResistsGas(unlocked: readonly string[]): boolean {
   return unlocked.includes('sensori-inerziali') && hasContacts(unlocked);
+}
+
+// ---- Terzo anello (Atto III) ----
+// Stessa forma dei quattro del secondo: una funzione pura per nodo,
+// che ricontrolla anche il prerequisito. tryUnlockNode lo garantisce
+// già, ma leggerlo qui rende la funzione vera per *qualsiasi* lista —
+// e i test ne costruiscono di arbitrarie senza passare dall'albero.
+
+/** Piastra Reattiva: assorbire un colpo restituisce subito il colpo.
+ *
+ *  È difesa scritta nell'unica valuta che questo gioco abbia, il
+ *  tempo fra due colpi. Incassare smette di essere solo una perdita:
+ *  paga la finestra che l'attaccante ha appena aperto su di sé. */
+export function shieldRefundsShot(unlocked: readonly string[]): boolean {
+  return unlocked.includes('piastra-reattiva') && unlocked.includes('piastra-aggiuntiva');
+}
+
+/** Eco: l'esca svela anche chi si occulta.
+ *
+ *  Sta in Percezione e non fra i nodi dell'arma perché quello che fa
+ *  è *vedere*: il Trasponditore da solo non ha nessun effetto
+ *  sull'Araldo, ed è un buco lasciato apposta perché il nemico più
+ *  tardo della campagna resti un problema aperto anche a chi ha
+ *  comprato tutto il resto. */
+export function beaconRevealsCloaked(unlocked: readonly string[]): boolean {
+  return unlocked.includes('eco') && unlocked.includes('sensori-inerziali');
 }
 
 // ---- Sopravvivenza ----

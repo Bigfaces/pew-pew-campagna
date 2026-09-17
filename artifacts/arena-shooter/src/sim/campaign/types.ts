@@ -56,6 +56,10 @@ export interface CampaignInput {
    *  simulazione decide, il controller si limita a riferire che il
    *  tasto è stato premuto. */
   dash: boolean;
+  /** Edge-triggered: true nel tick in cui si lancia il Trasponditore.
+   *  Come `dash`, il controller riferisce la pressione e la
+   *  simulazione decide se c'erano cariche. */
+  beacon: boolean;
   /** Pendenza verticale della mira: di quanti px sale il mirino per
    *  ogni px di distanza. Serve ai colpi alla testa, l'unica cosa in
    *  tutto il gioco che dia un senso all'inclinazione della visuale.
@@ -78,6 +82,7 @@ export function emptyCampaignInput(): CampaignInput {
     fire: false,
     ads: false,
     dash: false,
+    beacon: false,
     aimSlope: 0,
   };
 }
@@ -117,6 +122,11 @@ export interface CampaignPlayer {
   /** Il mondo è capovolto: la vista si ribalta e lo strafe si
    *  specchia (a meno del nodo Ancoraggio). */
   gravityFlipped: boolean;
+  /** Lanci di Trasponditore rimasti. Come lo scudo è un consumabile e
+   *  non progressione: si riparte da BEACON_CHARGES_START a ogni
+   *  livello, e quello che si raccoglie dentro al livello resta
+   *  dentro al livello. */
+  beaconCharges: number;
 }
 
 export interface DoorState {
@@ -171,6 +181,25 @@ export interface ShieldPickupState {
   collected: boolean;
 }
 
+export interface BeaconPickupState {
+  id: string;
+  x: number;
+  y: number;
+  collected: boolean;
+}
+
+/** L'esca piantata, se ce n'è una viva. Una sola: due esche
+ *  contemporanee vorrebbero dire che il giocatore decide *dove*
+ *  guarderanno due gruppi diversi, e la finestra smetterebbe di
+ *  essere una decisione per diventare una regia. */
+export interface BeaconState {
+  active: boolean;
+  x: number;
+  y: number;
+  /** ms di vita residui. */
+  ms: number;
+}
+
 /** Un nemico mobile. Tutto quello che serve a rigiocare il tick da
  *  un salvataggio sta qui: l'archetipo (`kind`) dice le costanti, lo
  *  stato dice dove sta nella sua macchina.
@@ -223,6 +252,10 @@ export interface EnemyState {
    *  posti vorrebbe dire che possono divergere. */
   still: boolean;
   closing: boolean;
+  /** Sta inseguendo l'esca invece del giocatore. Osservazione come le
+   *  due sopra: la leggono il disegno (per dirlo) e il mondo (per non
+   *  far arrivare addosso al giocatore un colpo diretto altrove). */
+  lured: boolean;
   /** Irrobustito da un Archivista vivo nel raggio. */
   hardened: boolean;
 }
@@ -345,6 +378,8 @@ export interface CampaignState {
   chasms: ChasmState[];
   cores: CoreState[];
   shields: ShieldPickupState[];
+  beaconPickups: BeaconPickupState[];
+  beacon: BeaconState;
   coresCollected: number;
   /** Chiavi `livello/stanza` già pagate — una volta per profilo, non
    *  una per visita. */
@@ -380,6 +415,18 @@ export type CampaignEvent =
   | { type: 'levelUp'; level: number }
   | { type: 'nodeUnlocked'; id: string }
   | { type: 'dashStarted' }
+  | { type: 'beaconThrown'; x: number; y: number }
+  | { type: 'beaconExpired' }
+  | { type: 'beaconPickup'; charges: number }
+  /** Un nemico ha appena cambiato bersaglio. Sul fronte di salita
+   *  soltanto: un evento per tick di richiamo sarebbe rumore, e
+   *  quello che serve — al suono e alla HUD — è l'istante in cui
+   *  l'altro si volta. */
+  | { type: 'enemyLured'; id: string; kind: EnemyKind }
+  /** Piastra Reattiva: lo scudo ha assorbito e ha restituito il
+   *  colpo. Separato da 'shieldBreak', che c'è comunque: sono due
+   *  cose diverse da dire, e la seconda esiste solo col nodo. */
+  | { type: 'shieldReactive' }
   | { type: 'turretDown'; id: string; kind: 'drone' | 'turret' }
   | {
       type: 'enemyHit';
