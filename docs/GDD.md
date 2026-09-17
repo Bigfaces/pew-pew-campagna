@@ -990,3 +990,94 @@ La cautela da tenere presente: una ricompensa che rende *più facile* il
 seguito toglie proprio la tensione che la Roguelike esiste per creare. Se
 si fa, probabilmente va nella direzione opposta — una ricompensa che apre
 una **possibilità** invece di alzare una statistica.
+
+---
+
+### Cosa dicono le misure (revisione del 17 settembre)
+
+Le due idee qui sopra restano non progettate. Quello che segue non è un
+progetto: sono le cifre che un progetto dovrà rispettare, misurate sul
+codice invece che stimate. Le ricalcola `balance:campaign` e i test.
+
+**Non esiste XP di scorta.** Chi ripulisce tutto chiude la campagna con
+3830 XP; la soglia del quattordicesimo punto è 3750. Il margine è di 80
+XP — il due per cento. Il quattordicesimo punto non arriva a fine gioco:
+arriva *dentro* lo scontro con ARBITER. Un negozio che spendesse "quello
+che avanza" non avrebbe niente da spendere. Le due strade praticabili
+sono quindi una valuta propria (che vuole drop, HUD, piazzamento nei
+livelli: superficie vera) oppure il punto abilità stesso — l'unica cosa
+in questo gioco che sia già scarsa.
+
+**L'albero converge.** A quattordici punti su diciassette nodi esistono
+157 build legali, ma due giocatori qualsiasi ne condividono in media
+l'84%. Nessun nodo viene davvero sacrificato: il più scartato, Eco, resta
+comunque preso nel 69% delle build. Con quattordici punti si completano
+tre rami interi su quattro — "essere un giocatore di mobilità" non è una
+scelta disponibile, perché si è tutti e quattro i rami.
+
+**La varietà ha un massimo, ed è a metà strada.** Le build legali sono
+1522 a nove punti (60% di sovrapposizione) e scendono a 157 a quattordici
+(84%). Il punto più alto della curva — nove punti — cade esattamente alla
+fine del Nucleo, cioè alla fine dell'Atto II. Il personaggio è più sé
+stesso lì che alla fine.
+
+**L'inversione.** Chi tira dritto chiude la campagna con sette punti:
+1217 build possibili, 50% di sovrapposizione. Chi ripulisce tutto ne ha
+quattordici: 157 build, 84%. Esplorare ogni stanza rende il personaggio
+*meno* riconoscibile, non più. È il contrario di quello che la
+progressione promette.
+
+**Nessuno dei diciassette nodi costa niente.** Sono tutti guadagno puro.
+Non c'è un solo compromesso nell'albero — ed è la cosa che un negozio, o
+una ricompensa da boss, potrebbe portare senza aggiungere una riga di
+economia.
+
+**`unlockedNodes` non può ospitare gli acquisti.** Al caricamento del
+profilo `completedLevels` e `roomsAwarded` vengono filtrate contro gli id
+noti; `unlockedNodes` no, e `pointsSpent` fa costare zero un id
+sconosciuto. È deliberato e giusto: un profilo salvato da una versione
+precedente può contenere un nodo che non esiste più, e farlo costare
+infinito bloccherebbe l'albero di quel giocatore per sempre. Ma la stessa
+permissività, applicata a un acquisto, regalerebbe l'acquisto. Gli
+acquisti vogliono una lista propria, con la sua validazione.
+
+**La cucitura per innestarli esiste già.** Ogni effetto dell'albero passa
+per le funzioni pure di `skills.ts`, e i ventiquattro punti di chiamata
+hanno tutti la stessa forma: `fn(state.unlockedNodes)`. Qualunque cosa
+modifichi le capacità del giocatore dovrebbe entrare da lì e non da
+`world.ts`, che è già il file più grande della campagna.
+
+**Il momento esiste già.** `beginActBreak` mette in pausa fra un atto e
+l'altro, salva il profilo e mostra una schermata. Sono due occasioni per
+run — dopo la Sentinella e dopo il Custode — e coincidono con due dei tre
+boss. Negozio e ricompensa da boss sono lo stesso istante, non due
+sistemi.
+
+**In Roguelike la morte riavvia l'atto, non la campagna.** Una ricompensa
+permanente presa nell'Atto I sopravvive quindi a ogni morte successiva:
+è un cricchetto che sale e non scende mai. È la ragione meccanica —
+non solo estetica — della cautela già scritta sopra. Distinguere
+*margine* (piastre, invulnerabilità: riducono il costo di un errore) da
+*opzioni* (una carica d'esca in più, un lancio nuovo: non allungano la
+vita, allargano le risposte) dà una regola verificabile invece di un
+gusto.
+
+**L'Arena è intatta, ma per disciplina e non per costruzione.** Confronto
+file per file fra questo repo e `arena-boom-shooter` al suo HEAD pulito
+(022e384): il cuore della simulazione multigiocatore è identico byte per
+byte — `sim/constants.ts`, `sim/world.ts`, `sim/bots.ts`, `sim/sim.test.ts`,
+`render/scene.ts`, `render/particles.ts`, `net/session.ts`, `net/net.test.ts`,
+`audio/engine.ts`, `tools/balance.mts`. Differiscono solo il guscio
+(`App.tsx` +79/−6, `Screens.tsx` +51/−0, `ui.css` +418/−0: tutte aggiunte
+per la campagna) e un solo file di gioco, `render/overlay.ts`, dove
+`renderScope` è passata da leggere un `Entity` a ricevere un
+`{cooldownMs, maxCooldownMs}`. Il chiamante Arena passa esattamente i
+valori che la funzione calcolava da sé: comportamento invariato,
+interfaccia allargata per riuso.
+
+La cosa da sapere è che **questo non è un fork git ma una copia**: le due
+storie non hanno un antenato comune, quindi niente fa fluire una correzione
+dall'uno all'altro. Sono già divergenti in un punto, e la divergenza è un
+miglioramento che l'Arena *non* ha. Finché la campagna resta il solo ramo
+vivo non è un problema; il giorno in cui si toccasse anche l'Arena,
+riportare a mano quella firma sarebbe la prima cosa da fare.
