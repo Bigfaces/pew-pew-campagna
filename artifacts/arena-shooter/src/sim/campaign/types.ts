@@ -475,6 +475,7 @@ export type CampaignEvent =
   | { type: 'bossCoreSealed' }
   | { type: 'bossDefeated' }
   | { type: 'itemPurchased'; id: string }
+  | { type: 'nodeRefunded'; id: string }
   | { type: 'purchaseRefused'; id: string; reason: 'punti' | 'atto' | 'gia-preso' | 'sconosciuto' }
   | { type: 'levelCompleted'; levelId: string; next: string | null }
   | { type: 'playerDied'; cause: 'turret' | 'boss' | 'enemy' }

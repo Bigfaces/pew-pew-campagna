@@ -2,8 +2,11 @@ import {
   ALL_SKILL_NODES,
   LEVEL_XP_THRESHOLDS,
   SKILL_TREE,
+  type ShopItemDef,
   type SkillNodeDef,
 } from '../sim/campaign/constants';
+import { useState } from 'react';
+
 import { prereqMet } from '../sim/campaign/skills';
 import type { CampaignHudSnapshot } from '../game/campaignGame';
 import { ACT_BREAKS } from './arbiter';
@@ -379,6 +382,103 @@ function ActBreakLines({ lines }: { lines: readonly string[] }): React.ReactElem
   );
 }
 
+/** Una riga del Banco così come la prepara il chiamante: l'innesto
+ *  stesso più le tre domande a cui il modulo puro ha già risposto —
+ *  "l'ho già preso?", "mi bastano i punti?", "posso comprarlo
+ *  adesso?". Questo file non ricalcola nessuna delle tre: disegna
+ *  soltanto, sullo stesso principio per cui CampaignHud non ricalcola
+ *  `unlocked`/`locked` dei nodi, li legge.
+ *
+ *  Il tipo arriva da game/campaignShop.ts e non è ridichiarato qui.
+ *  Due dichiarazioni identiche di una stessa forma compilano entrambe
+ *  finché restano identiche, e smettono di farlo in silenzio il giorno
+ *  in cui una delle due cresce di un campo. Ri-esportato perché
+ *  App.tsx costruisce le righe e le passa a questa schermata: chi usa
+ *  la schermata trova il tipo dov'è la schermata. */
+export type { ShopRow } from '../game/campaignShop';
+import type { ShopRow } from '../game/campaignShop';
+
+const NO_SHOP_ROWS: readonly ShopRow[] = [];
+function noopPurchase(): void {}
+
+/** Una scheda d'innesto. `owned` e `!affordable` sono due motivi
+ *  diversi per lo stesso pulsante spento, e si leggono diversi di
+ *  proposito — la stessa ragione per cui SkillNode qui sopra separa
+ *  "già preso" da "non ti bastano i punti": collassarli in un solo
+ *  grigio nasconderebbe se conviene aspettare un punto o lasciar
+ *  perdere quella scheda per sempre. */
+function ShopCard({
+  row,
+  onPurchase,
+}: {
+  row: ShopRow;
+  onPurchase: (id: string, giveBack?: string) => void;
+}): React.ReactElement {
+  const { item, owned, affordable, buyable, refundCandidates } = row;
+  // La seconda moneta del Banco: senza un punto libero si può rendere
+  // un nodo. Non è un ripiego — chi spende i punti appena li guadagna
+  // arriva al varco del secondo atto con zero punti in tasca, e senza
+  // questa via quel Banco non si aprirebbe mai.
+  const puoRendere = !owned && !affordable && refundCandidates.length > 0;
+  const [resoAperto, setResoAperto] = useState(false);
+
+  let label: string;
+  if (owned) label = 'INNESTATO';
+  else if (affordable) label = `INNESTA · ${item.cost} PUNTO`;
+  else if (puoRendere) label = resoAperto ? 'ANNULLA' : 'RENDI UN NODO';
+  else label = 'PUNTI INSUFFICIENTI';
+
+  return (
+    <div
+      className="shop-card"
+      data-owned={owned || undefined}
+      data-affordable={affordable}
+      data-reso={puoRendere || undefined}
+    >
+      <div className="shop-card-head">
+        <span className="shop-card-name">
+          {owned ? '✓ ' : ''}
+          {item.name}
+        </span>
+        <span className="shop-card-cost">{item.cost} PUNTO</span>
+      </div>
+      <p className="shop-card-gives">▲ {item.gives}</p>
+      <p className="shop-card-takes">▼ {item.takes}</p>
+      <button
+        type="button"
+        className="shop-card-btn"
+        data-owned={owned || undefined}
+        data-reso={puoRendere || undefined}
+        disabled={!buyable && !puoRendere}
+        onClick={() => {
+          if (buyable) onPurchase(item.id);
+          else if (puoRendere) setResoAperto((v) => !v);
+        }}
+      >
+        {label}
+      </button>
+      {resoAperto && puoRendere && (
+        <div className="shop-refund">
+          <p className="shop-refund-hint">Quale nodo rendi al Banco?</p>
+          {refundCandidates.map((nodeId) => (
+            <button
+              key={nodeId}
+              type="button"
+              className="shop-refund-btn"
+              onClick={() => {
+                setResoAperto(false);
+                onPurchase(item.id, nodeId);
+              }}
+            >
+              {ALL_SKILL_NODES.find((n) => n.id === nodeId)?.name ?? nodeId}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Schermata d'atto: ferma il gioco fra la fine dell'Atto I o II e
  *  l'inizio del successivo. Non usata per l'Atto III — quello è
  *  CampaignEndScreen più sotto, perché lì non c'è un "prosegui" ma un
@@ -387,13 +487,23 @@ function ActBreakLines({ lines }: { lines: readonly string[] }): React.ReactElem
  *  pulsanti diversi restano due componenti, non un ramo. Il pulsante
  *  non aspetta la rivelazione delle righe: bloccarlo avrebbe imposto
  *  il proprio ritmo di lettura a chi il testo lo ha già letto una
- *  volta. */
+ *  volta.
+ *
+ *  `shopRows` e `onPurchase` sono opzionali apposta: senza il Banco
+ *  ancora innestato in App.tsx questo componente deve continuare a
+ *  compilare e a funzionare esattamente come prima, righe vuote
+ *  comprese. Una lista vuota non mostra la sezione — comprare resta
+ *  sempre facoltativo, non blocca mai PROSEGUI. */
 export function CampaignActBreakScreen({
   snap,
   onContinue,
+  shopRows = NO_SHOP_ROWS,
+  onPurchase = noopPurchase,
 }: {
   snap: CampaignHudSnapshot;
   onContinue: () => void;
+  shopRows?: readonly ShopRow[];
+  onPurchase?: (id: string, giveBack?: string) => void;
 }): React.ReactElement {
   const brk = ACT_BREAKS.find((b) => b.actCompleted === snap.actBreakActCompleted);
   return (
@@ -403,6 +513,20 @@ export function CampaignActBreakScreen({
           FINE DELL’ATTO {ACT_LABEL[snap.actBreakActCompleted ?? 1]}
         </p>
         <ActBreakLines lines={brk?.lines ?? []} />
+        {shopRows.length > 0 && (
+          <div className="field shop-bench">
+            <label>BANCO DI RICONFIGURAZIONE</label>
+            <p className="hint" style={{ marginTop: 0 }}>
+              Non c'è hardware nuovo da comprare: si rilavora quello che hai già, e ogni
+              innesto dà e toglie insieme. Punti disponibili: {snap.availableSkillPoints}
+            </p>
+            <div className="shop-grid">
+              {shopRows.map((row) => (
+                <ShopCard key={row.item.id} row={row} onPurchase={onPurchase} />
+              ))}
+            </div>
+          </div>
+        )}
         <button className="btn" type="button" onClick={onContinue}>
           PROSEGUI
         </button>

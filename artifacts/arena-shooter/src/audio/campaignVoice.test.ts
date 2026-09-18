@@ -42,9 +42,11 @@ import {
   GAS_HAZARD,
   GRAVITY_FLIP_INVERTED,
   GRAVITY_FLIP_RESTORED,
+  ITEM_PURCHASED,
   LEVEL_COMPLETE,
   PLATE_ABSORBED,
   PLAYER_DASH,
+  PURCHASE_REFUSED,
   SHIELD_REACTIVE,
   peakFrequency,
   tierOf,
@@ -506,15 +508,103 @@ describe('CampaignVoice — Piastra Reattiva', () => {
   });
 });
 
+// ---- 4bis. Banco di Riconfigurazione: innesto accettato o rifiutato ----
+//
+// Stessa disciplina del blocco Trasponditore: prima il silenzio
+// sicuro, poi la copertura, poi l'idea specifica di ciascuna voce —
+// che qui è "officina, non premio" per l'innesto riuscito e "un'
+// interfaccia che dice no, non un colpo subito" per quello rifiutato.
+
+describe('CampaignVoice — Banco di Riconfigurazione, senza AudioContext', () => {
+  it('sono silenziosamente innocue senza contesto', () => {
+    const voice = new CampaignVoice();
+    voice.init();
+    expect(() => {
+      voice.itemPurchased();
+      voice.purchaseRefused();
+    }).not.toThrow();
+  });
+
+  it('espone un metodo per ciascun evento del banco', () => {
+    const voice = new CampaignVoice();
+    const required = ['itemPurchased', 'purchaseRefused'] as const;
+    for (const name of required) {
+      expect(typeof voice[name], `manca ${name}`).toBe('function');
+    }
+  });
+});
+
+describe('CampaignVoice — innesto riuscito (itemPurchased)', () => {
+  it('non è la fanfara di un premio: niente onda dolce (sine/triangle) che sale', () => {
+    // I suoni-premio del modulo (LEVEL_COMPLETE, BEACON_PICKUP,
+    // BOSS_VULNERABLE_OPEN) sono tutti sine/triangle e salgono o
+    // restano piatti in alto. Un innesto pagato non deve leggersi come
+    // uno di loro.
+    const rises = ITEM_PURCHASED.layers.some(
+      (l) => l.kind === 'tone' && (l.wave === 'sine' || l.wave === 'triangle') && l.freqTo > l.freqFrom,
+    );
+    expect(rises).toBe(false);
+  });
+
+  it('è un\'onda quadra meccanica, come lo scatto della piastra reattiva, non un tono morbido', () => {
+    const tones = ITEM_PURCHASED.layers.filter((l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone');
+    expect(tones.length).toBeGreaterThanOrEqual(2);
+    for (const t of tones) expect(t.wave).toBe('square');
+  });
+
+  it('la seconda nota è più bassa e pesa di più della prima: si cede qualcosa', () => {
+    const tones = ITEM_PURCHASED.layers.filter((l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone');
+    const [first, second] = [...tones].sort((a, b) => a.delay - b.delay);
+    expect(second.freqFrom).toBeLessThan(first.freqFrom);
+    expect(second.gain).toBeGreaterThan(first.gain);
+  });
+
+  it('non è una copia di SHIELD_REACTIVE né di ENEMY_LURED (stesso timbro quadro, spec diversi)', () => {
+    expect(layersAreDistinct(ITEM_PURCHASED, SHIELD_REACTIVE)).toBe(true);
+    expect(layersAreDistinct(ITEM_PURCHASED, ENEMY_LURED)).toBe(true);
+  });
+});
+
+describe('CampaignVoice — innesto rifiutato (purchaseRefused)', () => {
+  it('è corto: fra i suoni-lampo del modulo, non fra quelli sostenuti', () => {
+    expect(totalDuration(PURCHASE_REFUSED)).toBeLessThan(0.2);
+  });
+
+  it('non contiene rumore: niente scivolata come i colpi subiti o la morte (ENEMY_DOWN, BLACKOUT)', () => {
+    const hasNoise = PURCHASE_REFUSED.layers.some((l) => l.kind === 'noise');
+    expect(hasNoise).toBe(false);
+  });
+
+  it('ripete la stessa nota piatta due volte: un "no" di interfaccia, non un accordo come ENEMY_LURED', () => {
+    const tones = PURCHASE_REFUSED.layers.filter((l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone');
+    expect(tones.length).toBe(2);
+    for (const t of tones) {
+      expect(t.freqFrom).toBe(t.freqTo);
+      expect(t.freqFrom).toBe(tones[0]!.freqFrom);
+    }
+  });
+
+  it('non è una copia di ENEMY_HIT_BODY, PLATE_ABSORBED o ENEMY_LURED', () => {
+    expect(layersAreDistinct(PURCHASE_REFUSED, ENEMY_HIT_BODY)).toBe(true);
+    expect(layersAreDistinct(PURCHASE_REFUSED, PLATE_ABSORBED)).toBe(true);
+    expect(layersAreDistinct(PURCHASE_REFUSED, ENEMY_LURED)).toBe(true);
+  });
+
+  it('non è la stessa spec dell\'innesto riuscito', () => {
+    expect(layersAreDistinct(PURCHASE_REFUSED, ITEM_PURCHASED)).toBe(true);
+  });
+});
+
 // ---- 5. Distinguibilità globale: ogni coppia di spec esportate ----------
 //
 // I test sopra e quelli storici verificano coppie scelte a mano — le
 // stesse che chi ha scritto ogni suono aveva in mente. Non bastano:
 // un suono nuovo può assomigliare per caso a uno vecchio che nessuno
-// ha pensato di confrontarci. Qui si mettono in tabella tutte e 25 le
-// spec esportate — le 19 storiche più le 6 di questo compito — e si
-// misura la terna (peakFrequency, totalGain, totalDuration) di ogni
-// coppia possibile.
+// ha pensato di confrontarci. Qui si mettono in tabella tutte e 27 le
+// spec esportate — le 19 storiche, le 6 del Trasponditore/Piastra
+// Reattiva e le 2 del Banco di Riconfigurazione — e si misura la
+// terna (peakFrequency, totalGain, totalDuration) di ogni coppia
+// possibile.
 //
 // ---- La soglia, e perché è quella e non un'altra -----------------------
 //
@@ -587,6 +677,8 @@ const ALL_SPECS: readonly VoiceSpec[] = [
   BEACON_PICKUP,
   ENEMY_LURED,
   SHIELD_REACTIVE,
+  ITEM_PURCHASED,
+  PURCHASE_REFUSED,
 ];
 
 const FREQ_REL_THRESHOLD = 0.05;

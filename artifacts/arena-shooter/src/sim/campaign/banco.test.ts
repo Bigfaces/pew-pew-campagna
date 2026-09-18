@@ -25,6 +25,8 @@ import {
 } from './constants';
 import {
   beaconStatsFor,
+  canRefundNode,
+  refundableNodes,
   isValidShopItem,
   movementStatsFor,
   pointsSpent,
@@ -180,5 +182,78 @@ describe('Banco — come si compongono gli effetti', () => {
       movementStatsFor(['scatto']).dashSpeed,
     );
     expect(shieldCapacity([], ['piastra-fusa'])).toBeGreaterThan(shieldCapacity([]));
+  });
+});
+
+// ================================================================
+// RENDERE UN NODO
+// ================================================================
+// Il Banco accetta un punto libero, oppure un nodo reso. Il secondo
+// modo non è una gentilezza: senza, il Banco del secondo atto non si
+// aprirebbe mai.
+//
+// L'albero si spende dalla pausa in qualunque momento, quindi chi
+// spende i punti appena li guadagna arriva all'intervallo d'atto con
+// in tasca solo quelli arrivati col boss. Misurati sul percorso vero
+// di chi ripulisce tutto: uno alla fine dell'Atto I (la Sentinella fa
+// scattare una soglia), ZERO alla fine dell'Atto II (il Custode non ne
+// fa scattare nessuna). Le cifre le ricalcola `balance:campaign`.
+
+describe('Banco — rendere un nodo in cambio di un innesto', () => {
+  it('un nodo da cui non dipende nessuno si può rendere', () => {
+    expect(refundableNodes(['passo-lungo'])).toContain('passo-lungo');
+    expect(canRefundNode(['passo-lungo'], 'passo-lungo')).toBe(true);
+  });
+
+  it('un nodo da cui dipende un nodo posseduto NON si può rendere', () => {
+    // Rendere `scatto` mentre si possiede `scatto-angolare` lascerebbe
+    // un figlio senza padre: la lista smetterebbe di essere chiusa sui
+    // prerequisiti, ed è la sola cosa che rende l'albero un albero.
+    const con = ['scatto', 'scatto-angolare'];
+    expect(refundableNodes(con)).not.toContain('scatto');
+    expect(canRefundNode(con, 'scatto')).toBe(false);
+    // Il figlio invece sì: da lui non dipende nessuno.
+    expect(refundableNodes(con)).toContain('scatto-angolare');
+  });
+
+  it('lo stesso nodo torna rendibile quando il figlio non c\'è più', () => {
+    expect(canRefundNode(['scatto'], 'scatto')).toBe(true);
+  });
+
+  it('vale anche in fondo a una catena lunga', () => {
+    // Percezione è una scala di quattro. Solo l'ultimo gradino si può
+    // rendere, e solo uno alla volta risalendo.
+    const catena = ['scanner-di-settore', 'lettura-termica', 'sensori-inerziali', 'eco'];
+    expect(refundableNodes(catena)).toEqual(['eco']);
+    const senzaEco = catena.filter((n) => n !== 'eco');
+    expect(refundableNodes(senzaEco)).toEqual(['sensori-inerziali']);
+  });
+
+  it('quello che resta dopo aver reso è sempre chiuso sui prerequisiti', () => {
+    // L'invariante vera, provata invece che dedotta: si rende un nodo
+    // qualsiasi fra quelli leciti e si controlla che nessun superstite
+    // sia rimasto orfano.
+    const costruita = [
+      'scatto', 'scatto-angolare', 'slancio', 'piastra-aggiuntiva',
+      'piastra-reattiva', 'scanner-di-settore', 'lettura-termica',
+    ];
+    for (const reso of refundableNodes(costruita)) {
+      const dopo = costruita.filter((n) => n !== reso);
+      for (const superstite of dopo) {
+        const padre = ALL_SKILL_NODES.find((n) => n.id === superstite)?.requires;
+        expect(padre === undefined || dopo.includes(padre), `${superstite} è rimasto orfano`).toBe(true);
+      }
+    }
+  });
+
+  it('un id che non è un nodo non si rende', () => {
+    expect(refundableNodes(['non-esiste'])).toHaveLength(0);
+    expect(canRefundNode(['non-esiste'], 'non-esiste')).toBe(false);
+    // E nemmeno un innesto: gli innesti non tornano indietro.
+    expect(canRefundNode(['eco-ampio'], 'eco-ampio')).toBe(false);
+  });
+
+  it('un albero vuoto non ha niente da rendere', () => {
+    expect(refundableNodes([])).toHaveLength(0);
   });
 });

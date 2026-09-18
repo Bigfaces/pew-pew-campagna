@@ -97,8 +97,18 @@ export interface EnemyAiCtx {
    *  vede e la può raggiungere le ruba il bersaglio al giocatore —
    *  anche a `playerTargetable` false: l'esca non è "il giocatore
    *  travestito", è un bersaglio suo, indipendente dall'invulnerabilità
-   *  da respawn. */
-  lure: { x: number; y: number } | null;
+   *  da respawn.
+   *
+   *  `tiles` è il raggio di richiamo, in tile: normalmente
+   *  BEACON_LURE_TILES, ma più largo con l'innesto Eco Ampio (vedi
+   *  skills.ts beaconStatsFor). Campo opzionale e non un secondo
+   *  parametro obbligatorio apposta: world.ts lo passa sempre, ma
+   *  beacon.test.ts costruisce `lure: {x, y}` a mano in una manciata
+   *  di punti, scritti prima che il Banco esistesse, e romperli per un
+   *  dettaglio di bilanciamento che quei test non stanno verificando
+   *  non ne vale la candela. Assente, vale la costante — cioè il
+   *  comportamento che quei test già misurano. */
+  lure: { x: number; y: number; tiles?: number } | null;
   leash: Leash | null;
   dtMs: number;
 }
@@ -254,7 +264,8 @@ export function updateEnemyAi(e: EnemyState, ctx: EnemyAiCtx): EnemyIntent {
   let lured = false;
   if (
     ctx.lure &&
-    Math.hypot(ctx.lure.x - e.x, ctx.lure.y - e.y) <= BEACON_LURE_TILES * TILE &&
+    Math.hypot(ctx.lure.x - e.x, ctx.lure.y - e.y) <=
+      (ctx.lure.tiles ?? BEACON_LURE_TILES) * TILE &&
     campHasLOS(ctx.getTile, e.x, e.y, ctx.lure.x, ctx.lure.y, ctx.mapW, ctx.mapH)
   ) {
     targetX = ctx.lure.x;

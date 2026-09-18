@@ -49,11 +49,13 @@ import {
   BOSS_HITS_TO_DEFEAT,
   DASH_COOLDOWN_MS,
   GAS_LINGER_MS,
+  SHOP_ITEMS,
   xpForNextLevel,
 } from '../sim/campaign/constants';
 import { ALL_LEVELS, FIRST_LEVEL_ID, levelById } from '../sim/campaign/levels';
 import { roomName } from '../sim/campaign/levelTypes';
 import { NarrativeQueue, planLevelCompletion } from './campaignNarrative';
+import { paymentFor, shopOffer, type ShopRow } from './campaignShop';
 import {
   hasContacts,
   hasGrazeDamage,
@@ -392,6 +394,61 @@ export class CampaignGame {
   /** Spend an available skill point on a Precisione node — called
    *  from the HUD, not the fixed-tick loop, since it is a menu action
    *  rather than something that needs to be simulated. */
+  /** Le righe del Banco per l'intervallo d'atto in corso, gia' con le
+   *  tre risposte che la schermata non deve ricalcolare.
+   *
+   *  Vuota fuori dall'intervallo d'atto, e vuota dopo l'Atto III: li'
+   *  non c'e' un intervallo dopo, ed e' un buco noto e voluto (vedi
+   *  GDD sezione 13). La schermata legge la lista vuota e non disegna
+   *  il Banco, senza doverlo sapere. */
+  /** Compra un innesto al Banco. `giveBack` e' il nodo che il giocatore
+   *  offre quando non ha un punto libero — la seconda moneta, senza la
+   *  quale il Banco del secondo atto non si aprirebbe mai (vedi
+   *  CampaignWorld.tryPurchase).
+   *
+   *  Il riscontro lo diamo da qui e non dagli eventi della
+   *  simulazione: vedi il commento nella gestione eventi. */
+  tryPurchase(id: string, giveBack?: string): boolean {
+    const ok = this.world.tryPurchase(id, giveBack);
+    if (ok) {
+      this.voice.itemPurchased();
+      const item = SHOP_ITEMS.find((i) => i.id === id);
+      if (item) this.raise(`INNESTATO — ${item.name.toUpperCase()}`, item.takes, '#5eead4');
+      saveCampaignProfile(this.world.toProfile());
+      this.pushHud(true);
+    } else {
+      // Nessun banner sul rifiuto: la schermata del Banco e' ferma
+      // davanti al giocatore e il pulsante spento dice gia' perche'.
+      this.voice.purchaseRefused();
+    }
+    return ok;
+  }
+
+  shopRows(): readonly ShopRow[] {
+    if (this.actBreakActCompleted === null) return [];
+    return shopOffer(
+      this.actBreakActCompleted,
+      this.world.state.purchases,
+      this.world.availableSkillPoints,
+      this.world.state.unlockedNodes,
+    );
+  }
+
+  /** Quali nodi il Banco accetterebbe in cambio, se i punti non
+   *  bastano. Vuota quando i punti bastano: chiedere di rendere
+   *  qualcosa a chi puo' pagare sarebbe una domanda inutile. */
+  refundCandidatesFor(id: string): readonly string[] {
+    if (this.actBreakActCompleted === null) return [];
+    const p = paymentFor(
+      id,
+      this.actBreakActCompleted,
+      this.world.state.purchases,
+      this.world.availableSkillPoints,
+      this.world.state.unlockedNodes,
+    );
+    return p.kind === 'reso' ? p.candidates : [];
+  }
+
   tryUnlockNode(id: string): boolean {
     const ok = this.world.tryUnlockNode(id);
     if (ok) {
@@ -970,6 +1027,15 @@ export class CampaignGame {
           this.audio.impact(this.world.state.player.x, this.world.state.player.y);
           this.raise('NUCLEO RICHIUSO', 'la caccia riparte', '#ff7a2f');
           break;
+        // itemPurchased / purchaseRefused / nodeRefunded non passano di
+        // qui, e non e' una dimenticanza: tryPurchase e' un'azione di
+        // menu, e `step()` azzera la lista degli eventi come prima
+        // cosa. Durante l'intervallo d'atto il tick non gira nemmeno, e
+        // subito dopo si costruisce un mondo nuovo — quegli eventi non
+        // arriverebbero mai. Il riscontro lo da' `tryPurchase` qui
+        // sotto, dal valore di ritorno, esattamente come fa
+        // tryUnlockNode. C'e' un test che prova che devono restare
+        // fuori di qui (sim/campaign/acquisti.test.ts).
         case 'levelCompleted': {
           this.voice.levelComplete();
           // Le tre battute di fine livello (ultime parole se c'è

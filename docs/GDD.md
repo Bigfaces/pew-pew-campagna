@@ -1109,3 +1109,134 @@ sono condivisi dai due lati, e tre di questi (`sim/constants.ts`,
 `sim/raycast.ts`, `render/scene.ts`) sono nella lista da non toccare:
 sono quelli su cui una modifica per la campagna diventa automaticamente
 una modifica all'arena.
+
+
+---
+
+## 14. Il Banco di Riconfigurazione
+
+Fra un atto e l'altro il giocatore passa da un banco di fabbricazione.
+Non vende niente: su questa stazione non è rimasto hardware da comprare.
+**Rilavora quello che si ha già.**
+
+Sei innesti, tre per atto, e ognuno **dà e toglie**. È l'unica cosa che i
+diciassette nodi dell'albero non hanno — lì ogni scelta è un regalo — ed è
+la ragione per cui il Banco esiste.
+
+### Perché paga in punti abilità
+
+La revisione della sezione 13 ha misurato che XP di scorta non ne esiste:
+3830 disponibili contro una soglia di 3750, ottanta di margine. Una valuta
+ricavata dall'avanzo non avrebbe niente da spendere, e una moneta nuova
+avrebbe voluto drop, HUD e piazzamento nei livelli.
+
+Il punto abilità è l'unica cosa già scarsa in questo gioco, e farlo pagare
+al Banco è ciò che trasforma l'albero da calendario di consegne a scelta.
+Misurato prima di scrivere una riga di funzionalità, e poi riconfermato dal
+banco di bilanciamento che lo ricalcola:
+
+| | solo albero | albero + Banco |
+|---|---|---|
+| build legali a 14 punti | 157 | **65 039** |
+| sovrapposizione media fra due giocatori | 84,1% | **64,8%** |
+| cose a cui si rinuncia | 3 | **9** |
+
+Il 65% è più basso del *picco* che l'albero da solo raggiungeva a metà
+campagna (60% a nove punti), e stavolta il numero vale alla fine invece che
+a metà. La distribuzione ha il massimo a tre innesti comprati su sei: il
+Banco si bilancia da sé verso "comprane circa metà".
+
+### I sei innesti
+
+| Atto | Innesto | Dà | Toglie |
+|---|---|---|---|
+| I | Otturatore Spinto | ricarica −150 ms | ottica che si apre in 320 ms |
+| I | Eco Ampio | richiamo 7 tile (da 5) | esca 1800 ms (da 2600) |
+| I | Zavorra Alleggerita | passo ×1,15 | scatto ricarica 3600 ms (da 2600) |
+| II | Doppio Innesco | 3 cariche d'esca (da 2) | gittata 4 tile (da 6) |
+| II | Scatto Teso | scatto ×1,35 | passo ×0,88 |
+| II | Piastra Fusa | +1 carica scudo | ricarica +150 ms |
+
+Due composizioni sono emergenti e volute. **Zavorra e Scatto Teso** si
+moltiplicano sul passo (1,15 × 0,88 ≈ 1,01): chi compra entrambi riporta il
+passo quasi dov'era e tiene i due guadagni — una sinergia trovabile, che
+costa comunque due punti su quattordici, cioè due nodi. **Otturatore Spinto
+e Piastra Fusa** si sommano sulla ricarica (−150 +150): chi vuole tutte e
+due le cose torna al punto di partenza, ed è il prezzo giusto.
+
+### L'invariante: nessuno è guadagno puro
+
+Ogni innesto ha un `takes` non vuoto, e la cosa è controllata in due modi
+diversi perché il primo da solo si aggirerebbe scrivendo una frase:
+
+1. `banco.test.ts` verifica che il testo ci sia;
+2. e che corrisponda davvero a un numero peggiore, interrogando le funzioni
+   pure — un innesto che dicesse di togliere qualcosa senza toglierla
+   sarebbe rosso.
+
+Il banco di bilanciamento ripete la stessa verifica misurando, e la stampa
+innesto per innesto.
+
+### Le due monete, e il difetto che le ha rese necessarie
+
+Il Banco accetta un punto abilità libero **oppure un nodo reso**. La
+seconda via non è una gentilezza: senza, il Banco del secondo atto non si
+sarebbe mai aperto.
+
+L'albero si spende dalla pausa in qualunque momento, quindi chi spende i
+punti appena li guadagna — cioè il comportamento normale — arriva
+all'intervallo d'atto con in tasca soltanto quelli arrivati col boss.
+Misurati sul percorso vero di chi ripulisce tutto:
+
+| intervallo | XP prima del boss | XP dopo | punti che arrivano col boss |
+|---|---|---|---|
+| fine Atto I (Sentinella) | 828 | 1053 | **1** |
+| fine Atto II (Custode) | 1962 | 2212 | **0** |
+
+Un punto al primo varco, **zero al secondo**. La schermata si sarebbe
+aperta con tutte le schede spente.
+
+Rendere un nodo costa esattamente quanto spendere un punto — un punto speso
+è un nodo non comprato — quindi lo spazio delle build misurato sopra non
+cambia di una riga a seconda di come si è pagato. La regola di sicurezza è
+una sola: si rende solo un nodo da cui nessun nodo posseduto dipende, il
+che tiene la lista sempre chiusa sui prerequisiti. Ed è anche la finzione
+che il Banco dichiara: portargli un pezzo montato e uscirne con un altro è
+letteralmente il suo mestiere.
+
+### Un difetto trovato innestando
+
+`CampaignWorld.tryPurchase` emette `itemPurchased` e `purchaseRefused`, ma
+quegli eventi **non raggiungono mai il gioco**: `step()` azzera la lista
+come prima cosa, `tryPurchase` è un'azione di menu chiamata fuori dal tick,
+e durante l'intervallo d'atto il tick non gira affatto — subito dopo si
+costruisce un mondo nuovo. Un suono agganciato a quegli eventi non sarebbe
+mai partito.
+
+Il controller dà quindi il riscontro dal valore di ritorno, come già faceva
+`tryUnlockNode`. Non è un rattoppo: gli eventi restano l'uscita onesta
+della simulazione e i test li leggono, ma c'è ora un test che prova che il
+tick li scarta, così quella scelta ha una prova invece di un commento.
+
+### Il soffitto si è stretto due volte
+
+Il test dell'arco posteriore (sezione 11) usava `BULLET_COOLDOWN`. Ora:
+
+- calcola la **ricarica più corta davvero raggiungibile** — 1000 ms, cioè
+  Otturatore Rapido più Otturatore Spinto — interrogando le funzioni pure
+  invece di scriverla, così il giorno in cui si aggiunge un innesto che
+  accorcia la ricarica il soffitto si stringe da solo;
+- spazzola anche **le combinazioni di innesti che cambiano l'esca**,
+  ricavate allo stesso modo. Senza, Eco Ampio sarebbe stato misurato con il
+  raggio di richiamo base, cioè con una geometria che quel giocatore non ha.
+
+Margine attuale: **+267 ms** (soffitto 2000, finestra più lunga 1733). È per
+quel margine che Otturatore Spinto toglie 150 ms e non 200: a 200 sarebbero
+stati 167, troppo pochi per una costante che qualcuno ritoccherà.
+
+### Il buco noto
+
+Dopo l'Atto III non c'è un intervallo: `shopItemsForAct(3)` è vuoto, e
+ARBITER non lascia niente da spendere perché non c'è un dopo in cui
+spenderlo. È lo stesso posto in cui si aprirebbe una ricompensa da boss
+(sezione 13), e le due cose andranno progettate insieme se si faranno.

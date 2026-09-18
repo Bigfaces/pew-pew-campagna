@@ -499,6 +499,62 @@ export const SHIELD_REACTIVE: VoiceSpec = {
   ],
 };
 
+// ---- Banco di Riconfigurazione: innesto accettato o rifiutato ---------
+//
+// Fra un atto e l'altro il giocatore spende un punto abilità per
+// innestare una modifica che dà qualcosa e toglie qualcos'altro nello
+// stesso gesto: non è un premio, è un compromesso pagato di tasca
+// propria. Il suono deve dirlo — niente fanfara (quella è già
+// LEVEL_COMPLETE, ascendente e in triangolo), niente accordo luminoso
+// (quello è già BOSS_VULNERABLE_OPEN). Qui serve un'officina: qualcosa
+// che si stringe e scatta in sede.
+//
+// ITEM_PURCHASED è due note d'onda quadra (lo stesso timbro meccanico
+// di SHIELD_REACTIVE, non quello morbido dei premi in triangolo o
+// seno), entrambe piatte — non sweep, un innesto non scivola, si
+// aggancia — e la seconda più bassa e più pesante della prima: la nota
+// che scende è ciò che è stato ceduto, e pesa di più (0.28 contro
+// 0.24) perché il costo è la parte che deve restare in mente. In mezzo
+// un breve click di rumore a banda stretta (1200 Hz, 0.03s) fa da
+// "clac" metallico fra le due note, la stessa idea del rumore
+// dell'aggancio in BEACON_THROWN ma qui centrale, non iniziale: separa
+// le due note invece di introdurle. `peakFrequency` (1200, dal click)
+// e la coppia (guadagno 0.64, durata 0.15s) non si avvicinano a nessun
+// altro spec del modulo su tutti e tre gli assi insieme — verificato
+// anche con la metrica pesata per il guadagno più sotto nel file di
+// test, che pesa la nota bassa quanto quella acuta invece di lasciarsi
+// ingannare dal solo click.
+export const ITEM_PURCHASED: VoiceSpec = {
+  label: 'innesto riuscito',
+  layers: [
+    { kind: 'tone', wave: 'square', freqFrom: 760, freqTo: 760, delay: 0, duration: 0.05, gain: 0.24 },
+    { kind: 'noise', filterType: 'bandpass', freq: 1200, q: 3, delay: 0, duration: 0.03, gain: 0.12 },
+    // La nota che scende e pesa di più: ciò che l'innesto toglie.
+    { kind: 'tone', wave: 'square', freqFrom: 380, freqTo: 380, delay: 0.06, duration: 0.09, gain: 0.28 },
+  ],
+};
+
+// PURCHASE_REFUSED è l'opposto strutturale di ENEMY_LURED (due toni
+// quadri puliti anche lì) apposta: ENEMY_LURED sale in un accordo di
+// due note diverse, questo ripete la *stessa* nota due volte, piatta e
+// bassa — il classico "no" di un'interfaccia, non un evento nel
+// mondo di gioco. Nessuno strato è un rumore, quindi non condivide
+// nulla con i colpi subiti (ENEMY_HIT_*, PLATE_ABSORBED) né con la
+// morte (che nell'Arena usa una scivolata di rumore, come ENEMY_DOWN e
+// BLACKOUT qui): niente scivola, niente si affievolisce lentamente,
+// solo due bip identici e via. È anche più corto di ENEMY_LURED
+// (0.105s contro 0.065... la somma dei due bip con la pausa in mezzo
+// resta comunque nel registro dei suoni-lampo del modulo, mai vicino
+// per frequenza, guadagno e durata insieme a nessun altro spec, colpi
+// e morte compresi).
+export const PURCHASE_REFUSED: VoiceSpec = {
+  label: 'innesto rifiutato',
+  layers: [
+    { kind: 'tone', wave: 'square', freqFrom: 300, freqTo: 300, delay: 0, duration: 0.045, gain: 0.18 },
+    { kind: 'tone', wave: 'square', freqFrom: 300, freqTo: 300, delay: 0.06, duration: 0.045, gain: 0.18 },
+  ],
+};
+
 // ================================================================
 // Il motore — replica minima di engine.ts, non un'estensione
 // ================================================================
@@ -789,5 +845,17 @@ export class CampaignVoice {
    *  istante quando arrivano 'shieldBreak' e 'shieldReactive' insieme. */
   shieldReactive(x?: number, y?: number): void {
     this.play(SHIELD_REACTIVE, x, y);
+  }
+
+  /** Non posizionato: il Banco di Riconfigurazione è una schermata fra
+   *  un atto e l'altro, non un punto nella mappa — vedi il commento su
+   *  ITEM_PURCHASED. */
+  itemPurchased(): void {
+    this.play(ITEM_PURCHASED);
+  }
+
+  /** Non posizionato, per lo stesso motivo di `itemPurchased`. */
+  purchaseRefused(): void {
+    this.play(PURCHASE_REFUSED);
   }
 }

@@ -342,3 +342,36 @@ export function isValidShopItem(id: string): id is ShopItemId {
 export function shopItemCost(id: string): number {
   return shopItemById(id)?.cost ?? Infinity;
 }
+
+/** I nodi che si possono rendere al Banco in cambio di un innesto.
+ *
+ *  Esiste perché senza di lui il Banco sarebbe irraggiungibile, e non
+ *  per una sfumatura: l'albero si apre dalla pausa in qualunque
+ *  momento, quindi chi spende i punti appena li guadagna arriva
+ *  all'intervallo d'atto con in tasca solo quelli arrivati col boss.
+ *  Misurati sul percorso vero: uno alla fine dell'Atto I, **zero**
+ *  alla fine dell'Atto II. Il secondo Banco non si sarebbe mai potuto
+ *  aprire.
+ *
+ *  La regola di sicurezza è una sola e basta: si può rendere solo un
+ *  nodo da cui nessun altro nodo posseduto dipende. Guardare i figli
+ *  diretti è sufficiente anche per le catene lunghe — se C dipende da
+ *  B e B da A, finché B è posseduto A non è rendibile, quindi la lista
+ *  resta sempre chiusa sui prerequisiti senza bisogno di risalirla.
+ *
+ *  È anche la finzione che il Banco dichiara: non vende hardware
+ *  nuovo, rilavora quello che si ha già. Portargli un pezzo montato e
+ *  uscirne con un altro è letteralmente il suo mestiere. */
+export function refundableNodes(unlocked: readonly string[]): readonly string[] {
+  return unlocked.filter((id) => {
+    if (!isValidNode(id)) return false;
+    return !unlocked.some((other) => other !== id && nodeRequires(other) === id);
+  });
+}
+
+/** Se rendere questo nodo è lecito. Separata da `refundableNodes` per
+ *  chi ha già un id in mano e non vuole costruire una lista per
+ *  chiederne uno. */
+export function canRefundNode(unlocked: readonly string[], id: string): boolean {
+  return refundableNodes(unlocked).includes(id);
+}

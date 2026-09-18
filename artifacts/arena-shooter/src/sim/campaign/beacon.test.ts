@@ -24,6 +24,7 @@ import {
 } from './constants';
 import { ALL_ENEMY_KINDS, ENEMY_REAR_ARC_HALF, archetypeOf } from './enemies';
 import { SHOP_ITEMS } from './constants';
+import { beaconStatsFor } from './skills';
 import { updateEnemyAi, type EnemyAiCtx } from './enemyAi';
 import { ALL_LEVELS } from './levels';
 import { campCastRay } from './raycast';
@@ -622,18 +623,27 @@ function rearArcMs(
   kind: EnemyState['kind'],
   thetaDeg: number,
   enemyTiles = 4,
+  purchased: readonly string[] = [],
 ): number {
+  // La geometria dell'esca non è più una costante: il Banco la cambia
+  // (Eco Ampio allarga il richiamo e accorcia la vita, Doppio Innesco
+  // accorcia la gittata). Chiederla a beaconStatsFor invece di leggere
+  // le costanti è ciò che rende questo soffitto vero anche per chi ha
+  // comprato — e misurarlo con la geometria base sarebbe stata una
+  // garanzia che il gioco vero non rispetta.
+  const beacon = beaconStatsFor([], purchased);
   const px = 0;
   const py = 0;
   const e = freshEnemy(kind, px + enemyTiles * TILE, py);
   const th = (thetaDeg * Math.PI) / 180;
   const lure = {
-    x: px + Math.cos(th) * BEACON_RANGE_TILES * TILE,
-    y: py + Math.sin(th) * BEACON_RANGE_TILES * TILE,
+    x: px + Math.cos(th) * beacon.rangeTiles * TILE,
+    y: py + Math.sin(th) * beacon.rangeTiles * TILE,
+    tiles: beacon.lureTiles,
   };
   // Un'esca caduta oltre il raggio di richiamo non aggancia: non è
   // una finestra corta, è nessuna finestra.
-  if (Math.hypot(lure.x - e.x, lure.y - e.y) > BEACON_LURE_TILES * TILE) return 0;
+  if (Math.hypot(lure.x - e.x, lure.y - e.y) > beacon.lureTiles * TILE) return 0;
 
   const ctx: EnemyAiCtx = {
     getTile: () => 0, mapW: 64, mapH: 64,
@@ -641,7 +651,7 @@ function rearArcMs(
     lure, leash: null, dtMs: TICK_MS,
   };
   let ticks = 0;
-  for (let t = 0; t < Math.round(BEACON_LIFETIME_MS / TICK_MS); t++) {
+  for (let t = 0; t < Math.round(beacon.lifetimeMs / TICK_MS); t++) {
     const intent = updateEnemyAi(e, ctx);
     e.angle = intent.angle;
     e.lured = intent.lured;
@@ -661,14 +671,43 @@ function bestRearArcMs(kind: EnemyState['kind']): number {
   // quattro tile soltanto, il Martello dava 1383 ms e il Guardiano
   // 283. Allargando a tre e cinque salgono a 1567 e 450 — cioè il
   // soffitto stava guardando una finestra più corta di quella vera.
+  // Si spazzolano anche le combinazioni di innesti che toccano l'esca,
+  // ricavate interrogando beaconStatsFor invece di elencarle: il
+  // giorno in cui il Banco ne offre un altro che cambia la geometria,
+  // questo soffitto lo misura da solo.
   let best = 0;
-  for (let theta = 0; theta <= 60; theta += 5) {
-    for (const tiles of [3, 4, 5]) {
-      const ms = rearArcMs(kind, theta, tiles);
-      if (ms > best) best = ms;
+  for (const purchased of beaconVariants()) {
+    for (let theta = 0; theta <= 60; theta += 5) {
+      for (const tiles of [3, 4, 5]) {
+        const ms = rearArcMs(kind, theta, tiles, purchased);
+        if (ms > best) best = ms;
+      }
     }
   }
   return best;
+}
+
+/** Tutte le combinazioni di innesti che cambiano davvero l'esca, più
+ *  quella vuota. Gli altri innesti non toccano beaconStatsFor, quindi
+ *  moltiplicarli qui raddoppierebbe il lavoro senza cambiare un
+ *  numero. */
+function beaconVariants(): readonly (readonly string[])[] {
+  const base = beaconStatsFor([], []);
+  const rilevanti = SHOP_ITEMS.map((i) => i.id).filter((id) => {
+    const s = beaconStatsFor([], [id]);
+    return (
+      s.rangeTiles !== base.rangeTiles ||
+      s.lureTiles !== base.lureTiles ||
+      s.lifetimeMs !== base.lifetimeMs
+    );
+  });
+  const out: string[][] = [];
+  for (let mask = 0; mask < 1 << rilevanti.length; mask++) {
+    const set: string[] = [];
+    for (let i = 0; i < rilevanti.length; i++) if (mask & (1 << i)) set.push(rilevanti[i]!);
+    out.push(set);
+  }
+  return out;
 }
 
 /** La ricarica più corta che un giocatore possa davvero avere: quella

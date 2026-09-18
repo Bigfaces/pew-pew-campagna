@@ -352,6 +352,8 @@ export default function App(): React.ReactElement {
         <CampaignActBreakScreen
           snap={campaignSnap}
           onContinue={() => campaignRef.current?.continueFromActBreak()}
+          shopRows={campaignRef.current?.shopRows() ?? []}
+          onPurchase={(id, giveBack) => campaignRef.current?.tryPurchase(id, giveBack)}
         />
       )}
 

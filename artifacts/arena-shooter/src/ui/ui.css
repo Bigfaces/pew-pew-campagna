@@ -1052,3 +1052,195 @@
   padding-top: 18px;
   border-top: 1px solid var(--line);
 }
+
+/* ================================================================
+   Campaign: il Banco di Riconfigurazione
+   ================================================================
+   Sta dentro CampaignActBreakScreen, fra il testo narrativo e
+   PROSEGUI: riusa .field/.hint per l'intestazione della sezione (lo
+   stesso schema di CampaignPauseScreen) e aggiunge solo ciò che gli è
+   proprio, la griglia di schede. Il Banco non vende: rilavora quello
+   che c'è già, quindi ogni scheda ha due righe di segno opposto — dà
+   in verde, toglie in ambra, mai in rosso: qui il rosso significa
+   danno e morte, e un compromesso non è un fallimento. L'accento
+   dell'intera sezione è il teal del Banco (#5eead4), scelto apposta
+   diverso dal magenta del Trasponditore (#ff4fd8) per non confonderli.
+   ================================================================ */
+
+/* repeat(auto-fit, minmax(...)) invece di un conteggio di colonne
+   fisso: con tre schede per atto e il pannello che va da ~263px di
+   contenuto (telefono) a 496px (desktop), è questa regola — non un
+   media query — a far sì che le schede stiano in colonna stretta senza
+   mai dover scorrere di lato, e si affianchino da sole quando lo
+   spazio c'è. */
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.shop-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(20, 22, 32, 0.5);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+/* Già innestato: acceso in tinta, come .skill-node[data-unlocked] fa
+   col verde — stesso schema, tinta diversa perché qui non si sta
+   guadagnando soltanto. */
+.shop-card[data-owned] {
+  border-color: rgba(94, 234, 212, 0.5);
+  background: rgba(94, 234, 212, 0.08);
+}
+
+/* Non innestabile per mancanza di punti (e non già preso): spenta ma
+   leggibile, lo stesso trattamento che .skill-node riserva al nodo che
+   costa più di quanto hai. */
+.shop-card[data-affordable='false']:not([data-owned]):not([data-reso]) {
+  opacity: 0.6;
+}
+
+/* Una scheda che si può ancora pagare rendendo un nodo NON va spenta:
+   spegnerla direbbe "lascia perdere" proprio dove c'è ancora una
+   scelta da fare, e sarebbe la bugia più costosa di questa schermata —
+   al varco del secondo atto i punti liberi sono zero, quindi TUTTE le
+   schede sarebbero grigie e il Banco sembrerebbe chiuso. */
+.shop-card[data-reso] {
+  opacity: 1;
+  border-color: rgba(255, 154, 60, 0.4);
+}
+
+.shop-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.shop-card-name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  /* Esplicito e non ereditato: il corpo della scheda è smorzato di
+     proposito, ma il NOME dell'innesto è la cosa che si legge per
+     prima e non deve sparire con lui. Senza questa riga i due innesti
+     che si possono ancora pagare rendendo un nodo avevano il titolo
+     quasi invisibile. */
+  color: var(--text);
+}
+
+.shop-card[data-owned] .shop-card-name {
+  color: #5eead4;
+}
+
+.shop-card-cost {
+  flex: none;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--dim);
+}
+
+.shop-card-gives,
+.shop-card-takes {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+/* Il verde dei banner positivi — lo stesso di .power-bar i quando
+   riempie una barra di potenziamento, non un nuovo verde inventato. */
+.shop-card-gives {
+  color: #7dfc9a;
+}
+
+/* L'ambra, non il rosso: un compromesso non è un danno, in questo
+   gioco il rosso è riservato a quello. */
+.shop-card-takes {
+  color: #ff9a3c;
+}
+
+.shop-card-btn {
+  margin-top: 4px;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text);
+  background: rgba(94, 234, 212, 0.14);
+  border: 1px solid rgba(94, 234, 212, 0.55);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.shop-card-btn:hover:not(:disabled) {
+  filter: brightness(1.2);
+}
+
+.shop-card-btn:disabled {
+  cursor: default;
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--line);
+}
+
+/* Già innestato: disattivato ma marcato in tinta — un motivo diverso
+   dal grigio spento qui sopra, che è invece "ti mancano i punti". */
+.shop-card-btn[data-owned]:disabled {
+  color: #5eead4;
+  background: rgba(94, 234, 212, 0.1);
+  border-color: rgba(94, 234, 212, 0.4);
+}
+
+/* ── Banco: rendere un nodo al posto del punto ──────────────────────
+   La seconda moneta. Si apre sotto la scheda invece che in un
+   dialogo: la domanda ("quale nodo rendi?") riguarda quella scheda e
+   basta, e un dialogo sopra tutto costringerebbe a ricordare quale
+   innesto si stava guardando. In ambra e non in teal perché rendere è
+   la cosa che costa, e in questa schermata l'ambra è già il colore di
+   ciò che si perde (.shop-card-takes). */
+.shop-card-btn[data-reso] {
+  background: rgba(255, 154, 60, 0.14);
+  border-color: rgba(255, 154, 60, 0.55);
+}
+
+.shop-refund {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 8px;
+  background: rgba(255, 154, 60, 0.07);
+  border: 1px solid rgba(255, 154, 60, 0.3);
+  border-radius: 7px;
+}
+
+.shop-refund-hint {
+  margin: 0 0 2px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: #ff9a3c;
+}
+
+.shop-refund-btn {
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-align: left;
+  color: var(--text);
+  background: rgba(255, 154, 60, 0.12);
+  border: 1px solid rgba(255, 154, 60, 0.4);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.shop-refund-btn:hover {
+  background: rgba(255, 154, 60, 0.22);
+}

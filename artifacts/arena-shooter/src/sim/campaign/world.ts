@@ -75,11 +75,7 @@ import {
   XP_ENEMY_WEAK_HIT,
   XP_TURRET_DOWN,
   CROGIOLO_CLOUD_MS,
-  BEACON_CHARGES_START,
   BEACON_CHARGES_MAX,
-  BEACON_LIFETIME_MS,
-  BEACON_LURE_TILES,
-  BEACON_RANGE_TILES,
   BEACON_WALL_MARGIN,
   CROGIOLO_CLOUD_TILES,
   ENEMY_REVEAL_MS,
@@ -119,8 +115,11 @@ import { campMoveEntity, distanceAlongRayToCircle, type IsSolidFn } from './phys
 import { campCastRay, campHasLOS } from './raycast';
 import {
   beaconRevealsCloaked,
+  beaconStatsFor,
   hasGrazeDamage,
   isValidNode,
+  canRefundNode,
+  isValidShopItem,
   movementStatsFor,
   resistsGravityFlip,
   nodeCost,
@@ -129,6 +128,7 @@ import {
   refillsShieldOnRoomEnter,
   shieldCapacity,
   shieldRefundsShot,
+  shopItemCost,
   weaponStatsFor,
 } from './skills';
 import {
@@ -332,6 +332,13 @@ export class CampaignWorld {
     const playerLevel = levelForXp(xp);
     const collected = new Set(profile?.collectedCoreIds ?? []);
     const spawn = centreOf(level.spawn.tx, level.spawn.ty);
+    // Calcolati qui, prima del literal qui sotto, perché
+    // player.beaconCharges ne ha bisogno subito: un personaggio che
+    // torna con Doppio Innesco già comprato deve iniziare il livello
+    // con tre cariche, non due corrette al primo tick.
+    const unlockedNodes = [...(profile?.unlockedNodes ?? [])];
+    const purchases = [...(profile?.purchases ?? [])];
+    const beacon = beaconStatsFor(unlockedNodes, purchases);
 
     this.state = {
       tick: 0,
@@ -360,7 +367,7 @@ export class CampaignWorld {
         empMs: 0,
         darkMs: 0,
         gravityFlipped: false,
-        beaconCharges: BEACON_CHARGES_START,
+        beaconCharges: beacon.chargesStart,
       },
       doors: level.doors.map((d) => ({
         id: d.id,
@@ -448,8 +455,8 @@ export class CampaignWorld {
       // One point per level gained, so this follows from the level the
       // XP buys — never stored, never able to drift from it.
       skillPoints: playerLevel - 1,
-      unlockedNodes: [...(profile?.unlockedNodes ?? [])],
-      purchases: [...(profile?.purchases ?? [])],
+      unlockedNodes,
+      purchases,
       boss: level.boss
         ? {
             ...centreOf(level.boss.tx, level.boss.ty),
@@ -526,7 +533,10 @@ export class CampaignWorld {
   private get invulnerable(): boolean {
     const p = this.state.player;
     if (p.respawnInvulnerableMs > 0) return true;
-    return p.dashTimer > 0 && movementStatsFor(this.state.unlockedNodes).dashInvulnerable;
+    return (
+      p.dashTimer > 0 &&
+      movementStatsFor(this.state.unlockedNodes, this.state.purchases).dashInvulnerable
+    );
   }
 
   /** Skill points earned by leveling up but not yet spent on a node. */
@@ -607,6 +617,55 @@ export class CampaignWorld {
     return true;
   }
 
+  /** Spend one available skill point on a Banco item. Stessa forma di
+   *  tryUnlockNode, coi controlli suoi — sconosciuto, doppione, punti
+   *  insufficienti — nello stesso ordine, ognuno col suo evento
+   *  `purchaseRefused`.
+   *
+   *  Quello che NON controlla è se questo innesto è ancora offerto in
+   *  questo atto: questo mondo simula un livello alla volta e non sa
+   *  in che intervallo d'atto si trovi il giocatore. Quella domanda
+   *  vive in src/game/campaignShop.ts, il solo posto che conosce il
+   *  contesto — da cui il reason 'atto', dichiarato in types.ts ma mai
+   *  restituito da qui. */
+  tryPurchase(id: string, giveBack?: string): boolean {
+    if (!isValidShopItem(id)) {
+      this.events.push({ type: 'purchaseRefused', id, reason: 'sconosciuto' });
+      return false;
+    }
+    if (this.state.purchases.includes(id)) {
+      this.events.push({ type: 'purchaseRefused', id, reason: 'gia-preso' });
+      return false;
+    }
+    // La seconda moneta del Banco: un nodo reso al posto di un punto.
+    //
+    // Non e' una gentilezza. L'albero si spende dalla pausa in
+    // qualunque momento, quindi chi spende i punti appena li guadagna
+    // arriva all'intervallo d'atto con in tasca solo quelli arrivati
+    // col boss — misurati sul percorso vero, uno alla fine dell'Atto I
+    // e ZERO alla fine dell'Atto II. Senza il reso, il Banco del
+    // secondo atto non si sarebbe mai potuto aprire.
+    //
+    // Si rende PRIMA di ricontrollare i punti invece di scalare a mano
+    // il costo: cosi' la sola fonte di verita' resta
+    // `availableSkillPoints`, che deriva da entrambe le liste. Un
+    // conto tenuto a parte sarebbe una seconda versione della stessa
+    // verita' in attesa di litigare con la prima.
+    if (this.availableSkillPoints < shopItemCost(id) && giveBack !== undefined) {
+      if (canRefundNode(this.state.unlockedNodes, giveBack)) {
+        this.state.unlockedNodes = this.state.unlockedNodes.filter((n) => n !== giveBack);
+        this.events.push({ type: 'nodeRefunded', id: giveBack });
+      }
+    }
+    if (this.availableSkillPoints < shopItemCost(id)) {
+      this.events.push({ type: 'purchaseRefused', id, reason: 'punti' });
+      return false;
+    }
+    this.state.purchases.push(id);
+    this.events.push({ type: 'itemPurchased', id });
+    return true;
+  }
+
   // --------------------------------------------------------------------
 
   /** Add XP and raise the level (and skill points) for every threshold
@@ -642,7 +701,7 @@ export class CampaignWorld {
     const p = this.state.player;
     if (p.dashTimer > 0 || p.dashCooldown > 0) return;
 
-    const move = movementStatsFor(this.state.unlockedNodes);
+    const move = movementStatsFor(this.state.unlockedNodes, this.state.purchases);
     if (!move.hasDash) return;
 
     // Direzione: quella in cui si sta andando; da fermi, quella in cui
@@ -687,7 +746,8 @@ export class CampaignWorld {
     // invertire la rotta a metà (vedi NODE_DASH_STEER_RATE).
     if (p.dashTimer > 0) {
       p.dashTimer = Math.max(0, p.dashTimer - TICK_MS);
-      const steerRate = movementStatsFor(this.state.unlockedNodes).dashSteerRate;
+      const steerRate = movementStatsFor(this.state.unlockedNodes, this.state.purchases)
+        .dashSteerRate;
       if (steerRate > 0 && (input.forward !== 0 || input.strafe !== 0)) {
         // Stessa costruzione della direzione desiderata di
         // startDashIfRequested: quella in cui si sta spingendo, in
@@ -741,8 +801,8 @@ export class CampaignWorld {
       vy /= len;
     }
 
-    const stats = weaponStatsFor(this.state.unlockedNodes);
-    const move = movementStatsFor(this.state.unlockedNodes);
+    const stats = weaponStatsFor(this.state.unlockedNodes, this.state.purchases);
+    const move = movementStatsFor(this.state.unlockedNodes, this.state.purchases);
     const speed = PLAYER_SPEED * move.speedMult * (input.ads ? stats.adsMoveMult : 1);
     campMoveEntity(this.isSolid, p, vx * speed, vy * speed);
   }
@@ -778,7 +838,7 @@ export class CampaignWorld {
   private refillShieldOnRoomEnter(): void {
     if (!this.state.shields.some((s) => s.collected)) return;
     if (!refillsShieldOnRoomEnter(this.state.unlockedNodes)) return;
-    const capacity = shieldCapacity(this.state.unlockedNodes);
+    const capacity = shieldCapacity(this.state.unlockedNodes, this.state.purchases);
     const p = this.state.player;
     if (p.shieldCharges >= capacity) return;
     p.shieldCharges = capacity;
@@ -958,7 +1018,7 @@ export class CampaignWorld {
       if (s.collected) continue;
       if (Math.hypot(p.x - s.x, p.y - s.y) <= SHIELD_PICKUP_RADIUS) {
         s.collected = true;
-        p.shieldCharges = shieldCapacity(this.state.unlockedNodes);
+        p.shieldCharges = shieldCapacity(this.state.unlockedNodes, this.state.purchases);
         this.events.push({ type: 'shieldPickup', charges: p.shieldCharges });
       }
     }
@@ -1002,17 +1062,19 @@ export class CampaignWorld {
     if (p.weaponCooldown > 0) return;
 
     p.beaconCharges--;
+    const beacon = beaconStatsFor(this.state.unlockedNodes, this.state.purchases);
     // Lanciare costa anche il tempo di un colpo: è il vincolo su cui è
     // tarata tutta la finestra (vedi BEACON_LIFETIME_MS in
-    // constants.ts).
-    p.weaponCooldown = weaponStatsFor(this.state.unlockedNodes).cooldownMs;
+    // constants.ts, e beacon.lifetimeMs qui sotto per chi ha comprato
+    // Eco Ampio).
+    p.weaponCooldown = weaponStatsFor(this.state.unlockedNodes, this.state.purchases).cooldownMs;
 
     const wall = campCastRay(
       this.getTile,
       p.x,
       p.y,
       input.aimAngle,
-      BEACON_RANGE_TILES * TILE,
+      beacon.rangeTiles * TILE,
       this.level.width,
       this.level.height,
     );
@@ -1026,7 +1088,7 @@ export class CampaignWorld {
     // arrivava mai alla portata dichiarata, ma sempre sei pixel prima.
     // Non è un difetto che si vede giocando: è un difetto che si vede
     // solo confrontando il codice con la costante che dice 6 tile.
-    const range = BEACON_RANGE_TILES * TILE;
+    const range = beacon.rangeTiles * TILE;
     const dist = wall.hit ? Math.max(0, Math.min(wall.dist - BEACON_WALL_MARGIN, range)) : range;
     const x = p.x + Math.cos(input.aimAngle) * dist;
     const y = p.y + Math.sin(input.aimAngle) * dist;
@@ -1035,7 +1097,7 @@ export class CampaignWorld {
     // dove guardano due gruppi diversi nello stesso momento, e la
     // finestra smetterebbe di essere una decisione per diventare una
     // regia.
-    this.state.beacon = { active: true, x, y, ms: BEACON_LIFETIME_MS };
+    this.state.beacon = { active: true, x, y, ms: beacon.lifetimeMs };
     this.events.push({ type: 'beaconThrown', x, y });
   }
 
@@ -1057,9 +1119,14 @@ export class CampaignWorld {
     // il nemico più tardo della campagna resta un problema aperto
     // anche a chi ha comprato tutto il resto dell'albero.
     if (!beaconRevealsCloaked(this.state.unlockedNodes)) return;
+    // Stesso raggio del richiamo dei nemici (vedi enemyAi.ts): "entro
+    // quanto richiama" è la stessa domanda per un nemico che si volta
+    // e per uno che smette di occultarsi, quindi Eco Ampio allunga
+    // entrambi insieme invece che uno dei due soltanto.
+    const lureTiles = beaconStatsFor(this.state.unlockedNodes, this.state.purchases).lureTiles;
     for (const e of this.state.enemies) {
       if (!e.alive || !archetypeOf(e.kind).cloaks) continue;
-      if (Math.hypot(e.x - b.x, e.y - b.y) > BEACON_LURE_TILES * TILE) continue;
+      if (Math.hypot(e.x - b.x, e.y - b.y) > lureTiles * TILE) continue;
       if (!campHasLOS(this.getTile, e.x, e.y, b.x, b.y, this.level.width, this.level.height)) {
         continue;
       }
@@ -1189,6 +1256,11 @@ export class CampaignWorld {
       });
     }
 
+    // Una volta per tutti i nemici, non uno per ciascuno: il raggio di
+    // richiamo dipende solo dagli innesti comprati, non da chi lo
+    // legge.
+    const lureTiles = beaconStatsFor(this.state.unlockedNodes, this.state.purchases).lureTiles;
+
     for (const e of this.state.enemies) {
       if (!e.alive) continue;
       const a = archetypeOf(e.kind);
@@ -1200,7 +1272,9 @@ export class CampaignWorld {
         playerX: p.x,
         playerY: p.y,
         playerTargetable: !this.invulnerable,
-        lure: this.state.beacon.active ? { x: this.state.beacon.x, y: this.state.beacon.y } : null,
+        lure: this.state.beacon.active
+          ? { x: this.state.beacon.x, y: this.state.beacon.y, tiles: lureTiles }
+          : null,
         leash: this.leashFor(this.enemyDef(e.id).room),
         dtMs: TICK_MS,
       });
@@ -1604,7 +1678,7 @@ export class CampaignWorld {
     const p = this.state.player;
     if (p.weaponCooldown > 0) return;
 
-    const stats = weaponStatsFor(this.state.unlockedNodes);
+    const stats = weaponStatsFor(this.state.unlockedNodes, this.state.purchases);
     p.weaponCooldown = stats.cooldownMs;
 
     const wall = campCastRay(
