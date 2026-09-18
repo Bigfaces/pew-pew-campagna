@@ -1240,3 +1240,58 @@ Dopo l'Atto III non c'è un intervallo: `shopItemsForAct(3)` è vuoto, e
 ARBITER non lascia niente da spendere perché non c'è un dopo in cui
 spenderlo. È lo stesso posto in cui si aprirebbe una ricompensa da boss
 (sezione 13), e le due cose andranno progettate insieme se si faranno.
+
+---
+
+## 15. La consegna: due difetti che vivevano fuori dal codice
+
+Preparando il repository perché qualcuno lo provasse sono emersi due
+difetti che nessun test poteva vedere, perché nessuno dei due stava nel
+sorgente. Il sorgente era giusto. Sbagliato era ciò che arrivava a chi
+non compila — cioè a tutti quelli a cui il gioco sarebbe stato dato.
+
+### Il file pubblicato era fermo al giorno del fork
+
+`docs/index.html` è il gioco in un file solo: è quello che si apre col
+doppio click ed è la pagina che GitHub Pages serve. È un artefatto di
+build committato di proposito (`docs/LEGGIMI.md`), e proprio per questo
+non si aggiorna da sé.
+
+Nessuno l'aveva rigenerato dal fork. Conteneva **zero occorrenze** di
+`CAMPAGNA`, `ARBITER`, `TRASPONDITORE`: era l'Arena, 278 064 byte,
+datata 31 luglio. Tre atti, nove livelli, tre boss, diciassette nodi e
+il Banco esistevano nel repository ed erano irraggiungibili da chiunque
+non avesse Node installato. Il README, intanto, offriva un pulsante
+«GIOCA ORA» che puntava alle Pages del progetto padre.
+
+Rigenerato: 412 074 byte, campagna inclusa, verificato in un browser
+vero sia da `file://` sia servito via HTTP — `localStorage` funziona
+anche da file locale, quindi i progressi si salvano davvero anche col
+doppio click, e dopo qualche uccisione il profilo compare su disco
+(`pew-pew.campaign.profile`, versione 4).
+
+La guardia contro il ripetersi sta in `src/ui/pubblicato.test.ts`. Non
+elenca stringhe scritte a mano: prende le righe di `CAMPAIGN_CONTROLS` e
+le modalità di `CAMPAIGN_DIFFICULTIES` e pretende di ritrovarle nel file
+pubblicato. Messa davanti al file vecchio diventa rossa in cinque punti,
+ognuno dei quali dice di rilanciare `build:standalone`.
+
+### La campagna stava sotto la piega
+
+Il menu apriva sul titolo dell'Arena e sulle sue impostazioni. Tra
+queste e i pulsanti c'è la legenda dei comandi, che è lunga: il pulsante
+della campagna finiva a **y=871 su una finestra alta 800** e a **y=1103
+su un telefono alto 844**. Su entrambi, fuori schermo.
+
+Chi apriva il gioco per provare la campagna vedeva quindi un menu che
+parlava d'altro, con in mezzo un grosso pulsante `ENTRA NELL'ARENA`, e
+per trovare quello giusto doveva scorrere oltre. Il difetto non si vede
+da sviluppatore, perché chi ha scritto il menu sa già dov'è il pulsante.
+
+Il blocco della campagna è stato spostato in testa, subito sotto il
+titolo, con il suo selettore di difficoltà e la nota che spiega cosa
+cambia; l'Arena è scesa a pulsante secondario, perché due pulsanti
+primari non indicano niente. Misurato di nuovo: **y=268** e **y=295**.
+
+Resta aperta una domanda di nome, non di codice: il titolo dice ancora
+`ARENA SNIPER` sopra un menu che offre per prima la campagna.

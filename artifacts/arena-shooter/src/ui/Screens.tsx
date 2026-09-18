@@ -184,6 +184,41 @@ export function Menu({
           TUTTI CONTRO TUTTI · OTTURATORE · UN COLPO UCCIDE
         </p>
 
+        {/* La campagna sta in cima, prima delle impostazioni dell'Arena.
+            Stava in fondo, dopo la legenda dei comandi, e la legenda è
+            lunga abbastanza da spingerla oltre la piega: misurata a
+            y=871 su una finestra alta 800 e a y=1103 su un telefono alto
+            844. Chi apriva il gioco per provare la campagna vedeva un
+            menu dell'Arena, e per trovarla doveva scorrere oltre il
+            pulsante sbagliato. Nascosta mentre si entra in una stanza
+            online, che è un flusso dell'Arena e non la riguarda. */}
+        {!joining && (
+          <div className="campagna-entry">
+            <div className="field">
+              <label>DIFFICOLTÀ CAMPAGNA</label>
+              <div className="seg">
+                {CAMPAIGN_DIFFICULTIES.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    data-on={campaignDifficulty === d}
+                    onClick={() => {
+                      setCampaignDifficulty(d);
+                      saveCampaignDifficultyChoice(d);
+                    }}
+                  >
+                    {CAMPAIGN_DIFF_LABEL[d]}
+                  </button>
+                ))}
+              </div>
+              <p className="hint">{CAMPAIGN_DIFF_NOTE[campaignDifficulty]}</p>
+            </div>
+            <button className="btn" type="button" onClick={onCampaign}>
+              ▶ CAMPAGNA (BETA) — KESSLER-9
+            </button>
+          </div>
+        )}
+
         <div className="field">
           <label htmlFor="pname">NOME IN CODICE</label>
           <input
@@ -282,30 +317,12 @@ export function Menu({
           </>
         ) : (
           <>
-            <button className="btn" type="button" onClick={() => onStart(cfg())}>
+            <button
+              className="btn secondary"
+              type="button"
+              onClick={() => onStart(cfg())}
+            >
               ▶ {standalone ? 'ENTRA NELL’ARENA' : 'GIOCATORE SINGOLO'}
-            </button>
-            <div className="field">
-              <label>DIFFICOLTÀ CAMPAGNA</label>
-              <div className="seg">
-                {CAMPAIGN_DIFFICULTIES.map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    data-on={campaignDifficulty === d}
-                    onClick={() => {
-                      setCampaignDifficulty(d);
-                      saveCampaignDifficultyChoice(d);
-                    }}
-                  >
-                    {CAMPAIGN_DIFF_LABEL[d]}
-                  </button>
-                ))}
-              </div>
-              <p className="hint">{CAMPAIGN_DIFF_NOTE[campaignDifficulty]}</p>
-            </div>
-            <button className="btn secondary" type="button" onClick={onCampaign}>
-              CAMPAGNA (BETA) — KESSLER-9
             </button>
             {/* Hidden entirely in the standalone build: an online
                 button there could only ever fail. */}

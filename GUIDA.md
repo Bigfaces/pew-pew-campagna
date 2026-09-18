@@ -1,4 +1,4 @@
-# Guida rapida — Arena Sniper
+# Guida rapida — Pew Pew Campagna
 
 ## Devo per forza usare il terminale?
 
@@ -6,14 +6,14 @@
 
 | Modo | Come | Cosa ottieni |
 | --- | --- | --- |
-| **Browser** | Apri <https://bigfaces.github.io/ARENA-BOOM-SHOOTER/> | Solo contro i bot. Niente da scaricare. |
+| **Browser** | Apri <https://bigfaces.github.io/pew-pew-campagna/> | Campagna e Arena contro i bot. Niente da scaricare. |
 | **File singolo** | Doppio click su `docs/index.html` | Come sopra, ma funziona anche offline. |
 | **Lanciatore** | Doppio click su `AVVIA.cmd` | Tutto: bot **e** partite online. Apre il browser da solo. |
 | **Terminale** | Vedi §1 in poi | Uguale al lanciatore, ma vedi i log e puoi usare i test. |
 
 ### File singolo (il più semplice)
 
-Il file è già nel progetto: **`docs/index.html`**, **un unico file da 276 kB** con
+Il file è già nel progetto: **`docs/index.html`**, **un unico file da 412 kB** con
 dentro tutto — codice, stili, icona. Puoi spostarlo dove vuoi, copiarlo su una
 chiavetta o mandarlo via email: funziona con un doppio click, anche senza rete.
 È lo stesso file che GitHub Pages pubblica all'indirizzo qui sopra.
@@ -74,7 +74,7 @@ trova da nessuna parte si offre di scaricarlo. Quindi questo prerequisito serve
 davvero solo a chi lavora da terminale: per giocare basta il doppio click.
 
 Se non vuoi installare nulla, salta tutto: gioca su
-<https://bigfaces.github.io/ARENA-BOOM-SHOOTER/> oppure apri `docs/index.html`.
+<https://bigfaces.github.io/pew-pew-campagna/> oppure apri `docs/index.html`.
 
 ---
 

@@ -1244,3 +1244,21 @@
 .shop-refund-btn:hover {
   background: rgba(255, 154, 60, 0.22);
 }
+
+/* ---- ingresso della campagna nel menu principale ---- */
+
+/* Il blocco della campagna apre il menu, sopra le impostazioni
+   dell'Arena. La riga sotto è quel che lo separa da ciò che segue:
+   senza, i due gruppi di comandi si leggono come uno solo e la
+   difficoltà della campagna sembra riferirsi ai bot dell'Arena. */
+.campagna-entry {
+  padding-bottom: 20px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* `.btn + .btn` non scatta qui, perché tra i due pulsanti c'è il
+   selettore di difficoltà: la spaziatura va rimessa a mano. */
+.campagna-entry .field {
+  margin-bottom: 14px;
+}

@@ -8,7 +8,7 @@ Sta in questa cartella perché GitHub Pages può pubblicare un sito solo dalla
 radice del repository o da `/docs`, e la radice serve al codice sorgente. Questo
 file diventa quindi la pagina che si apre su:
 
-<https://bigfaces.github.io/ARENA-BOOM-SHOOTER/>
+<https://bigfaces.github.io/pew-pew-campagna/>
 
 `.nojekyll` disattiva l'elaborazione Jekyll, che Pages applica di default e che
 qui non serve a nulla.
