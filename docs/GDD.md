@@ -1317,7 +1317,8 @@ difetti con precisione chirurgica:
 > davvero, prendo dei cubi colorati gialli, verdi, blu, rossi. Non so cosa
 > siano però li prendo.»
 
-Tre difetti distinti, tutti e tre reali.
+Tre difetti distinti, tutti e tre reali — e un quarto, il peggiore,
+fabbricato dalla correzione del primo (§16.4).
 
 ### 16.1 Il vicolo cieco del checkpoint — aritmetica, non difficoltà
 
@@ -1422,7 +1423,48 @@ non deve tagliare a metà le ultime parole del boss). La forma è sempre
 raccoglieva sapeva già di aver preso un cubo verde, non sapeva a cosa
 servisse.
 
-### 16.4 Cosa insegna, a monte dei tre difetti
+### 16.4 Il vicolo cieco che ha creato la correzione
+
+Vale la pena raccontarlo per intero, perché è la parte più utile della
+giornata: **la correzione del 16.1 ha introdotto un secondo vicolo cieco**,
+ed è stato trovato solo perché un bot ha giocato il livello nel browser per
+150 secondi senza mai uscire dal corridoio.
+
+Il reset dopo una morte valeva per «la stanza del checkpoint»:
+
+```ts
+const inScope = (room) => difficulty === 'medio' || room === cp.room;
+```
+
+Finché il checkpoint si prendeva sulla soglia di ogni stanza, quella frase
+diceva anche un'altra cosa — «il tratto che rigiocherò» — e le due
+coincidevano. Da quando il checkpoint pretende un posto sicuro può restare
+due stanze indietro, e **il tratto in mezzo ha smesso di essere toccato da
+qualsiasi reset**.
+
+Sull'ATTRACCO: la paratia del CORRIDOIO si chiude alle spalle del
+giocatore; il checkpoint è rimasto nell'ATTRACCO perché il corridoio ha un
+Ronzino dentro; la porta non rientra più in niente. Resta sigillata **per
+sempre** su tre tile — (9,4), (9,5), (9,6) — che sono l'intero passaggio.
+Misurato: dodici morti di fila senza mai superare la colonna 9.
+
+La regola giusta si legge da sola una volta vista: *se lo devi rigiocare,
+deve tornare com'era*. Lo scope del reset va dal checkpoint fino alla
+stanza in cui si è morti, non alla sola stanza del checkpoint.
+
+Due cose da tenere da questo episodio:
+
+- **La correzione di un difetto è un cambiamento come gli altri**, e merita
+  la stessa diffidenza di qualunque altro. Le 646 prove erano verdi, il
+  vicolo cieco originale era davvero chiuso, e il livello era di nuovo
+  insuperabile per una ragione diversa.
+- **Quello che l'ha trovato non è stata una prova**: è stato guardare un
+  bot giocare e chiedersi perché non fosse mai uscito dal corridoio. Il
+  numero sospetto valeva più dell'intera suite, e la prova è arrivata
+  dopo — scritta sapendo già cosa cercare, e vista fallire col difetto
+  rimesso a mano (11 sigillature dopo una morte contro 0).
+
+### 16.5 Cosa insegna, a monte di tutto
 
 Le 629 prove erano verdi mentre il primo livello era insuperabile. Nessuna
 era sbagliata: provavano che il drone spara, che il respawn resetta la

@@ -1934,6 +1934,10 @@ export class CampaignWorld {
 
     const p = this.state.player;
 
+    // *Prima* di teletrasportare: la stanza in cui si sta morendo. Serve
+    // sotto, per decidere cosa rimettere a posto.
+    const stanzaMorte = roomAt(this.level, Math.floor(p.x / TILE), Math.floor(p.y / TILE));
+
     // Medio: "il checkpoint torna alla stanza di spawn" (GDD.md
     // sezione 9). Farlo *prima* di leggere `cp` sotto significa che il
     // resto del metodo — scritto per "riporta al checkpoint" — riporta
@@ -1979,8 +1983,32 @@ export class CampaignWorld {
     // Aggiungere un trabocchetto a un livello non richiede di toccare
     // questo metodo in nessuna delle due modalità — che è esattamente
     // il motivo per cui `room` esiste nelle definizioni.
-    const inScope = (room: string): boolean =>
-      this.state.difficulty === 'medio' || room === cp.room;
+    // Non "la stanza del checkpoint" ma **tutto il tratto che si dovrà
+    // rifare**: dal checkpoint fino a dove si è morti.
+    //
+    // La differenza è nata come un difetto, e vale la pena scriverlo.
+    // Finché il checkpoint si prendeva sulla soglia di ogni stanza, le
+    // due cose coincidevano e `room === cp.room` diceva esattamente
+    // "quello che rigiocherò". Da quando il checkpoint pretende un posto
+    // sicuro può restare due stanze indietro — e con la vecchia regola
+    // il tratto in mezzo non veniva più toccato da niente.
+    //
+    // Misurato sull'ATTRACCO: la paratia del CORRIDOIO si chiudeva alle
+    // spalle del giocatore, il checkpoint era rimasto nell'ATTRACCO, e
+    // la porta non rientrava più in nessun reset. Restava sigillata per
+    // sempre su tre tile che sono l'intero passaggio: dodici morti di
+    // fila senza mai superare la colonna 9. Un vicolo cieco nuovo, messo
+    // lì dalla correzione del vicolo cieco precedente.
+    //
+    // La regola giusta si legge da sola: se lo devi rigiocare, deve
+    // tornare com'era.
+    const daOrdine = roomOrder(this.level, cp.room);
+    const aOrdine = Math.max(daOrdine, roomOrder(this.level, stanzaMorte));
+    const inScope = (room: string): boolean => {
+      if (this.state.difficulty === 'medio') return true;
+      const o = roomOrder(this.level, room);
+      return o >= daOrdine && o <= aOrdine;
+    };
 
     for (const d of this.state.doors) {
       if (!inScope(this.level.doors.find((x) => x.id === d.id)!.room)) continue;

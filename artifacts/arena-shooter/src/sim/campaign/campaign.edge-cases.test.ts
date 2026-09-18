@@ -113,6 +113,45 @@ describe('CampaignWorld — un checkpoint è un posto sicuro', () => {
       .toBeGreaterThan(RESPAWN_GRACE_MS.tutorial + 300);
   });
 
+  it('una morte riapre la paratia anche se il checkpoint e rimasto indietro', () => {
+    // Questo difetto l'ha creato la correzione qui sopra, ed e' il
+    // motivo per cui la prova esiste.
+    //
+    // Il reset dopo una morte valeva per "la stanza del checkpoint".
+    // Finche' il checkpoint si prendeva sulla soglia di ogni stanza
+    // quella frase diceva anche "il tratto che rigiochero'". Da quando
+    // pretende un posto sicuro puo' restare due stanze indietro, e il
+    // tratto in mezzo smetteva di essere toccato da qualsiasi reset.
+    //
+    // Sull'ATTRACCO: la paratia del CORRIDOIO si chiude alle spalle del
+    // giocatore, il checkpoint e' rimasto nell'ATTRACCO, e la porta non
+    // rientrava piu' in niente. Restava sigillata per sempre su tre tile
+    // che sono l'intero passaggio — misurato, dodici morti di fila senza
+    // mai superare la colonna 9. Un vicolo cieco nuovo al posto di
+    // quello vecchio.
+    const world = attracco();
+    const porta = () => world.state.doors[0]!;
+    let morti = 0;
+    let sigillataDopoUnaMorte = 0;
+
+    for (let t = 0; t < 40_000 / TICK_MS; t++) {
+      const morto = world
+        .step({ ...emptyCampaignInput(), forward: 1, aimAngle: 0 })
+        .some((e) => e.type === 'playerDied');
+      if (!morto) continue;
+      morti++;
+      // Il caso che conta e' proprio questo: checkpoint indietro
+      // rispetto alla stanza della porta.
+      if (world.state.checkpoint.room !== 'corridoio' && porta().closed) sigillataDopoUnaMorte++;
+    }
+
+    // La premessa: il bot deve davvero morire, e il checkpoint deve
+    // davvero restare indietro, o la prova non starebbe guardando niente.
+    expect(morti).toBeGreaterThan(2);
+    expect(world.state.checkpoint.room).not.toBe('corridoio');
+    expect(sigillataDopoUnaMorte, 'la paratia e rimasta chiusa dopo una morte').toBe(0);
+  });
+
   it('chi sa mirare gioca il livello invece di subirlo', () => {
     // La prova che il difetto rendeva impossibile superare. Non è una
     // questione di bravura: col checkpoint nel tiro del drone, un bot a
