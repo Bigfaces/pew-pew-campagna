@@ -356,14 +356,29 @@ export interface CampaignProfile {
    *  significato pulito, quindi il profilo la fissa insieme al resto
    *  del personaggio. */
   difficulty: CampaignDifficulty;
+  /** Innesti comprati al Banco (constants.ts, SHOP_ITEMS).
+   *
+   *  Lista separata da `unlockedNodes` e non in coda a quella, per una
+   *  ragione precisa: al caricamento `unlockedNodes` NON viene filtrata
+   *  contro gli id noti, ed è giusto così — `pointsSpent` fa costare
+   *  zero un id sconosciuto perché un profilo salvato da una versione
+   *  precedente può contenere un nodo che non esiste più, e farlo
+   *  costare infinito bloccherebbe l'albero di quel giocatore per
+   *  sempre. La stessa permissività, applicata a un acquisto,
+   *  regalerebbe l'acquisto. Questa lista è quindi filtrata
+   *  (stats/campaignProfile.ts), ed è l'unica differenza di trattamento
+   *  fra le due — voluta, non dimenticata. */
+  purchases: string[];
 }
 
-/** 3: il profilo impara la difficoltà scelta (Tutorial/Medio/
+/** 4: il profilo impara gli innesti comprati al Banco.
+ *
+ *  3: il profilo impara la difficoltà scelta (Tutorial/Medio/
  *  Roguelike, vedi GDD.md sezione 9). Come sempre i profili di
  *  versione precedente vengono scartati, non migrati — è la politica
  *  dichiarata fin dall'inizio, e l'atto dura pochi minuti: rigiocarlo
  *  costa meno che scrivere e mantenere un convertitore. */
-export const CAMPAIGN_PROFILE_VERSION = 3;
+export const CAMPAIGN_PROFILE_VERSION = 4;
 
 export interface CampaignState {
   tick: number;
@@ -391,10 +406,14 @@ export interface CampaignState {
   xp: number;
   level: number;
   /** Punti guadagnati salendo di livello, non ancora spesi
-   *  sull'albero. `unlockedNodes` è la fonte di verità per quanto è
-   *  già speso — vedi skills.ts `pointsSpent`. */
+   *  sull'albero né al Banco. `unlockedNodes` e `purchases` sono
+   *  insieme la fonte di verità per quanto è già speso — vedi
+   *  skills.ts `pointsSpent`. */
   skillPoints: number;
   unlockedNodes: string[];
+  /** Innesti comprati al Banco. Spendono gli stessi punti dei nodi:
+   *  è quel confronto diretto a rendere la scelta una scelta. */
+  purchases: string[];
   /** null nei livelli senza boss. */
   boss: BossState | null;
   outcome: CampaignOutcome;
@@ -455,6 +474,8 @@ export type CampaignEvent =
   | { type: 'bossStage'; stage: 2 | 3 }
   | { type: 'bossCoreSealed' }
   | { type: 'bossDefeated' }
+  | { type: 'itemPurchased'; id: string }
+  | { type: 'purchaseRefused'; id: string; reason: 'punti' | 'atto' | 'gia-preso' | 'sconosciuto' }
   | { type: 'levelCompleted'; levelId: string; next: string | null }
   | { type: 'playerDied'; cause: 'turret' | 'boss' | 'enemy' }
   /** Solo Roguelike: la morte non chiude il livello, chiude l'atto.

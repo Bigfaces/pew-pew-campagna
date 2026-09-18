@@ -23,6 +23,7 @@ import {
   TURRET_REACTION_MS,
 } from './constants';
 import { ALL_ENEMY_KINDS, ENEMY_REAR_ARC_HALF, archetypeOf } from './enemies';
+import { SHOP_ITEMS } from './constants';
 import { updateEnemyAi, type EnemyAiCtx } from './enemyAi';
 import { ALL_LEVELS } from './levels';
 import { campCastRay } from './raycast';
@@ -617,10 +618,14 @@ function freshEnemy(kind: EnemyState['kind'], x: number, y: number): EnemyState 
  *  l'esca lanciata a `thetaDeg` dalla congiungente. Stanza aperta: la
  *  geometria di un livello cambierebbe il numero senza dire niente
  *  sull'arma. */
-function rearArcMs(kind: EnemyState['kind'], thetaDeg: number): number {
+function rearArcMs(
+  kind: EnemyState['kind'],
+  thetaDeg: number,
+  enemyTiles = 4,
+): number {
   const px = 0;
   const py = 0;
-  const e = freshEnemy(kind, px + 4 * TILE, py);
+  const e = freshEnemy(kind, px + enemyTiles * TILE, py);
   const th = (thetaDeg * Math.PI) / 180;
   const lure = {
     x: px + Math.cos(th) * BEACON_RANGE_TILES * TILE,
@@ -652,12 +657,45 @@ function rearArcMs(kind: EnemyState['kind'], thetaDeg: number): number {
 /** La finestra migliore di un archetipo su tutti gli angoli di lancio
  *  praticabili — cioè il meglio che un giocatore perfetto può fare. */
 function bestRearArcMs(kind: EnemyState['kind']): number {
+  // Si spazzolano anche le distanze, non solo gli angoli: misurando a
+  // quattro tile soltanto, il Martello dava 1383 ms e il Guardiano
+  // 283. Allargando a tre e cinque salgono a 1567 e 450 — cioè il
+  // soffitto stava guardando una finestra più corta di quella vera.
   let best = 0;
   for (let theta = 0; theta <= 60; theta += 5) {
-    const ms = rearArcMs(kind, theta);
-    if (ms > best) best = ms;
+    for (const tiles of [3, 4, 5]) {
+      const ms = rearArcMs(kind, theta, tiles);
+      if (ms > best) best = ms;
+    }
   }
   return best;
+}
+
+/** La ricarica più corta che un giocatore possa davvero avere: quella
+ *  del nodo Otturatore Rapido, più tutti i delta negativi che il Banco
+ *  sa applicare. È questa e non BULLET_COOLDOWN a decidere il
+ *  soffitto — un'arma più rapida fa stare più colpi nella stessa
+ *  finestra, quindi misurare sulla costante base darebbe una garanzia
+ *  che il gioco vero non rispetta.
+ *
+ *  Calcolata invece che scritta: il giorno in cui si aggiunge un
+ *  innesto che accorcia la ricarica, questo numero scende da solo e il
+ *  soffitto si stringe senza che nessuno se ne debba ricordare. */
+function ricaricaMinima(): number {
+  const tuttiGliInnesti = SHOP_ITEMS.map((i) => i.id);
+  let min = weaponStatsFor(['otturatore-rapido']).cooldownMs;
+  // Ogni sottoinsieme sarebbe 2^n; basta provare ciascun innesto da
+  // solo e poi tutti insieme, perché i delta sulla ricarica si sommano
+  // (vedi weaponStatsFor) e il minimo sta in uno dei due estremi.
+  for (const id of tuttiGliInnesti) {
+    const cd = weaponStatsFor(['otturatore-rapido'], [id]).cooldownMs;
+    if (cd < min) min = cd;
+  }
+  const soloNegativi = tuttiGliInnesti.filter(
+    (id) => weaponStatsFor([], [id]).cooldownMs < weaponStatsFor([]).cooldownMs,
+  );
+  const tuttoInsieme = weaponStatsFor(['otturatore-rapido'], soloNegativi).cooldownMs;
+  return Math.min(min, tuttoInsieme);
 }
 
 describe("Trasponditore — il soffitto dell'arco posteriore", () => {
@@ -674,7 +712,7 @@ describe("Trasponditore — il soffitto dell'arco posteriore", () => {
     "%s: l'arco posteriore non contiene due ricariche intere",
     (kind) => {
       const best = bestRearArcMs(kind);
-      expect(best).toBeLessThan(BULLET_COOLDOWN * 2);
+      expect(best).toBeLessThan(ricaricaMinima() * 2);
     },
   );
 

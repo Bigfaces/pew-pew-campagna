@@ -449,6 +449,7 @@ export class CampaignWorld {
       // XP buys — never stored, never able to drift from it.
       skillPoints: playerLevel - 1,
       unlockedNodes: [...(profile?.unlockedNodes ?? [])],
+      purchases: [...(profile?.purchases ?? [])],
       boss: level.boss
         ? {
             ...centreOf(level.boss.tx, level.boss.ty),
@@ -530,7 +531,7 @@ export class CampaignWorld {
 
   /** Skill points earned by leveling up but not yet spent on a node. */
   get availableSkillPoints(): number {
-    return this.state.skillPoints - pointsSpent(this.state.unlockedNodes);
+    return this.state.skillPoints - pointsSpent(this.state.unlockedNodes, this.state.purchases);
   }
 
   /** The part of this run worth carrying to the next one. */
@@ -539,6 +540,7 @@ export class CampaignWorld {
       version: CAMPAIGN_PROFILE_VERSION,
       xp: this.state.xp,
       unlockedNodes: [...this.state.unlockedNodes],
+      purchases: [...this.state.purchases],
       levelId: this.state.levelId,
       completedLevels: [...this.state.completedLevels],
       collectedCoreIds: this.state.cores.filter((c) => c.collected).map((c) => c.id),

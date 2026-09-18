@@ -489,6 +489,166 @@ export const SKILL_TREE: readonly SkillBranchDef[] = [
   },
 ];
 
+// ---- Il Banco di Riconfigurazione ----
+// Fra un atto e l'altro il giocatore passa da un banco di fabbricazione.
+// Non vende niente: su questa stazione non è rimasto hardware da
+// comprare. Rilavora quello che si ha già.
+//
+// Perché esista, e perché paghi in punti abilità invece che in una
+// moneta sua, lo dice la revisione registrata in GDD.md sezione 13.
+// In breve: l'XP è già tutta impegnata (3830 disponibili contro una
+// soglia di 3750 — ottanta di margine), quindi una valuta ricavata
+// dall'avanzo non avrebbe niente da spendere; e il punto abilità è
+// l'unica cosa in questo gioco che sia già scarsa. Farlo pagare al
+// banco è ciò che trasforma l'albero da calendario di consegne a
+// scelta: misurato, la sovrapposizione media fra due giocatori a fine
+// campagna passa dall'84% al 65%, e le build legali da 157 a 65039.
+//
+// La regola che tiene in piedi tutto è una sola, ed è verificata da un
+// test: **nessun innesto è guadagno puro**. Ognuno ha un `takes` non
+// vuoto, perché è l'unica cosa che i diciassette nodi dell'albero non
+// hanno — lì ogni scelta è un regalo, e una progressione fatta solo di
+// regali non è una scelta.
+
+export type ShopItemId =
+  | 'otturatore-spinto'
+  | 'eco-ampio'
+  | 'zavorra-alleggerita'
+  | 'doppio-innesco'
+  | 'scatto-teso'
+  | 'piastra-fusa';
+
+export interface ShopItemDef {
+  id: ShopItemId;
+  /** L'atto al termine del quale il banco lo offre. Passato quel
+   *  varco l'innesto non torna: è la ragione per cui la scelta pesa. */
+  act: 1 | 2;
+  name: string;
+  /** Cosa dà. */
+  gives: string;
+  /** Cosa toglie. Non può essere vuoto — c'è un test che lo controlla,
+   *  ed è l'invariante attorno a cui è costruito il banco intero. */
+  takes: string;
+  /** In punti abilità: gli stessi che comprano i nodi. */
+  cost: number;
+}
+
+/** Quanto costa un innesto. Uno, come un nodo: è il confronto diretto
+ *  fra le due spese a rendere la decisione leggibile. */
+export const SHOP_ITEM_COST = 1;
+
+// ---- Valori degli innesti ----
+// Ognuno tocca due numeri: uno in meglio, uno in peggio. Sono deltas o
+// assegnazioni applicate DOPO i nodi dell'albero (vedi skills.ts), in
+// ordine di definizione, così due innesti che toccano lo stesso campo
+// compongono in modo prevedibile invece che dipendere da cosa è stato
+// comprato prima.
+
+/** Otturatore Spinto: quanto accorcia la ricarica.
+ *
+ *  Centocinquanta e non duecento. Con Otturatore Rapido (1150) questo
+ *  porta la ricarica a 1000 ms, e il soffitto dell'arco posteriore
+ *  vuole che nessuna finestra contenga due ricariche: la più lunga
+ *  misurata è 1733 ms (la Vedetta), quindi il limite vero è 866 ms.
+ *  A −200 il margine sarebbe stato di 167 ms, troppo poco per una
+ *  costante che qualcuno ritoccherà. A −150 sono 267. */
+export const SHOP_OTTURATORE_SPINTO_DELTA_MS = -150;
+/** ...e quanto rallenta l'apertura dell'ottica, che è il prezzo.
+ *  Base 130, con Aggancio Ottico 70: questo li sovrascrive entrambi. */
+export const SHOP_OTTURATORE_SPINTO_ADS_MS = 320;
+
+/** Eco Ampio: il richiamo arriva più lontano... */
+export const SHOP_ECO_AMPIO_LURE_TILES = 7;
+/** ...ma l'esca dura meno. Il Trasponditore smette di essere un invito
+ *  e diventa uno strappo: prende più nemici, per meno tempo. */
+export const SHOP_ECO_AMPIO_LIFETIME_MS = 1800;
+
+/** Zavorra Alleggerita: si cammina più in fretta... */
+export const SHOP_ZAVORRA_SPEED_MULT = 1.15;
+/** ...e lo scatto torna raro. Da 2600 a 3600 vuol dire uno scatto ogni
+ *  tre secondi e mezzo: chi lo usava per schivare la carica deve
+ *  imparare a camminare meglio. */
+export const SHOP_ZAVORRA_DASH_COOLDOWN_MS = 3600;
+
+/** Doppio Innesco: una carica d'esca in più di partenza... */
+export const SHOP_DOPPIO_INNESCO_CHARGES = 3;
+/** ...ma il lancio arriva meno lontano. Più esche, tutte da vicino. */
+export const SHOP_DOPPIO_INNESCO_RANGE_TILES = 4;
+
+/** Scatto Teso: lo scatto va più forte... */
+export const SHOP_SCATTO_TESO_DASH_MULT = 1.35;
+/** ...e il passo è più corto. Il contrario esatto della Zavorra:
+ *  comprarli tutti e due riporta il passo quasi dov'era e lascia i due
+ *  guadagni. È una sinergia trovabile, non nascosta — ma costa due
+ *  punti su quattordici, e quei due punti sono due nodi. */
+export const SHOP_SCATTO_TESO_SPEED_MULT = 0.88;
+
+/** Piastra Fusa: una carica di scudo in più... */
+export const SHOP_PIASTRA_FUSA_CHARGES_DELTA = 1;
+/** ...e l'arma ricarica più lenta, perché la piastra pesa. Si somma a
+ *  Otturatore Spinto invece di annullarlo: chi ha comprato tutti e due
+ *  torna quasi al punto di partenza (-150 +150), che è il prezzo
+ *  giusto per aver voluto le due cose insieme. */
+export const SHOP_PIASTRA_FUSA_COOLDOWN_DELTA_MS = 150;
+
+export const SHOP_ITEMS: readonly ShopItemDef[] = [
+  {
+    id: 'otturatore-spinto',
+    act: 1,
+    name: 'Otturatore Spinto',
+    gives: 'Ricarica più corta di 150 ms, sempre.',
+    takes: "L'ottica si apre in 320 ms: lenta, anche con Aggancio Ottico.",
+    cost: SHOP_ITEM_COST,
+  },
+  {
+    id: 'eco-ampio',
+    act: 1,
+    name: 'Eco Ampio',
+    gives: "L'esca richiama da 7 tile invece di 5.",
+    takes: 'Vive 1800 ms invece di 2600: un colpo solo, e stretto.',
+    cost: SHOP_ITEM_COST,
+  },
+  {
+    id: 'zavorra-alleggerita',
+    act: 1,
+    name: 'Zavorra Alleggerita',
+    gives: 'Passo più veloce del 15%, sempre.',
+    takes: 'Lo scatto si ricarica in 3600 ms invece di 2600.',
+    cost: SHOP_ITEM_COST,
+  },
+  {
+    id: 'doppio-innesco',
+    act: 2,
+    name: 'Doppio Innesco',
+    gives: 'Tre cariche di Trasponditore a inizio livello invece di due.',
+    takes: "L'esca vola 4 tile invece di 6: si lancia da vicino.",
+    cost: SHOP_ITEM_COST,
+  },
+  {
+    id: 'scatto-teso',
+    act: 2,
+    name: 'Scatto Teso',
+    gives: 'Lo scatto è più rapido del 35%.',
+    takes: 'Il passo è più lento del 12%, sempre.',
+    cost: SHOP_ITEM_COST,
+  },
+  {
+    id: 'piastra-fusa',
+    act: 2,
+    name: 'Piastra Fusa',
+    gives: 'Una carica di scudo in più.',
+    takes: 'La ricarica dell\'arma è più lunga di 150 ms.',
+    cost: SHOP_ITEM_COST,
+  },
+];
+
+/** Gli innesti offerti alla fine di un atto. Vuoto per l'Atto III:
+ *  dopo ARBITER non c'è un intervallo in cui spendere, ed è un buco
+ *  noto (vedi GDD sezione 13). */
+export function shopItemsForAct(act: number): readonly ShopItemDef[] {
+  return SHOP_ITEMS.filter((i) => i.act === act);
+}
+
 export const ALL_SKILL_NODES: readonly SkillNodeDef[] = SKILL_TREE.flatMap((b) => b.nodes);
 
 // ---- Valori dei nodi ----

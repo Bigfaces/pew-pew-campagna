@@ -14,6 +14,7 @@
 // ================================================================
 
 import { ALL_LEVELS, FIRST_LEVEL_ID } from '../sim/campaign/levels';
+import { isValidShopItem } from '../sim/campaign/skills';
 import {
   CAMPAIGN_DIFFICULTIES,
   CAMPAIGN_PROFILE_VERSION,
@@ -94,6 +95,19 @@ export function loadCampaignProfile(): CampaignProfile | null {
       // buttare il resto del personaggio, stessa logica di levelId
       // qui sopra: xp e nodi valgono più di una regola di morte.
       difficulty: isCampaignDifficulty(p['difficulty']) ? p['difficulty'] : 'tutorial',
+      // L'unica lista filtrata contro gli id noti insieme a
+      // completedLevels e roomsAwarded — e l'unica delle tre per cui
+      // il filtro è una questione di correttezza e non di ordine.
+      //
+      // `unlockedNodes` qui sopra NON è filtrata, di proposito: un id
+      // sconosciuto costa zero in pointsSpent perché un profilo
+      // salvato da una versione precedente può contenere un nodo che
+      // non esiste più, e farlo costare infinito bloccherebbe
+      // l'albero di quel giocatore per sempre. Applicata a un
+      // acquisto, la stessa clemenza regalerebbe l'acquisto: un id
+      // inventato costerebbe zero e varrebbe un innesto. Da qui le due
+      // liste separate in CampaignProfile, e questo filtro.
+      purchases: stringArray(p['purchases']).filter((id) => isValidShopItem(id)),
     };
   } catch {
     return null;
