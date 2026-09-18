@@ -2,7 +2,8 @@
 
 **KESSLER-9** — una campagna per browser in prima persona: tre atti, nove
 livelli, tre boss, dieci tipi di nemico e un albero di abilità da diciassette
-nodi. Fucile a otturatore: un colpo uccide, ma la ricarica dura ~1,4 s, quindi
+nodi. Fucile a otturatore: al punto debole uccide in un colpo, al corpo ne serve
+il doppio, e la ricarica dura ~1,4 s, quindi
 ogni colpo va guadagnato prima di essere sparato.
 
 Gira **interamente nel browser** — niente plugin, niente installazione, nessun
@@ -46,7 +47,8 @@ Se è la prima volta scegli **TUTORIAL** — è già selezionata all'apertura.
 | `W A S D` | Movimento — avanti, indietro, laterale |
 | Mouse | Mira — clicca una volta per catturare il puntatore |
 | `Q` / `E` | Rotazione — funziona sempre, anche senza mouse |
-| Click sinistro | Sparo — un colpo uccide, otturatore da riarmare |
+| Click sinistro | Sparo — otturatore manuale, uno alla volta. Al corpo serve il doppio |
+| *(il punto debole)* | Vale **tre volte**: dietro, il nucleo o la testa. La HUD dice quale, puntando il nemico |
 | Click destro | Ottica — tieni premuto per mirare col cannocchiale |
 | `MAIUSC` | Scatto — dal nodo Scatto in poi, nella direzione in cui vai |
 | `F` | **Trasponditore** — lancia un'esca, se ne hai una carica |
@@ -199,7 +201,7 @@ pnpm --filter @workspace/arena-shooter run dev              # gioco su :5173
 pnpm --filter @workspace/api-server  run dev                # API + signaling su :5000
 pnpm --filter @workspace/arena-shooter run balance          # metriche dell'Arena
 pnpm --filter @workspace/arena-shooter run balance:campaign  # metriche della campagna
-pnpm run test                                              # 615 test, headless, ~3 s
+pnpm run test                                              # 645 test, headless, ~3 s
 pnpm run typecheck                                         # typecheck di tutti i pacchetti
 pnpm run build                                             # typecheck + build
 pnpm --filter @workspace/arena-shooter run build:standalone # rigenera il file singolo

@@ -421,6 +421,14 @@ export interface CampaignState {
    *  del menu se non c'è ancora un profilo) e mai più cambiata da
    *  dentro un run: vedi CampaignProfile.difficulty. */
   difficulty: CampaignDifficulty;
+  /** La stanza più profonda in cui il giocatore sia mai arrivato.
+   *
+   *  Diversa da `checkpoint.room`, e la differenza è il punto: il
+   *  checkpoint pretende un posto sicuro e può restare indietro (vedi
+   *  CampaignWorld.updateCheckpoint), mentre "ci sono arrivato" resta
+   *  vero anche dentro una stanza battuta da una torretta. Ci pendono
+   *  la battuta narrativa, l'XP di stanza e il risveglio del boss. */
+  reachedRoom: string;
 }
 
 export type CampaignEvent =

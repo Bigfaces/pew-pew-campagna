@@ -94,6 +94,14 @@ export function enterBossRoom(world: CampaignWorld): void {
     y: home.y,
     angle: 0,
   };
+  // Dire "il giocatore è arrivato" richiede due campi, non più uno.
+  // Il checkpoint è *dove si rinasce* e da quando pretende un posto
+  // sicuro (vedi CampaignWorld.updateCheckpoint) può restare indietro
+  // rispetto al giocatore; `reachedRoom` è *fin dove si è arrivati*, ed
+  // è ciò che sveglia il boss. Scriverne uno solo mette il mondo in uno
+  // stato che una partita vera non produce mai: un boss addormentato
+  // con il giocatore in sala, o una sala pagata due volte in XP.
+  world.state.reachedRoom = def.room;
   world.state.player.x = home.x - 200;
   world.state.player.y = home.y;
 }

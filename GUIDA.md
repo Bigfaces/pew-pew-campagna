@@ -97,7 +97,7 @@ Comandi:
 | `W A S D`    | Movimento (avanti / indietro / laterale)                  |
 | Mouse        | Mira — **clicca una volta** per catturare il puntatore    |
 | `Q` / `E`    | Ruota senza mouse (funziona sempre, anche senza puntatore)|
-| Click sin.   | Spara (un colpo uccide, poi ~1,4 s di ricarica)           |
+| Click sin.   | Spara (al corpo serve il doppio, al punto debole uno)     |
 | **Click des.** | **Ottica** — tieni premuto per mirare col cannocchiale  |
 | `ESC`        | Pausa (rilascia il mouse, e da lì si regola la sensibilità)|
 | `M`          | Muto                                                      |

@@ -13,13 +13,53 @@ import {
   ENTITY_RADIUS,
   TILE,
 } from '../constants';
+import type { CampaignDifficulty } from './types';
 
 // ---- Player start / respawn ----
 /** Brief lockout after a checkpoint respawn so a turret or a boss
  *  charge already in flight cannot kill the player a second time on
  *  the same tick it sent them back. Mirrors the Arena's own
- *  SPAWN_PROTECTION. */
+ *  SPAWN_PROTECTION.
+ *
+ *  Resta come pavimento assoluto e come valore di riferimento; la
+ *  grazia vera la sceglie RESPAWN_GRACE_MS qui sotto. */
 export const RESPAWN_INVULN_MS = 800;
+
+/** Quanto dura l'intoccabilità dopo un respawn, per difficoltà.
+ *
+ *  Il primo tester è rimasto bloccato qui, e non era una questione di
+ *  bravura: era aritmetica. Con 800 ms fissi, al checkpoint del
+ *  MAGAZZINO si rinasceva davanti a un drone che ha 500 ms di
+ *  reazione e nessun cono visivo — quindi sparava nell'istante esatto
+ *  in cui la grazia finiva. Vita misurata: 0,82 s, sempre la stessa,
+ *  all'infinito.
+ *
+ *  La conseguenza è peggiore della morte in sé. L'otturatore ha un
+ *  ciclo di BULLET_COOLDOWN (1400 ms), quindi in 820 ms si spara
+ *  **una volta sola**; e siccome il respawn ricura i nemici della
+ *  stanza (vedi resetEnemiesIn), quel singolo colpo veniva annullato
+ *  prima del tentativo successivo. Un nemico da due punti vita
+ *  diventava immortale: misurato col bot a mira perfetta, 49 morti in
+ *  40 secondi e zero progressi. Non "difficile": impossibile. Ed era
+ *  la modalità che si consiglia a chi prova il gioco per la prima
+ *  volta.
+ *
+ *  Da qui la regola, che vale per tutte e tre le modalità: la grazia
+ *  non deve durare quanto basta a *sopravvivere*, deve durare quanto
+ *  basta ad **agire**. Sotto un ciclo d'otturatore il giocatore non
+ *  può nemmeno completare il gesto che il gioco gli chiede, e
+ *  qualsiasi altro bilanciamento diventa irrilevante. */
+export const RESPAWN_GRACE_MS: Readonly<Record<CampaignDifficulty, number>> = {
+  /** Due colpi e il tempo di guardarsi intorno: la modalità esiste
+   *  per imparare, e s'impara solo se si fa in tempo a provare. */
+  tutorial: BULLET_COOLDOWN + 600,
+  /** Un colpo pieno più il margine per decidere dove andare. */
+  medio: BULLET_COOLDOWN + 200,
+  /** Il minimo che rispetta la regola. Qui morire riavvia l'atto, non
+   *  la stanza, quindi il ciclo stretto non può formarsi comunque: la
+   *  soglia serve solo a non rendere il primo istante una lotteria. */
+  roguelike: BULLET_COOLDOWN,
+};
 
 // ---- Trabocchetti ----
 // I numeri; *dove* stanno i trabocchetti è dato del livello

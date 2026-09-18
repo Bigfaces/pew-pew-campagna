@@ -14,7 +14,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ENTITY_RADIUS, TICK_MS, TILE } from '../constants';
-import { BOSS_CHARGE_MS, TURRET_REACTION_MS } from './constants';
+import { BOSS_CHARGE_MS, RESPAWN_GRACE_MS, TURRET_REACTION_MS } from './constants';
 import { campCircleHitsTile } from './physics';
 import { weaponStatsFor } from './skills';
 import {
@@ -42,9 +42,129 @@ function idleTicks(world: CampaignWorld, n: number): void {
 // Checkpoint: forward-only
 // --------------------------------------------------------------------
 
+
+// --------------------------------------------------------------------
+// Checkpoint: mai dentro una linea di tiro
+// --------------------------------------------------------------------
+// Queste due prove nascono dalla prima partita giocata da qualcuno che
+// non aveva scritto il gioco. Il suo verdetto è stato "non giocabile", e
+// aveva ragione con un margine che nessun test copriva: il checkpoint si
+// prendeva nell'istante in cui si varcava la soglia di una stanza, cioè
+// nel punto da cui la stanza ti vede per primo. Nel MAGAZZINO
+// dell'ATTRACCO quella soglia sta nel tiro di un drone che reagisce in
+// 500 ms e non ha cono visivo: si rinasceva, si restava intoccabili per
+// la grazia, e si moriva nel tick esatto in cui finiva. Sempre.
+//
+// La conseguenza non era "difficile". Con 0,82 s di vita e
+// BULLET_COOLDOWN a 1400 ms si sparava **un colpo per vita**, e il
+// respawn ricurava i nemici della stanza: un Ronzino da due punti vita
+// diventava immortale. Misurato prima della correzione, con un bot a
+// mira perfetta: 49 morti in 40 secondi e zero progressi.
+
+describe('CampaignWorld — un checkpoint è un posto sicuro', () => {
+  it('non si prende nella linea di tiro di una torretta, e si prende appena la torretta tace', () => {
+    const world = quiet(attracco());
+    const drone = turretOf(world, 'drone-otto-quattro');
+
+    // Sulla soglia del magazzino, scoperti davanti al drone.
+    world.state.player.x = 12.5 * TILE;
+    world.state.player.y = 3.5 * TILE;
+    world.step();
+    expect(world.state.checkpoint.room).not.toBe('magazzino');
+    // Ma esserci arrivati resta vero: è ciò che paga l'XP di stanza e
+    // sveglia i boss, e non dipende dal poterci rinascere.
+    expect(world.state.reachedRoom).toBe('magazzino');
+
+    // Spento il drone, lo stesso metro quadro diventa buono.
+    drone.state.alive = false;
+    world.step();
+    expect(world.state.checkpoint.room).toBe('magazzino');
+  });
+
+  it('rinascere non rimette dentro la morte da cui si viene', () => {
+    const world = attracco();
+    const vite: number[] = [];
+    let ultima = 0;
+
+    // Un giocatore che non ha ancora capito niente: avanza e basta.
+    for (let t = 0; t < 30_000 / TICK_MS; t++) {
+      const morto = world
+        .step({ ...emptyCampaignInput(), forward: 1, aimAngle: 0 })
+        .some((e) => e.type === 'playerDied');
+      if (morto) {
+        vite.push((t - ultima) * TICK_MS);
+        ultima = t;
+      }
+    }
+
+    // Il livello deve ancora uccidere chi cammina a testa bassa: se
+    // smettesse, questa prova starebbe misurando un gioco disinnescato.
+    expect(vite.length).toBeGreaterThan(1);
+
+    // E nessuna vita può finire nell'istante in cui la grazia scade.
+    // Il margine è piccolo apposta: col difetto la morte arrivava *un
+    // tick* dopo la fine dell'invulnerabilità, perché il drone aveva
+    // già finito di prendere la mira mentre il giocatore era
+    // intoccabile. Alzare la grazia da sola avrebbe spostato l'ora
+    // della morte di un tick e nient'altro — ed è esattamente ciò che
+    // questa soglia rifiuta di accettare come correzione.
+    const piuBreve = Math.min(...vite.slice(1));
+    expect(piuBreve, `vite in secondi: ${vite.map((v) => (v / 1000).toFixed(2)).join(' ')}`)
+      .toBeGreaterThan(RESPAWN_GRACE_MS.tutorial + 300);
+  });
+
+  it('chi sa mirare gioca il livello invece di subirlo', () => {
+    // La prova che il difetto rendeva impossibile superare. Non è una
+    // questione di bravura: col checkpoint nel tiro del drone, un bot a
+    // mira perfetta moriva 49 volte in 40 secondi e riusciva a premere
+    // il grilletto **una volta per vita**, contro nemici da due punti
+    // vita che il respawn ricurava ogni volta. Nessuna abilità poteva
+    // uscirne, ed è la differenza fra severo e bloccato.
+    const world = attracco();
+    const p = world.state.player;
+    let morti = 0;
+    let colpi = 0;
+
+    for (let t = 0; t < 30_000 / TICK_MS; t++) {
+      const input = { ...emptyCampaignInput(), aimAngle: 0, ads: true };
+      let vicino: { x: number; y: number } | null = null;
+      let minima = Infinity;
+      for (const e of world.state.enemies) {
+        if (!e.alive) continue;
+        const d = Math.hypot(e.x - p.x, e.y - p.y);
+        if (d < minima) {
+          minima = d;
+          vicino = e;
+        }
+      }
+      if (vicino) input.aimAngle = Math.atan2(vicino.y - p.y, vicino.x - p.x);
+      else input.forward = 1;
+      input.fire = p.weaponCooldown <= 0;
+      if (input.fire) colpi++;
+      if (world.step(input).some((e) => e.type === 'playerDied')) morti++;
+    }
+
+    // La soglia è larga di proposito: serve a separare "il gioco si
+    // gioca" da "il gioco è un tornello", non a fissare un
+    // bilanciamento. La misura del difetto (49 morti in 40 s, un colpo
+    // per vita) è stata presa fuori da qui, guidando il mondo a mano;
+    // la guardia che *cattura* quel difetto è la prova qui sopra sulla
+    // linea di tiro, non questa, che resta un'invariante di comodo.
+    expect(morti, `morti: ${morti}, colpi: ${colpi}`).toBeLessThan(8);
+    // E i colpi devono essere molti più delle vite: un colpo per vita
+    // era la forma esatta del vicolo cieco.
+    expect(colpi).toBeGreaterThan(morti * 2 + 1);
+  });
+});
+
 describe('CampaignWorld — checkpoint mai regressivo', () => {
   it('non torna a una stanza precedente se il giocatore ci rientra', () => {
-    const world = attracco();
+    // `quiet` toglie di mezzo i nemici perché qui si misura *solo* la
+    // direzione del checkpoint. Da quando il checkpoint pretende un
+    // posto sicuro (vedi CampaignWorld.updateCheckpoint) un Ronzino a
+    // metà corridoio basta a impedirne l'avanzamento, e il test
+    // fallirebbe per una ragione che non è la sua.
+    const world = quiet(attracco());
 
     // Entra nel corridoio: il checkpoint avanza.
     world.state.player.x = 8 * TILE;

@@ -68,6 +68,7 @@ function bossWorldWith(nodes: string[]): CampaignWorld {
   world.state.unlockedNodes = nodes;
   const home = bossHome(world.level);
   world.state.checkpoint = { room: 'molo', x: home.x - 200, y: home.y, angle: 0 };
+  world.state.reachedRoom = world.state.checkpoint.room;
   world.state.player.x = home.x - 200;
   world.state.player.y = home.y;
   world.state.player.angle = 0;
@@ -311,6 +312,7 @@ describe('Sopravvivenza', () => {
   function shieldWorld(nodes: string[]): CampaignWorld {
     const world = worldWith(nodes, SHIELD.x, SHIELD.y);
     world.state.checkpoint = { room: 'magazzino', x: SHIELD.x, y: SHIELD.y, angle: 0 };
+    world.state.reachedRoom = world.state.checkpoint.room;
     return world;
   }
 
@@ -334,6 +336,7 @@ describe('Sopravvivenza', () => {
     world.state.player.x = 13.5 * TILE;
     world.state.player.y = 7 * TILE;
     world.state.checkpoint = { room: 'magazzino', x: 13.5 * TILE, y: 7 * TILE, angle: 0 };
+    world.state.reachedRoom = world.state.checkpoint.room;
 
     let breaks = 0;
     let deaths = 0;
@@ -355,6 +358,7 @@ describe('Sopravvivenza', () => {
   it('Riserva di Bordo ricarica lo scudo entrando in una stanza nuova', () => {
     const world = worldWith(['riserva-di-bordo'], SHIELD.x, SHIELD.y);
     world.state.checkpoint = { room: 'magazzino', x: SHIELD.x, y: SHIELD.y, angle: 0 };
+    world.state.reachedRoom = world.state.checkpoint.room;
     world.step();
     expect(world.state.player.shieldCharges).toBe(1);
 
@@ -379,6 +383,7 @@ describe('Sopravvivenza', () => {
   it('senza il nodo entrare in una stanza non ricarica niente', () => {
     const world = worldWith([], SHIELD.x, SHIELD.y);
     world.state.checkpoint = { room: 'magazzino', x: SHIELD.x, y: SHIELD.y, angle: 0 };
+    world.state.reachedRoom = world.state.checkpoint.room;
     world.step();
     world.state.player.shieldCharges = 0;
     world.state.player.x = 18.5 * TILE;
@@ -391,6 +396,7 @@ describe('Sopravvivenza', () => {
     // loop: è la stessa proprietà che protegge l'XP delle stanze.
     const world = worldWith(['riserva-di-bordo'], SHIELD.x, SHIELD.y);
     world.state.checkpoint = { room: 'magazzino', x: SHIELD.x, y: SHIELD.y, angle: 0 };
+    world.state.reachedRoom = world.state.checkpoint.room;
     world.step();
 
     world.state.player.x = 18.5 * TILE; // Molo

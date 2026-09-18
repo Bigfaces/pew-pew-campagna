@@ -277,6 +277,12 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
 
       {snap.arbiter && <div className="arbiter-line">ARBITER — {snap.arbiter}</div>}
 
+      {/* Sopra la riga di ARBITER e non al suo posto: le due possono
+          capitare insieme — si raccoglie un nucleo mentre lui parla — e
+          farle contendere lo stesso posto vorrebbe dire perdere proprio
+          quella che spiega cosa è appena successo. */}
+      {snap.pickup && <div className="pickup-line">{snap.pickup}</div>}
+
       {!snap.pointerLocked && (
         <div className="hud-hint campaign-hud-hint">
           CLICCA PER CATTURARE IL MOUSE &nbsp;·&nbsp; Q / E PER GIRARE SENZA
@@ -308,7 +314,13 @@ export const CAMPAIGN_CONTROLS: readonly (readonly [string, string])[] = [
   ['W A S D', 'Movimento — avanti, indietro, laterale'],
   ['MOUSE', 'Mira — clicca una volta per catturare il puntatore'],
   ['Q / E', 'Rotazione — funziona sempre, anche senza mouse'],
-  ['CLICK SIN.', 'Sparo — un colpo uccide, otturatore da riarmare'],
+  // Diceva «un colpo uccide». Non è vero, ed è la mezza frase che il
+  // primo tester ha riassunto con «spari a dei nemici che non
+  // muoiono»: al corpo il fucile fa 1, e un nemico di prima fascia
+  // ne ha 2. Uccide in un colpo solo al punto debole (×3), che è la
+  // regola centrale del gioco e non veniva detta da nessuna parte.
+  ['CLICK SIN.', 'Sparo — otturatore manuale, uno alla volta. Al corpo serve il doppio'],
+  ['PUNTO DEBOLE', 'Vale tre volte: dietro, il nucleo o la testa — la HUD dice quale'],
   ['CLICK DES.', 'Ottica — tieni premuto per mirare col cannocchiale'],
   ['MAIUSC', 'Scatto — dal nodo Scatto in poi, nella direzione in cui vai'],
   ['F', 'Trasponditore — lancia un\'esca, se ne hai una carica'],

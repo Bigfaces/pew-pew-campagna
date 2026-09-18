@@ -38,6 +38,7 @@ function killViaDrone(world: CampaignWorld): CampaignEvent[] {
     y: 7 * TILE,
     angle: -Math.PI / 2,
   };
+  world.state.reachedRoom = world.state.checkpoint.room;
   world.state.player.x = 13.5 * TILE;
   world.state.player.y = 7 * TILE;
   // Come quiet(): la finestra di grazia dell'ingresso livello non è

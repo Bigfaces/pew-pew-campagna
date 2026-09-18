@@ -865,7 +865,7 @@ describe('attraversabilità', () => {
   ] as const) {
     it(`si arriva alla stanza del boss di ${levelId}`, () => {
       const level = levelById(levelId);
-      const run = botCross(level, 90, (w) => w.state.checkpoint.room === room);
+      const run = botCross(level, 90, (w) => w.state.reachedRoom === room);
       expect(run.completed, `morti: ${run.deaths}`).toBe(true);
       expect(run.deaths).toBeLessThan(6);
     });

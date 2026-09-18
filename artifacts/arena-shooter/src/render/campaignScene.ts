@@ -960,21 +960,95 @@ export function renderCampaignScenery(
   // --- billboard, ordinati per distanza ---
   const list: CampaignBillboard[] = [];
 
-  const occluded = (screenX: number, perp: number): boolean => {
-    const col = Math.round((screenX - fx.shakeX - fx.bobX) / SLICE_W);
-    if (col < 0 || col >= vp.numRays) return true;
-    return depth[col]! < perp - 2;
+  // ---- occlusione dei billboard, colonna per colonna ----
+  //
+  // Qui viveva il difetto che il primo tester ha descritto come
+  // "sparisce la sprite ma non il nemico, e ti spara qualcosa di
+  // invisibile". Il controllo era:
+  //
+  //     const col = Math.round(screenX / SLICE_W);
+  //     if (col < 0 || col >= vp.numRays) return true;
+  //     return depth[col] < perp - 2;
+  //
+  // cioè: si guardava **una sola colonna**, quella del centro dello
+  // sprite, e in base a quella si teneva o si buttava *tutto* lo
+  // sprite. Un nemico che passa dietro lo stipite di una porta, o
+  // dietro uno spigolo, ha il centro coperto e i fianchi in piena
+  // vista: spariva per intero. Restava vivo, continuava a mirare e a
+  // sparare, e il colpo arrivava dal nulla. Lo stesso valeva al bordo
+  // dello schermo, dove `col` usciva dall'intervallo e la risposta era
+  // "coperto" invece di "tagliato": bastava un passo di lato per far
+  // svanire chi si stava inquadrando.
+  //
+  // La versione giusta è quella che i raycaster fanno da sempre:
+  // l'occlusione è per colonna, non per sprite. Si misura la fascia di
+  // schermo che il billboard occupa, si tengono le colonne in cui il
+  // muro è più lontano, e ci si disegna dentro ritagliati. Chi è per
+  // metà dietro un muro si vede per metà — che è l'unica lettura
+  // onesta, e per un nemico che sta prendendo la mira è anche l'unica
+  // giusta.
+  //
+  // La semilarghezza la dichiara chi disegna, in tile: è l'unico che
+  // sa quanto è largo il proprio sprite. Sovrastimarla non sporca
+  // niente a schermo — il ritaglio rende innocue le colonne vuote — ma
+  // tiene in vita billboard del tutto nascosti, e "l'esca dietro un
+  // muro non si disegna" è una proprietà che vale la pena conservare.
+  // Sottostimarla invece rimetterebbe lo sfarfallio ai bordi, che è il
+  // difetto da cui si è partiti: nel dubbio si arrotonda per eccesso.
+  const colonneVisibili = (screenX: number, perp: number, semiPx: number): [number, number][] => {
+    const base = screenX - fx.shakeX - fx.bobX;
+    const da = Math.max(0, Math.floor((base - semiPx) / SLICE_W));
+    const a = Math.min(vp.numRays - 1, Math.ceil((base + semiPx) / SLICE_W));
+    const tratti: [number, number][] = [];
+    let inizio = -1;
+    for (let c = da; c <= a; c++) {
+      const libera = depth[c]! >= perp - 2;
+      if (libera && inizio < 0) inizio = c;
+      else if (!libera && inizio >= 0) {
+        tratti.push([inizio, c - 1]);
+        inizio = -1;
+      }
+    }
+    if (inizio >= 0) tratti.push([inizio, a]);
+    return tratti;
+  };
+
+  /** Disegna una volta per ogni tratto scoperto, ritagliando. I tratti
+   *  sono disgiunti, quindi nessun pixel viene disegnato due volte e
+   *  le trasparenze non si sommano. */
+  const ritagliato = (tratti: [number, number][], disegna: () => void) => (): void => {
+    for (const [da, a] of tratti) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(
+        da * SLICE_W + fx.shakeX + fx.bobX,
+        0,
+        (a - da + 1) * SLICE_W,
+        vp.height,
+      );
+      ctx.clip();
+      disegna();
+      ctx.restore();
+    }
   };
 
   const push = (
     x: number,
     y: number,
-    anchor: number,
+    margine: number,
     make: (screenX: number, y: number, tileH: number, perp: number) => () => void,
+    /** Mezza larghezza dello sprite, in tile. */
+    semiTile = 0.5,
   ): void => {
-    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, x, y, anchor);
-    if (!p.visible || occluded(p.screenX, p.perp)) return;
-    list.push({ dist: p.perp, draw: make(p.screenX, p.perp, p.tileH, p.perp) });
+    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, x, y, margine);
+    if (!p.visible) return;
+    const tratti = colonneVisibili(p.screenX, p.perp, p.tileH * semiTile);
+    if (tratti.length === 0) return;
+    const disegna = make(p.screenX, p.perp, p.tileH, p.perp);
+    // Il caso normale — niente muro in mezzo — non paga né un save né
+    // un clip: è la stragrande maggioranza dei fotogrammi.
+    const intero = tratti.length === 1 && tratti[0]![0] === 0 && tratti[0]![1] === vp.numRays - 1;
+    list.push({ dist: p.perp, draw: intero ? disegna : ritagliato(tratti, disegna) });
   };
 
   for (const c of state.cores) {
@@ -983,7 +1057,7 @@ export function renderCampaignScenery(
       const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + c.x) * TILE * 0.08;
       const cy = heightToScreenY(vp, fx, perp, bobZ);
       return () => drawCore(ctx, screenX, cy, tileH * 0.36, nowMs);
-    });
+    }, 0.36);
   }
 
   for (const sh of state.shields) {
@@ -992,7 +1066,7 @@ export function renderCampaignScenery(
       const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + sh.x) * TILE * 0.08;
       const cy = heightToScreenY(vp, fx, perp, bobZ);
       return () => drawShield(ctx, screenX, cy, tileH * 0.36, nowMs);
-    });
+    }, 0.36);
   }
 
   for (const bp of state.beaconPickups) {
@@ -1001,7 +1075,7 @@ export function renderCampaignScenery(
       const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + bp.x) * TILE * 0.08;
       const cy = heightToScreenY(vp, fx, perp, bobZ);
       return () => drawBeaconPickup(ctx, screenX, cy, tileH * 0.36, nowMs);
-    });
+    }, 0.36);
   }
 
   if (state.beacon.active) {
@@ -1011,7 +1085,7 @@ export function renderCampaignScenery(
     push(beacon.x, beacon.y, 0.5, (screenX, _y, tileH, perp) => {
       const floorY = heightToScreenY(vp, fx, perp, 0);
       return () => drawBeacon(ctx, screenX, floorY, tileH, beacon.ms, nowMs);
-    });
+    }, 0.4);
   }
 
   for (const t of state.turrets) {
@@ -1027,7 +1101,7 @@ export function renderCampaignScenery(
       const z = def.kind === 'drone' ? TILE * 0.55 : TILE * 0.42;
       const cy = heightToScreenY(vp, fx, perp, z);
       return () => drawTurret(ctx, screenX, cy, tileH * 0.3, t, def, nowMs);
-    });
+    }, 0.34);
   }
 
   if (level.exit) {
@@ -1036,7 +1110,7 @@ export function renderCampaignScenery(
     push(ex, ey, 0.5, (screenX, _y, tileH, perp) => {
       const floorY = heightToScreenY(vp, fx, perp, 0);
       return () => drawExitMarker(ctx, screenX, floorY, tileH, nowMs);
-    });
+    }, 0.6);
   }
 
   for (const e of state.enemies) {
@@ -1045,7 +1119,7 @@ export function renderCampaignScenery(
     push(e.x, e.y, 0.5, (screenX, _y, tileH, perp) => {
       const floorY = heightToScreenY(vp, fx, perp, 0);
       return () => drawEnemy(ctx, screenX, floorY, tileH, cam, e, a, nowMs);
-    });
+    }, a.height * 0.5);
   }
 
   const boss = state.boss;
@@ -1064,7 +1138,7 @@ export function renderCampaignScenery(
           drawArbiter(ctx, screenX, floorY, tileH, cam, boss, modulesAlive, nowMs);
       }
       return () => drawBoss(ctx, screenX, floorY, tileH, cam, boss, hasGraze, enraged, nowMs);
-    });
+    }, 1.2);
   }
 
   list.sort((a, b) => b.dist - a.dist);

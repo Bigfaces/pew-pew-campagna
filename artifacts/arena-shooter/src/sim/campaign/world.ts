@@ -64,7 +64,7 @@ import {
   CUSTODE_TELL_MS,
   DASH_DURATION_MS,
   DASH_SPEED,
-  RESPAWN_INVULN_MS,
+  RESPAWN_GRACE_MS,
   SHIELD_PICKUP_RADIUS,
   TURRET_RADIUS,
   XP_BOSS_DEFEAT,
@@ -110,7 +110,7 @@ import {
   type Vulnerability,
   type WeakSpot,
 } from './enemies';
-import { updateEnemyAi, type Leash } from './enemyAi';
+import { ENEMY_VISION_MARGIN_TILES, updateEnemyAi, type Leash } from './enemyAi';
 import { campMoveEntity, distanceAlongRayToCircle, type IsSolidFn } from './physics';
 import { campCastRay, campHasLOS } from './raycast';
 import {
@@ -474,6 +474,7 @@ export class CampaignWorld {
         : null,
       outcome: 'playing',
       difficulty: profile?.difficulty ?? difficulty,
+      reachedRoom: roomAt(level, level.spawn.tx, level.spawn.ty),
     };
     this.spawnCheckpoint = { ...this.state.checkpoint };
   }
@@ -807,13 +808,38 @@ export class CampaignWorld {
     campMoveEntity(this.isSolid, p, vx * speed, vy * speed);
   }
 
-  /** Checkpoints only ever advance: stepping back into an earlier
-   *  room (e.g. retreating from the boss) must not lose progress. */
+  /** Un checkpoint si prende dove si era al sicuro, e avanza soltanto.
+   *
+   *  La seconda meta' di questa frase c'era gia'. La prima e' nata da
+   *  una partita vera: il checkpoint si prendeva nell'istante in cui si
+   *  varcava la soglia di una stanza, cioe' nel punto peggiore
+   *  possibile — la porta e' esattamente dove la stanza ti vede per
+   *  primo. Nel MAGAZZINO dell'ATTRACCO quella soglia sta nella linea
+   *  di tiro di un drone, che non ha cono visivo e reagisce in 500 ms:
+   *  si rinasceva, si restava intoccabili per la grazia, e si moriva
+   *  nel tick in cui la grazia finiva. Sempre. Misurato: 0,82 s di vita
+   *  a testa, 49 volte di fila.
+   *
+   *  Alzare la grazia da sola non bastava: avrebbe spostato l'ora della
+   *  morte, non evitata. Il difetto non e' quanto duri l'invulnerabilita',
+   *  e' *dove* ti rimette in piedi. Quindi il checkpoint smette di
+   *  essere "la soglia della stanza piu' avanzata" e diventa "l'ultimo
+   *  punto in cui niente di vivo poteva spararti": un posto da cui si
+   *  puo' ricominciare a giocare invece che ricominciare a morire.
+   *
+   *  Il prezzo, voluto: entrando in una stanza battuta da una torretta
+   *  il checkpoint resta indietro, e morire li' dentro fa ripartire da
+   *  prima della soglia. E' qualche passo da rifare — ed e' la
+   *  differenza fra un gioco severo e un gioco bloccato. */
   private updateCheckpoint(): void {
     const p = this.state.player;
     const room = roomAt(this.level, Math.floor(p.x / TILE), Math.floor(p.y / TILE));
-    if (roomOrder(this.level, room) > roomOrder(this.level, this.state.checkpoint.room)) {
-      this.state.checkpoint = { room, x: p.x, y: p.y, angle: p.angle };
+
+    // "Sono entrato nel MAGAZZINO" resta vero anche se li' dentro non
+    // c'e' un metro quadro sicuro: la battuta, l'XP di stanza e la
+    // ricarica dello scudo pendono da questo, non dal checkpoint.
+    if (roomOrder(this.level, room) > roomOrder(this.level, this.state.reachedRoom)) {
+      this.state.reachedRoom = room;
       this.events.push({ type: 'roomEntered', room });
       // Pagato una volta per profilo, e la chiave porta il livello:
       // altrimenti due livelli con una stanza omonima si
@@ -826,6 +852,47 @@ export class CampaignWorld {
       }
       this.refillShieldOnRoomEnter();
     }
+
+    // Indietro non si torna: ritirarsi per curarsi le idee non deve
+    // costare il progresso gia' fatto.
+    if (roomOrder(this.level, room) < roomOrder(this.level, this.state.checkpoint.room)) return;
+    if (!this.isSafeToRespawn(p.x, p.y)) return;
+    this.state.checkpoint = { room, x: p.x, y: p.y, angle: p.angle };
+  }
+
+  /** Vero se da (x, y) nessuno di vivo ha la linea di tiro.
+   *
+   *  Niente cono visivo, di proposito: un nemico si gira, e mentre si
+   *  e' morti si gira di sicuro. Quello che non cambia e' il muro in
+   *  mezzo, quindi e' la linea di tiro l'unica cosa onesta da
+   *  chiedere. Le torrette contano sempre (non hanno cono e vedono
+   *  fin dove arriva il corridoio), i nemici solo entro la loro
+   *  portata piu' il margine — lo stesso numero che usa canSeeTarget
+   *  in enemyAi.ts, per non avere due idee diverse di "mi vede". */
+  private isSafeToRespawn(x: number, y: number): boolean {
+    const tiro = (ax: number, ay: number): boolean =>
+      campHasLOS(this.getTile, ax, ay, x, y, this.level.width, this.level.height);
+
+    for (const t of this.state.turrets) {
+      if (!t.alive) continue;
+      const def = this.turretDef(t.id);
+      const c = centreOf(def.tx, def.ty);
+      if (tiro(c.x, c.y)) return false;
+    }
+
+    for (const e of this.state.enemies) {
+      if (!e.alive) continue;
+      const a = archetypeOf(e.kind);
+      const visione =
+        (a.attack === 'none' ? 9 : Math.max(a.rangeTiles, 4)) + ENEMY_VISION_MARGIN_TILES;
+      if (Math.hypot(e.x - x, e.y - y) > visione * TILE) continue;
+      if (tiro(e.x, e.y)) return false;
+    }
+
+    const boss = this.state.boss;
+    if (boss && boss.phase !== 'defeated' && tiro(boss.x, boss.y)) return false;
+
+    return true;
   }
 
   /** Riserva di Bordo. Ricarica solo uno scudo *già raccolto*: senza
@@ -1423,7 +1490,11 @@ export class CampaignWorld {
     const def = this.level.boss!;
     // The fight does not start until the player has actually reached
     // the boss room — a stray tick before that must not burn the timer.
-    if (this.state.checkpoint.room !== def.room) return;
+    // Si legge da `deepestRoom` e non dal checkpoint perché il
+    // checkpoint ora pretende un posto sicuro (vedi updateCheckpoint) e
+    // in una sala del boss un posto sicuro può non esistere: legarci il
+    // risveglio del boss vorrebbe dire un boss che non si sveglia mai.
+    if (roomOrder(this.level, this.state.reachedRoom) < roomOrder(this.level, def.room)) return;
 
     if (def.kind === 'custode') {
       this.updateCustode();
@@ -1876,7 +1947,7 @@ export class CampaignWorld {
     p.y = cp.y;
     p.angle = cp.angle;
     p.weaponCooldown = 0;
-    p.respawnInvulnerableMs = RESPAWN_INVULN_MS;
+    p.respawnInvulnerableMs = RESPAWN_GRACE_MS[this.state.difficulty];
     // Uno scatto sopravvissuto alla morte trascinerebbe il giocatore
     // fuori dal checkpoint appena ripristinato.
     p.dashTimer = 0;

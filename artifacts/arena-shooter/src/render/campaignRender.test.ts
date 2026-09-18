@@ -58,6 +58,12 @@ function makeCtx(rec: Recorder): CanvasRenderingContext2D {
     drawImage: noop('drawImage'),
     beginPath: noop('beginPath'),
     closePath: noop('closePath'),
+    // Il ritaglio per colonna dei billboard (vedi `ritagliato` in
+    // campaignScene.ts) passa da qui: senza queste due il finto
+    // contesto non regge più la scena, e l'occlusione parziale non
+    // sarebbe provabile affatto.
+    rect: noop('rect'),
+    clip: noop('clip'),
     moveTo: noop('moveTo'),
     lineTo: noop('lineTo'),
     arc: noop('arc'),
@@ -149,6 +155,7 @@ describe('scena della campagna', () => {
       p.y = boss.y;
       p.angle = 0;
       world.state.checkpoint.room = level.boss!.room;
+      world.state.reachedRoom = world.state.checkpoint.room;
 
       // ARBITER resta nella prima fase finché i suoi moduli sono in
       // piedi, ed è giusto così: è la regola. Per vederlo cambiare
@@ -294,25 +301,65 @@ describe('Trasponditore', () => {
     const vp = computeViewport(960, 540, 1);
     const fx = new CameraFx();
     const cam = { x: p.x, y: p.y, angle: p.angle };
-    // Nessuno shake/bob in gioco (CameraFx appena creata): la colonna
-    // che occlude l'esca è quella del suo screenX grezzo, senza offset.
     const proj = projectPoint(vp, fx, cam.x, cam.y, cam.angle, beaconX, beaconY, 0.5);
     expect(proj.visible).toBe(true);
-    const col = Math.round(proj.screenX / SLICE_W);
 
     const visibleDepth = new Float32Array(vp.numRays).fill(1e6);
     const visible = render(world, visibleDepth);
     expect(visible.bad).toHaveLength(0);
     expect(visible.calls.filter((c) => c === 'arc').length).toBeGreaterThan(0);
 
-    // Un muro più vicino dell'esca su quella sola colonna: la stessa
-    // regola di profondità che occlude core, scudi e nemici (vedi
-    // `occluded` in campaignScene.ts).
-    const occludedDepth = new Float32Array(vp.numRays).fill(1e6);
-    occludedDepth[col] = proj.perp - 50;
+    // Un muro più vicino dell'esca *su tutta la sua fascia*. Il muro va
+    // messo dappertutto e non su una colonna sola: da quando
+    // l'occlusione è per colonna (vedi `colonneVisibili` in
+    // campaignScene.ts) una colonna coperta nasconde una colonna, non
+    // uno sprite — ed è esattamente la correzione che la prova qui
+    // sotto tiene ferma.
+    const occludedDepth = new Float32Array(vp.numRays).fill(proj.perp - 50);
     const occluded = render(world, occludedDepth);
     expect(occluded.bad).toHaveLength(0);
     expect(occluded.calls.filter((c) => c === 'arc').length).toBe(0);
+  });
+
+  it('una colonna coperta nasconde una colonna, non tutto lo sprite', () => {
+    // La guardia del difetto che il primo tester ha descritto come
+    // "sparisce la sprite ma non il nemico, e ti spara qualcosa di
+    // invisibile".
+    //
+    // L'occlusione dei billboard guardava **una sola colonna**, quella
+    // del centro dello sprite, e da quella decideva se disegnare
+    // *tutto* o *niente*. Un nemico dietro lo stipite di una porta ha
+    // il centro coperto e i fianchi in vista: spariva per intero,
+    // restando vivo e continuando a sparare. Lo stesso al bordo dello
+    // schermo, dove la colonna usciva dall'intervallo e la risposta era
+    // "coperto" invece di "tagliato".
+    //
+    // L'esca serve da campione perché è il billboard più semplice del
+    // gioco — un arco pieno — ma la regola sotto la prova è la stessa
+    // per nemici, boss, core e scudi: passano tutti da `push`.
+    const world = bareWorld();
+    const p = world.state.player;
+    p.angle = 0;
+    const beaconX = p.x + TILE * 3;
+    const beaconY = p.y;
+    world.state.beacon = { active: true, x: beaconX, y: beaconY, ms: BEACON_LIFETIME_MS };
+
+    const vp = computeViewport(960, 540, 1);
+    const fx = new CameraFx();
+    const cam = { x: p.x, y: p.y, angle: p.angle };
+    const proj = projectPoint(vp, fx, cam.x, cam.y, cam.angle, beaconX, beaconY, 0.5);
+    const col = Math.round(proj.screenX / SLICE_W);
+
+    const depth = new Float32Array(vp.numRays).fill(1e6);
+    depth[col] = proj.perp - 50;
+    const out = render(world, depth);
+
+    expect(out.bad).toHaveLength(0);
+    // Si vede ancora: è il punto.
+    expect(out.calls.filter((c) => c === 'arc').length).toBeGreaterThan(0);
+    // E si vede *ritagliato*, non intero: senza il clip sarebbe
+    // disegnato sopra il muro invece che accanto.
+    expect(out.calls).toContain('clip');
   });
 
   it('un nemico richiamato mostra il segno del richiamo', () => {

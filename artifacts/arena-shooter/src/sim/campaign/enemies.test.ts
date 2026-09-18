@@ -345,6 +345,13 @@ describe('nemici — regole particolari, nel mondo', () => {
     // annullare.
     e.hp = 0.5;
     p.shieldCharges = 0;
+    // Il checkpoint qui è la *premessa*, non l'oggetto della prova: da
+    // quando pretende un posto sicuro (CampaignWorld.updateCheckpoint)
+    // non si prende più in faccia al nemico che si sta affrontando,
+    // quindi va dichiarato invece che aspettato. Che *dove* si prenda
+    // sia giusto lo provano le due prove in campaign.edge-cases.
+    w.state.checkpoint = { room: def.room, x: p.x, y: p.y, angle: p.angle };
+    w.state.reachedRoom = def.room;
 
     // Si fa sparare. Prova anche che un nemico *può* uccidere, che è
     // la metà di questa meccanica che nessun altro test copre.

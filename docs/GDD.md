@@ -1295,3 +1295,149 @@ primari non indicano niente. Misurato di nuovo: **y=268** e **y=295**.
 
 Resta aperta una domanda di nome, non di codice: il titolo dice ancora
 `ARENA SNIPER` sopra un menu che offre per prima la campagna.
+
+---
+
+## 16. Il primo tester esterno: «non giocabile»
+
+La sezione 15 raccontava due difetti che vivevano fuori dal codice. Questa
+racconta cosa è successo quando il file, finalmente giusto, è arrivato in
+mano a qualcuno che non l'aveva scritto. Il verdetto è stato di due parole:
+**non giocabile**. Era corretto, e con un margine che nessuna delle 629
+prove allora verdi sfiorava.
+
+Vale la pena tenere la sua descrizione per intero, perché è la prova che un
+tester che non conosce il vocabolario del progetto descrive lo stesso i
+difetti con precisione chirurgica:
+
+> «Spari a dei nemici che non muoiono, sparisce la sprite ma non il nemico
+> effettivamente e ti spara qualcosa di invisibile. Ti insta respawna nello
+> stesso posto dove ti uccide di nuovo il nemico insta e ti cambia la
+> direzione della visuale. Dopo vari tentativi che riesco ad ucciderlo per
+> davvero, prendo dei cubi colorati gialli, verdi, blu, rossi. Non so cosa
+> siano però li prendo.»
+
+Tre difetti distinti, tutti e tre reali.
+
+### 16.1 Il vicolo cieco del checkpoint — aritmetica, non difficoltà
+
+Il checkpoint si prendeva **nell'istante in cui si varcava la soglia di una
+stanza**. È il punto peggiore possibile: la soglia è esattamente da dove la
+stanza ti vede per primo. Nel MAGAZZINO dell'ATTRACCO quella soglia sta
+nella linea di tiro di un drone, che non ha cono visivo e reagisce in
+500 ms. Si rinasceva, si restava intoccabili per gli 800 ms di grazia, e si
+moriva nel tick in cui la grazia finiva. Sempre. Misurato guidando il mondo
+a mano: **0,82 s di vita, identici, otto volte di fila**.
+
+La conseguenza è peggiore della morte in sé, ed è il punto che rende questo
+un difetto e non un bilanciamento severo:
+
+| | |
+|---|---|
+| vita per respawn | 0,82 s |
+| ciclo dell'otturatore (`BULLET_COOLDOWN`) | 1,40 s |
+| colpi sparabili per vita | **1** |
+| punti vita di un Ronzino | 2 |
+| cosa fa il respawn ai nemici della stanza | li **ricura** |
+
+Un nemico da due punti vita era matematicamente immortale. Con un bot a
+mira perfetta: **49 morti in 40 secondi, un colpo per vita, zero
+progressi**. E la modalità in cui succedeva è Tutorial — quella che il
+README consiglia a chi prova il gioco per la prima volta. Medio, che
+riporta allo spawn del livello, se la cavava meglio: la modalità facile era
+*strettamente peggiore* di quella media.
+
+**La correzione.** Alzare la grazia non bastava, e provarlo è servito:
+misurato, sposta l'ora della morte di un tick e nient'altro. Il difetto non
+è quanto duri l'invulnerabilità, è **dove ti rimette in piedi**. Quindi la
+regola cambia:
+
+> Un checkpoint si prende dove si era al sicuro, e avanza soltanto.
+
+`isSafeToRespawn` chiede la linea di tiro — niente cono visivo, perché un
+nemico si gira, e mentre si è morti si gira di sicuro; quello che non
+cambia è il muro in mezzo. Le torrette contano sempre, i nemici entro la
+loro portata, il boss finché è vivo.
+
+Il prezzo è voluto: entrando in una stanza battuta da una torretta il
+checkpoint resta indietro, e morire lì dentro fa ripartire da prima della
+soglia. Qualche passo da rifare — ed è la differenza fra un gioco severo e
+un gioco bloccato.
+
+Questo ha costretto a separare due cose che fino a ieri erano la stessa:
+`checkpoint.room` (dove si rinasce) e `reachedRoom` (fin dove si è
+arrivati). La seconda è nuova nello stato, e ci pendono la battuta
+narrativa, l'XP di stanza e **il risveglio dei boss** — che altrimenti, in
+una sala del boss dove un posto sicuro non esiste, non si sarebbero
+svegliati mai.
+
+La grazia è stata comunque legata all'otturatore (`RESPAWN_GRACE_MS`), non
+come correzione ma come regola: *la grazia non deve durare quanto basta a
+sopravvivere, deve durare quanto basta ad agire*. Sotto un ciclo d'arma il
+giocatore non completa nemmeno il gesto che il gioco gli chiede.
+
+### 16.2 Gli sprite che sparivano restando vivi
+
+«Sparisce la sprite ma non il nemico, e ti spara qualcosa di invisibile.»
+Letterale. L'occlusione dei billboard guardava **una sola colonna** — quella
+del centro dello sprite — e da quella decideva se disegnare tutto o niente:
+
+```ts
+const col = Math.round(screenX / SLICE_W);
+if (col < 0 || col >= vp.numRays) return true;   // fuori schermo = "coperto"
+return depth[col] < perp - 2;
+```
+
+Un nemico dietro lo stipite di una porta ha il centro coperto e i fianchi
+in piena vista: spariva per intero, restando vivo, continuando a mirare e a
+sparare. Lo stesso al bordo dello schermo, dove la colonna usciva
+dall'intervallo e la risposta era «coperto» invece di «tagliato»: bastava
+un passo di lato per far svanire chi si stava inquadrando.
+
+La correzione è quella che i raycaster fanno da sempre: **l'occlusione è per
+colonna, non per sprite**. Si misura la fascia che il billboard occupa, si
+tengono le colonne in cui il muro è più lontano, e ci si disegna dentro
+ritagliati con un `clip`. Chi è per metà dietro un muro si vede per metà.
+
+La semilarghezza la dichiara chi disegna, in tile: sovrastimarla non sporca
+niente (le colonne vuote non hanno pixel), ma tiene in vita billboard del
+tutto nascosti — e «l'esca dietro un muro non si disegna» è una proprietà
+che vale la pena conservare.
+
+Lo stesso difetto è **ancora presente in `render/scene.ts`**, il renderer
+dell'Arena, da cui questo è nato: là le chiamate sono tre `continue` invece
+di un helper, e non è stato toccato in questo giro.
+
+### 16.3 I cubi colorati
+
+«Prendo dei cubi colorati. Non so cosa siano però li prendo.» Anche questa
+era una descrizione esatta del codice: raccogliere un nucleo, una piastra o
+un trasponditore non produceva **nessun testo** — solo un suono, e solo per
+la piastra. Tre oggetti con tre regole diverse, e niente che le dicesse.
+
+Ora c'è una riga a schermo per ~2,8 s, su un canale suo e non su quello di
+ARBITER (la coda narrativa racconta, questa informa, e una nota di servizio
+non deve tagliare a metà le ultime parole del boss). La forma è sempre
+**NOME — regola**, perché il difetto non era la mancanza di un nome: chi
+raccoglieva sapeva già di aver preso un cubo verde, non sapeva a cosa
+servisse.
+
+### 16.4 Cosa insegna, a monte dei tre difetti
+
+Le 629 prove erano verdi mentre il primo livello era insuperabile. Nessuna
+era sbagliata: provavano che il drone spara, che il respawn resetta la
+stanza, che gli sprite si disegnano. Quello che nessuna provava è **se la
+composizione di quelle regole lasciasse ancora giocare**, perché nessuna
+guardava una partita — guardavano meccanismi, uno alla volta, ciascuno
+messo nella posizione che gli faceva comodo.
+
+Da qui le prove aggiunte in questo giro, che hanno tutte la stessa forma:
+non «il pezzo X funziona» ma «da qui si può ancora andare avanti». Una
+verifica che il checkpoint non si prenda in una linea di tiro; una che
+misura quante volte si muore in trenta secondi giocando bene; una che una
+colonna coperta nasconda una colonna e non uno sprite.
+
+Va detto con precisione, perché è la parte utile: **la guardia che cattura
+davvero il vicolo cieco è quella sulla linea di tiro**. Le altre due sono
+invarianti oneste ma larghe, e col difetto rimesso a mano restano verdi.
+Una prova che non si è vista fallire non è una guardia.

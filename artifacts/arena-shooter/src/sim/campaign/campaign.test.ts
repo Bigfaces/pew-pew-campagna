@@ -368,6 +368,7 @@ describe('CampaignWorld — drone del Magazzino', () => {
       y: 7 * TILE,
       angle: -Math.PI / 2,
     };
+    world.state.reachedRoom = world.state.checkpoint.room;
     world.state.player.x = 13.5 * TILE;
     world.state.player.y = 7 * TILE;
 
@@ -394,6 +395,7 @@ describe('CampaignWorld — scudo tattico', () => {
       y: 7 * TILE,
       angle: -Math.PI / 2,
     };
+    world.state.reachedRoom = world.state.checkpoint.room;
     world.state.player.x = SHIELD.x;
     world.state.player.y = SHIELD.y;
 
@@ -436,6 +438,7 @@ describe('CampaignWorld — scudo tattico', () => {
       y: 7 * TILE,
       angle: -Math.PI / 2,
     };
+    world.state.reachedRoom = world.state.checkpoint.room;
     // Already spent (or never picked up) before this attempt.
     shieldOf(world).collected = true;
     world.state.player.x = 13.5 * TILE;

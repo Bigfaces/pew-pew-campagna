@@ -25,6 +25,13 @@ export interface ArbiterLine {
 /** Quanto resta a schermo una battuta. */
 export const ARBITER_LINE_MS = 5200;
 
+/** Quanto resta a schermo la nota di un raccoglibile.
+ *
+ *  Più corta di una battuta di ARBITER perché dice una cosa sola e la
+ *  dice mentre si cammina: deve bastare a leggerla senza fermarsi, e
+ *  sparire prima della stanza dopo. */
+export const PICKUP_LINE_MS = 2800;
+
 const ON_ROOM: Record<string, string> = {
   corridoio:
     'Paratia sei aperta. Registro l’anomalia: qualcosa qui dentro respira ancora.',
@@ -231,3 +238,41 @@ export const ARBITER_LAST_WORDS: readonly string[] = [
   'Contaminante — no. Non lo sei mai stato. Correggo il registro. È tardi per correggerlo.',
   'Kessler-9 rimane. Il registro rimane. Io—',
 ];
+
+/** Gli eventi di raccolta, e solo quelli: un sottoinsieme di
+ *  CampaignEvent scritto qui perché questa funzione non ha motivo di
+ *  sapere che esistono le porte o i boss. */
+export type PickupEvent =
+  | { type: 'shieldPickup' | 'shieldRefilled'; charges: number }
+  | { type: 'coreCollected' }
+  | { type: 'beaconPickup'; charges: number };
+
+/** La riga che spiega cosa si è appena raccolto.
+ *
+ *  Sta qui, pura, e non dentro il `switch` degli eventi di
+ *  CampaignGame, per una ragione pratica: il controller ha bisogno di
+ *  un canvas e di un contesto audio per esistere, quindi tutto ciò che
+ *  vive nel suo switch è in pratica non provabile. Tre stringhe che
+ *  devono nominare la cosa giusta e dirne la regola giusta meritano
+ *  meglio.
+ *
+ *  Ogni riga ha la stessa forma — NOME — cosa fa — perché il difetto da
+ *  cui nasce non era la mancanza di un nome ma la mancanza di una
+ *  ragione: chi li raccoglieva sapeva già di aver preso "un cubo
+ *  verde", quello che non sapeva era a cosa servisse. */
+export function pickupNotice(ev: PickupEvent, xpCore: number): string {
+  switch (ev.type) {
+    case 'coreCollected':
+      return `NUCLEO DATI — +${xpCore} esperienza, si spende al Banco`;
+    case 'beaconPickup':
+      return `TRASPONDITORE ×${ev.charges} — lancialo con F: guardano lui, non te`;
+    default:
+      // Il numero viene dall'evento e non da una costante: con Piastra
+      // Ampliata le cariche diventano due, e una riga che dicesse
+      // sempre "un colpo" mentirebbe proprio a chi ha speso un nodo per
+      // cambiarla.
+      return ev.charges > 1
+        ? `PIASTRA REATTIVA — assorbe i prossimi ${ev.charges} colpi`
+        : 'PIASTRA REATTIVA — assorbe il prossimo colpo';
+  }
+}

@@ -50,6 +50,7 @@ import {
   DASH_COOLDOWN_MS,
   GAS_LINGER_MS,
   SHOP_ITEMS,
+  XP_CORE,
   xpForNextLevel,
 } from '../sim/campaign/constants';
 import { ALL_LEVELS, FIRST_LEVEL_ID, levelById } from '../sim/campaign/levels';
@@ -67,7 +68,13 @@ import {
 } from '../sim/campaign/skills';
 import type { CampaignEvent, CampaignInput, RoomId } from '../sim/campaign/types';
 import { CampaignWorld } from '../sim/campaign/world';
-import { ArbiterVoice, ARBITER_LINE_MS, type ArbiterLine } from '../ui/arbiter';
+import {
+  ArbiterVoice,
+  ARBITER_LINE_MS,
+  PICKUP_LINE_MS,
+  pickupNotice,
+  type ArbiterLine,
+} from '../ui/arbiter';
 import {
   clearCampaignProfile,
   loadCampaignDifficultyChoice,
@@ -133,6 +140,8 @@ export interface CampaignHudSnapshot {
   minimapReserve: number;
   /** La battuta di ARBITER da mostrare adesso, se ce n'è una viva. */
   arbiter: string | null;
+  /** Cosa si è appena raccolto e a cosa serve, per qualche secondo. */
+  pickup: string | null;
   bossEnraged: boolean;
   unlockedNodes: string[];
   door: { armed: boolean; closeTimerMs: number };
@@ -248,6 +257,21 @@ export class CampaignGame {
   private banner: Banner | null = null;
   private arbiterVoice = new ArbiterVoice();
   private arbiterLine: ArbiterLine | null = null;
+
+  /** Cosa si è appena raccolto, da scrivere a schermo per qualche
+   *  secondo.
+   *
+   *  Il primo tester ha riassunto così tutta l'economia del gioco:
+   *  "prendo dei cubi colorati gialli, verdi, blu, rossi, non so cosa
+   *  siano però li prendo". Aveva ragione alla lettera — la raccolta
+   *  non produceva **nessun testo**, solo un suono per lo scudo. Tre
+   *  oggetti diversi, tre regole diverse, e nessuno che le dicesse:
+   *  restavano decorazioni da calpestare.
+   *
+   *  Canale suo e non quello di `arbiterLine` di proposito: la coda
+   *  narrativa racconta, questa riga informa, e una nota di servizio
+   *  non deve tagliare a metà le ultime parole di ARBITER. */
+  private pickupLine: { text: string; at: number } | null = null;
   /** Le "tre battute distinte" di fine livello (ultime parole, outro,
    *  poi la schermata d'atto) condividono il canale di `arbiterLine`
    *  ma hanno un ordine e un ritmo che quel campo da solo non sa
@@ -901,6 +925,11 @@ export class CampaignGame {
         case 'shieldPickup':
         case 'shieldRefilled':
           this.audio.pickup(this.world.state.player.x, this.world.state.player.y);
+          this.pickupLine = { text: pickupNotice(ev, XP_CORE), at: performance.now() };
+          break;
+        case 'coreCollected':
+        case 'beaconPickup':
+          this.pickupLine = { text: pickupNotice(ev, XP_CORE), at: performance.now() };
           break;
         case 'dashStarted':
           // Aveva in prestito il suono del respawn dell'Arena, con un
@@ -1366,6 +1395,10 @@ export class CampaignGame {
         (this.arbiterLine && now - this.arbiterLine.at < ARBITER_LINE_MS
           ? this.arbiterLine.text
           : null),
+      pickup:
+        this.pickupLine && now - this.pickupLine.at < PICKUP_LINE_MS
+          ? this.pickupLine.text
+          : null,
       bossEnraged: this.world.enraged && s.boss?.phase !== 'defeated',
       unlockedNodes: s.unlockedNodes,
       // La porta più urgente fra quelle armate: un livello può averne
