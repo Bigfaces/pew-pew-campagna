@@ -290,6 +290,48 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
  *  is where the skill tree actually lives, not crammed into the live
  *  HUD. Tutti e quattro i rami sono costruiti — vedi GDD.md sezione
  *  6; fino allo Sprint 1 tre di loro erano solo etichette spente. */
+/** I comandi, come li ha la campagna.
+ *
+ *  Esiste una lista in ui/Screens.tsx, ma vive solo sulle due
+ *  schermate dell'Arena e si è fermata a prima che la campagna avesse
+ *  uno scatto e un'arma secondaria: nessuna delle quattro schermate
+ *  della campagna mostrava un comando, e il tasto del Trasponditore
+ *  non era scritto in nessun posto che il giocatore potesse leggere.
+ *  Su telefono non si notava — ci sono i pulsanti a schermo — ma chi
+ *  gioca con la tastiera raccoglieva un'esca al secondo livello senza
+ *  avere modo di sapere come lanciarla.
+ *
+ *  Le due righe condizionate dicono anche *quando* valgono, invece di
+ *  comparire e sparire: un comando che appare a metà partita si nota
+ *  meno di uno che c'è sempre e spiega cosa gli manca. */
+export const CAMPAIGN_CONTROLS: readonly (readonly [string, string])[] = [
+  ['W A S D', 'Movimento — avanti, indietro, laterale'],
+  ['MOUSE', 'Mira — clicca una volta per catturare il puntatore'],
+  ['Q / E', 'Rotazione — funziona sempre, anche senza mouse'],
+  ['CLICK SIN.', 'Sparo — un colpo uccide, otturatore da riarmare'],
+  ['CLICK DES.', 'Ottica — tieni premuto per mirare col cannocchiale'],
+  ['MAIUSC', 'Scatto — dal nodo Scatto in poi, nella direzione in cui vai'],
+  ['F', 'Trasponditore — lancia un\'esca, se ne hai una carica'],
+  ['ESC', 'Pausa'],
+  ['M', 'Muto'],
+];
+
+function CampaignControls(): React.ReactElement {
+  return (
+    <div className="field">
+      <label>COMANDI</label>
+      <dl className="controls">
+        {CAMPAIGN_CONTROLS.map(([k, v]) => (
+          <div key={k} style={{ display: 'contents' }}>
+            <dt>{k}</dt>
+            <dd>{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 export function CampaignPauseScreen({
   snap,
   onUnlock,
@@ -342,6 +384,8 @@ export function CampaignPauseScreen({
             ))}
           </div>
         ))}
+
+        <CampaignControls />
 
         <button className="btn" type="button" onClick={onResume}>
           RIPRENDI
