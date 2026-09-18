@@ -27,6 +27,7 @@ import {
   turretOf,
   quiet,
 } from './testSupport';
+import { ALL_LEVELS, levelById } from './levels';
 import { emptyCampaignInput, type CampaignInput } from './types';
 import { CampaignWorld } from './world';
 
@@ -81,36 +82,48 @@ describe('CampaignWorld — un checkpoint è un posto sicuro', () => {
     expect(world.state.checkpoint.room).toBe('magazzino');
   });
 
-  it('rinascere non rimette dentro la morte da cui si viene', () => {
-    const world = attracco();
-    const vite: number[] = [];
-    let ultima = 0;
-
-    // Un giocatore che non ha ancora capito niente: avanza e basta.
-    for (let t = 0; t < 30_000 / TICK_MS; t++) {
-      const morto = world
-        .step({ ...emptyCampaignInput(), forward: 1, aimAngle: 0 })
-        .some((e) => e.type === 'playerDied');
-      if (morto) {
-        vite.push((t - ultima) * TICK_MS);
+  it('nessuna vita finisce nell istante in cui scade la grazia', () => {
+    // La proprieta' e' una sola e vale per tutto il gioco, non per un
+    // livello: dopo una morte, la vita che comincia deve durare piu'
+    // della grazia. Se finisse dentro, vorrebbe dire che si rinasce in
+    // un posto gia' perduto — il difetto di partenza.
+    //
+    // Prima questa prova girava sul solo ATTRACCO e si appoggiava a un
+    // bot che moriva tante volte. Adesso su ATTRACCO muore una volta
+    // sola, perche' la rinascita lo mette al riparo: la premessa se
+    // n'e' andata proprio perche' la correzione funziona. Quindi si
+    // guardano tutti e nove i livelli insieme — quelli dell'Atto III
+    // di morti ne offrono a sufficienza — e si misurano tutti gli
+    // intervalli fra una morte e la successiva.
+    const vite: { livello: string; ms: number }[] = [];
+    for (const level of ALL_LEVELS) {
+      const world = new CampaignWorld(level);
+      let ultima = -1;
+      for (let t = 0; t < 40_000 / TICK_MS; t++) {
+        const morto = world
+          .step({ ...emptyCampaignInput(), forward: 1, aimAngle: 0 })
+          .some((e) => e.type === 'playerDied');
+        if (!morto) continue;
+        if (ultima >= 0) vite.push({ livello: level.id, ms: (t - ultima) * TICK_MS });
         ultima = t;
       }
     }
 
-    // Il livello deve ancora uccidere chi cammina a testa bassa: se
+    // Il gioco deve ancora uccidere chi cammina a testa bassa: se
     // smettesse, questa prova starebbe misurando un gioco disinnescato.
-    expect(vite.length).toBeGreaterThan(1);
+    expect(vite.length, 'nessuno muore piu: la prova non guarda niente').toBeGreaterThan(5);
 
-    // E nessuna vita può finire nell'istante in cui la grazia scade.
-    // Il margine è piccolo apposta: col difetto la morte arrivava *un
-    // tick* dopo la fine dell'invulnerabilità, perché il drone aveva
-    // già finito di prendere la mira mentre il giocatore era
+    // Il margine e' piccolo apposta: col difetto la morte arrivava *un
+    // tick* dopo la fine dell'invulnerabilita', perche' il drone aveva
+    // gia' finito di prendere la mira mentre il giocatore era
     // intoccabile. Alzare la grazia da sola avrebbe spostato l'ora
-    // della morte di un tick e nient'altro — ed è esattamente ciò che
+    // della morte di un tick e nient'altro — ed e' esattamente cio' che
     // questa soglia rifiuta di accettare come correzione.
-    const piuBreve = Math.min(...vite.slice(1));
-    expect(piuBreve, `vite in secondi: ${vite.map((v) => (v / 1000).toFixed(2)).join(' ')}`)
-      .toBeGreaterThan(RESPAWN_GRACE_MS.tutorial + 300);
+    const piuBreve = vite.reduce((a, b) => (b.ms < a.ms ? b : a));
+    expect(
+      piuBreve.ms,
+      `vita piu breve: ${(piuBreve.ms / 1000).toFixed(2)}s su ${piuBreve.livello}`,
+    ).toBeGreaterThan(RESPAWN_GRACE_MS.tutorial + 300);
   });
 
   it('una morte riapre la paratia anche se il checkpoint e rimasto indietro', () => {
@@ -129,27 +142,116 @@ describe('CampaignWorld — un checkpoint è un posto sicuro', () => {
     // che sono l'intero passaggio — misurato, dodici morti di fila senza
     // mai superare la colonna 9. Un vicolo cieco nuovo al posto di
     // quello vecchio.
-    const world = attracco();
+    // La scena si costruisce invece di sperare che un bot ci finisca
+    // dentro: da quando la rinascita arretra al riparo, quel bot sul
+    // solo ATTRACCO muore una volta e si ferma li'.
+    // Senza nemici: qui si misura la paratia, non il corridoio. Con
+    // loro il bot resta bloccato contro il Ronzino che non spara mai —
+    // vero, ma un'altra prova.
+    const world = quiet(attracco());
     const porta = () => world.state.doors[0]!;
-    let morti = 0;
-    let sigillataDopoUnaMorte = 0;
 
-    for (let t = 0; t < 40_000 / TICK_MS; t++) {
-      const morto = world
-        .step({ ...emptyCampaignInput(), forward: 1, aimAngle: 0 })
-        .some((e) => e.type === 'playerDied');
-      if (!morto) continue;
-      morti++;
-      // Il caso che conta e' proprio questo: checkpoint indietro
-      // rispetto alla stanza della porta.
-      if (world.state.checkpoint.room !== 'corridoio' && porta().closed) sigillataDopoUnaMorte++;
+    // Oltre la paratia, cosi' si chiude alle spalle. Il checkpoint
+    // resta indietro, nell'ATTRACCO: e' il caso che creava il vicolo
+    // cieco.
+    // Il sensore sta su una colonna precisa: va attraversato a piedi,
+    // non scavalcato con un teletrasporto, o la paratia non si accorge
+    // di niente.
+    const p = world.state.player;
+    p.x = 6.5 * TILE;
+    p.y = 5.5 * TILE;
+    for (let t = 0; t < 12_000 / TICK_MS && !porta().closed; t++) {
+      world.step({ ...emptyCampaignInput(), forward: 1, aimAngle: 0 });
     }
 
-    // La premessa: il bot deve davvero morire, e il checkpoint deve
-    // davvero restare indietro, o la prova non starebbe guardando niente.
-    expect(morti).toBeGreaterThan(2);
-    expect(world.state.checkpoint.room).not.toBe('corridoio');
-    expect(sigillataDopoUnaMorte, 'la paratia e rimasta chiusa dopo una morte').toBe(0);
+    expect(porta().closed, 'premessa: la paratia deve essersi chiusa').toBe(true);
+
+    // Il checkpoint torna dov'era: e' il caso del difetto, cioe' il
+    // checkpoint *dietro* la paratia. Senza nemici avanzerebbe da solo
+    // — proprio perche' la regola del posto sicuro funziona — e il
+    // corridoio non sarebbe piu' un tratto da rigiocare.
+    world.state.checkpoint = {
+      room: 'attracco',
+      x: 2.5 * TILE,
+      y: 5.5 * TILE,
+      angle: 0,
+    };
+
+    // E ora si muore per davvero, nel MAGAZZINO, sotto il drone: una
+    // morte vera e non un metodo di comodo, perche' e' il percorso
+    // vero a dover rimettere le cose a posto. Il tratto fra il
+    // checkpoint e il punto in cui si e' morti — paratia compresa — o
+    // quelle tre tile restano sigillate per sempre.
+    p.x = 12.5 * TILE;
+    p.y = 3.5 * TILE;
+    p.respawnInvulnerableMs = 0;
+    let morto = false;
+    for (let t = 0; t < 12_000 / TICK_MS && !morto; t++) {
+      morto = world.step().some((e) => e.type === 'playerDied');
+    }
+    expect(morto, 'premessa: il drone deve aver ucciso il giocatore').toBe(true);
+    expect(porta().closed, 'la paratia e rimasta chiusa dopo una morte').toBe(false);
+  });
+
+  it('si rinasce un passo indietro, non dentro la linea di tiro', () => {
+    // Pretendere che un checkpoint si prenda al sicuro non basta: il
+    // checkpoint si prende una volta e i nemici camminano. E il
+    // checkpoint di partenza — quello che ogni giocatore ha addosso
+    // per tutto il primo minuto di ogni livello, e quello a cui torna
+    // finché non ne conquista un altro — non passava per quella regola
+    // affatto, perché è lo spawn scritto nel livello e basta.
+    //
+    // Sull'ATTRACCO si vede col livello così com'è: si muore, e il
+    // punto di partenza è nel tiro del Ronzino che nel frattempo è
+    // arrivato. Misurato: 21 morti al minuto stando fermi, ridotte a 2.
+    const world = attracco();
+    const cp = { ...world.state.checkpoint };
+    const p = world.state.player;
+
+    let morto = false;
+    for (let t = 0; t < 20_000 / TICK_MS && !morto; t++) {
+      morto = world.step().some((e) => e.type === 'playerDied');
+    }
+    expect(morto, 'premessa: il livello deve aver ucciso chi sta fermo').toBe(true);
+
+    // La premessa che conta: il checkpoint, in quel momento, è un
+    // brutto posto. Senza questo la prova passerebbe per caso.
+    const sicuro = (x: number, y: number): boolean =>
+      (world as unknown as { isSafeToRespawn: (x: number, y: number) => boolean })
+        .isSafeToRespawn(x, y);
+    expect(sicuro(cp.x, cp.y), 'premessa: il checkpoint doveva essere sotto tiro').toBe(false);
+
+    // Quindi non ci si rinasce dentro, e il posto nuovo è al riparo.
+    expect(Math.hypot(p.x - cp.x, p.y - cp.y), 'rinato nel punto sotto tiro').toBeGreaterThan(0);
+    expect(sicuro(p.x, p.y), 'rinato di nuovo sotto tiro').toBe(true);
+    // Un passo, non un teletrasporto: se arretrasse mezza mappa
+    // sarebbe una correzione peggiore del difetto.
+    expect(Math.hypot(p.x - cp.x, p.y - cp.y) / TILE).toBeLessThanOrEqual(6);
+  });
+
+  it('quando non c e un passo indietro, la grazia aspetta invece di scorrere', () => {
+    // ARCHIVIO e NIDO non hanno una sola casella libera dal tiro: due
+    // e quattro torrette spazzano la stanza di partenza. Lì arretrare
+    // non è un'opzione, e la grazia scorreva lo stesso — misurato, la
+    // vita dopo una morte durava esattamente RESPAWN_GRACE_MS, al
+    // tick. Cioè il ciclo del primo tester, con un numero diverso.
+    for (const id of ['archivio', 'nido'] as const) {
+      const world = new CampaignWorld(levelById(id));
+      const vite: number[] = [];
+      let ultima = -1;
+      for (let t = 0; t < 40_000 / TICK_MS; t++) {
+        if (!world.step().some((e) => e.type === 'playerDied')) continue;
+        if (ultima >= 0) vite.push((t - ultima) * TICK_MS);
+        ultima = t;
+      }
+      expect(vite.length, `${id}: nessuna morte, la prova non guarda niente`).toBeGreaterThan(2);
+      // Il punto non è che si sopravviva: è che nessuna vita finisca
+      // nell'istante esatto in cui si torna toccabili, perché quella è
+      // la firma del ciclo — non una morte, un metronomo.
+      const piuBreve = Math.min(...vite);
+      expect(piuBreve, `${id}: vita più breve ${(piuBreve / 1000).toFixed(2)}s`)
+        .toBeGreaterThan(RESPAWN_GRACE_MS.tutorial + 300);
+    }
   });
 
   it('chi sa mirare gioca il livello invece di subirlo', () => {

@@ -355,6 +355,17 @@ export function renderBillboards(
 ): void {
   const list: Billboard[] = [];
 
+  // Pavimenti di `perp`, in unità di mondo: nessun billboard può avere
+  // il centro più vicino della propria taglia, perché vorrebbe dire
+  // starci dentro, e un billboard non sa disegnarlo. Senza questi,
+  // tileH e la taglia delle particelle tendono all'infinito e
+  // riempiono il fotogramma di tinta piatta — lo stesso difetto che in
+  // campagna dava lo schermo nero. Qui il caso vivo è la propria
+  // rinascita: `spawnBurst` semina le particelle esattamente sulla
+  // posizione di chi rinasce, cioè a distanza zero dalla sua camera.
+  const SEMI_ENTITA = TILE * 0.5;
+  const SEMI_POWERUP = TILE * 0.3;
+
   const occluded = (screenX: number, perp: number): boolean => {
     const col = Math.round((screenX - fx.shakeX - fx.bobX) / SLICE_W);
     if (col < 0 || col >= vp.numRays) return true;
@@ -363,7 +374,7 @@ export function renderBillboards(
 
   for (const e of entities) {
     if (e.id === viewerId) continue;
-    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, e.x, e.y);
+    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, e.x, e.y, undefined, SEMI_ENTITA);
     if (!p.visible || occluded(p.screenX, p.perp)) continue;
     // Aimed at the viewer, with the bolt closed. Both halves matter:
     // aimed alone would light up half the arena, ready alone says
@@ -385,7 +396,7 @@ export function renderBillboards(
 
   for (const pu of powerups) {
     if (!pu.active) continue;
-    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, pu.x, pu.y);
+    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, pu.x, pu.y, undefined, SEMI_POWERUP);
     if (!p.visible || occluded(p.screenX, p.perp)) continue;
     list.push({
       dist: p.perp,
@@ -395,7 +406,7 @@ export function renderBillboards(
 
   for (const pt of particles) {
     if (!pt.active) continue;
-    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, pt.x, pt.y, 0.1);
+    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, pt.x, pt.y, 0.1, pt.size);
     if (!p.visible || occluded(p.screenX, p.perp)) continue;
     const y = heightToScreenY(vp, fx, p.perp, pt.z);
     const size = Math.max(1, (pt.size / p.perp) * vp.projDist * 0.05);

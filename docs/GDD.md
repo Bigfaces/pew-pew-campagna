@@ -1483,3 +1483,160 @@ Va detto con precisione, perché è la parte utile: **la guardia che cattura
 davvero il vicolo cieco è quella sulla linea di tiro**. Le altre due sono
 invarianti oneste ma larghe, e col difetto rimesso a mano restano verdi.
 Una prova che non si è vista fallire non è una guardia.
+
+---
+
+## 17. Il secondo giro di prove: «il gioco è rotto»
+
+> «Quando si gira verso un muro schermo nero e muore, o flash rosso.
+> Se ci sono tre nemici in stanza non puoi fare nulla perché tra aimbot
+> e travel time del colpo sei perma morto.»
+
+Due frasi, tre difetti, e il primo era mio, introdotto nel giro
+precedente.
+
+### 17.1 Lo schermo nero: un rombo grande duecento milioni di pixel
+
+Il muro non c'entrava. La misura, nel browser vero, è che il fotogramma
+diventa **una tinta piatta sola**: `13,15,24` sul 100% dei pixel
+campionati, per un fotogramma, mentre ci si gira. `#0d0f18` è il pieno
+interno di `drawDiamond` — il corpo dei nuclei, degli scudi e del drone.
+
+`projectPoint` scartava un punto solo quando usciva dal campo visivo più
+un margine, e nuclei, scudi e torrette chiedevano **margine 1 radiante**.
+Su 16:9 il semicampo orizzontale è 0,75 rad, quindi il taglio cadeva a
+1,75 rad: **oltre i 90 gradi**. Un punto oltre i 90 gradi sta *dietro* il
+piano di proiezione, `cos(rel)` è negativo, e `perp` finiva sul suo
+pavimento di 0,0001.
+
+| schermo | semicampo | taglio | banda cieca |
+|---|---|---|---|
+| 1100×760 | 37,1° | 94,4° | 90,0° → 94,4° |
+| 1920×1080 | 42,9° | 100,2° | 90,0° → 100,2° |
+| 2560×1080 | 51,1° | 108,3° | 90,0° → 108,3° |
+| 390×844 (telefono) | 13,6° | 70,9° | **nessuna** |
+
+Da un `perp` di 0,0001, `tileH = TILE/perp·projDist` vale **2,3·10⁸
+pixel**. Misurato nel test: un `fillRect` di 118 992 929 px di lato, e un
+`arc` di raggio 142 791 514 px. Il primo è lo schermo nero. Il secondo,
+riempito di `#ff3b3b`, è **il «flash rosso»**: stessa patologia, altro
+oggetto — la torretta invece del nucleo.
+
+L'ultima riga della tabella dice perché non l'avevo mai visto: su un
+telefono in verticale la banda non esiste. Il gioco lo sviluppo
+guardandolo da lì.
+
+**L'ho reso visibile io.** La vecchia occlusione a colonna singola
+rispondeva «coperto» quando `screenX` usciva dallo schermo, e per puro
+caso scartava anche questi punti. Sostituendola col ritaglio per colonna
+(§16.2) quella rete è sparita, e il difetto — che era lì da sempre — è
+venuto a galla al primo giro di visuale.
+
+La correzione ha due pezzi, e nessuno dei due è una manopola:
+
+- **Il margine si deriva.** Non è una preferenza, è quanto lo sprite
+  sporge oltre il proprio centro visto da qui: `atan2(semiTile·TILE, d)`.
+  A sei tile un nucleo occupa 0,06 rad — il margine costante ne teneva
+  sedici volte tanto.
+- **I 90 gradi sono un limite fisico.** `projectPoint` non restituisce
+  mai `visible` per un punto sul piano di proiezione o dietro, qualunque
+  margine gli si chieda.
+
+Più un pavimento per `perp` alla semilarghezza dello sprite stesso: un
+oggetto il cui centro è più vicino della propria taglia è un oggetto
+dentro cui stai, e un billboard non sa disegnarlo. Vale anche per
+l'Arena, dove `spawnBurst` semina le particelle *esattamente* sulla
+posizione di chi rinasce, cioè a distanza zero dalla propria camera.
+
+Spazzando ogni casella calpestabile dei nove livelli, a un grado alla
+volta, su quattro formati di schermo: lo sprite più largo passa da
+**367 262 schermate a 0,96**, e quel caso è un nemico a una tile il cui
+centro cade comunque fuori dallo schermo.
+
+### 17.2 «Tre nemici»: il numero era sbagliato, la sostanza no
+
+Nessuna stanza del gioco ha tre nemici. Ventiquattro ne hanno uno, tre ne
+hanno due. Ma il tester aveva ragione lo stesso, e la misura lo dice
+meglio di lui.
+
+Un bot con **mira perfetta**, che non sbaglia un colpo, contro le stanze
+così come sono scritte, coi nemici lasciati dove stanno:
+
+| mira | stanze vinte |
+|---|---|
+| al centro della sagoma | **48%** — dodici stanze su ventisei a 0/20 |
+| sulla banda del punto debole | **87%** — ventitré su ventisei |
+
+Le dodici stanze perse col primo modo sono tutte e sole quelle con un
+nemico da 4 o 5 punti vita. L'aritmetica non lascia scampo: al corpo si
+fa 1 danno, l'otturatore cicla in 1400 ms, quindi quattro punti vita
+costano **5,6 secondi** di fuoco continuo — contro un nemico che uccide
+in un colpo e reagisce in 650÷950 ms. Non è difficile: è impossibile.
+
+Col punto debole (×3) diventa un colpo e mezzo. Le tre stanze che restano
+perse chiedono di aggirare — Guardiano ha la piastra frontale che è
+un'immunità, Martello ha il punto debole sul dorso — e il bot sta fermo.
+
+**Quindi non è un problema di bilanciamento: è che il gioco non dice che
+mirare al centro perde sempre.** Il cerchio pulsante sul punto debole si
+disegna già, la HUD dice già quale sia, la legenda ora non mente più
+(§16.1) — e non è bastato. Cosa farne è una decisione di design, e non la
+prendo da solo.
+
+### 17.3 Il ciclo di morte non era finito: era finito su un livello
+
+Il giro scorso ho preteso che un checkpoint si prendesse solo dove
+nessuno ha la linea di tiro, e ho verificato sull'ATTRACCO. Sugli altri
+otto no. Stando **fermi allo spawn**, senza toccare niente:
+
+| livello | prima | dopo |
+|---|---|---|
+| attracco | 21 morti/min | **2** |
+| condotti | 20 | 13 |
+| molo | 30 | **1** |
+| anello | 18 | 12 |
+| refrigerante | 8 | 8 |
+| nucleo | 9 | 9 |
+| plancia | 22 | 14 |
+| archivio | 30 | **17** |
+| nido | 30 | **17** |
+
+Trenta morti al minuto è **una ogni due secondi esatti**, cioè
+`RESPAWN_GRACE_MS` in tutorial: si moriva nel tick in cui si tornava
+toccabili. Lo stesso metronomo del primo tester, con un numero diverso
+sopra.
+
+Due cose mancavano.
+
+**La prima**: la regola valeva per i checkpoint *conquistati*, mai per
+quello di partenza — che è lo spawn scritto nel livello, e che ogni
+giocatore ha addosso per tutto il primo minuto. Su otto livelli su nove
+si rinasceva nella linea di tiro di qualcosa. Ora, al momento di
+rimettere in piedi il giocatore, si cerca il posto buono più vicino entro
+sei tile nella stessa stanza. Un passo indietro, non una ritirata.
+
+**La seconda**: su cinque livelli quel passo non esiste. Cercando in
+tutta la mappa una casella che nessuno tenga sotto tiro, NIDO non ne ha
+**nemmeno una** — quattro torrette e un Araldo spazzano tutto. Allora la
+regola va tenuta dall'altro capo: **finché si è sotto tiro, l'orologio
+della grazia non parte**, con un tetto di un ciclo d'otturatore perché
+non diventi un riparo.
+
+È la stessa frase che avevo già scritto accanto a `RESPAWN_GRACE_MS` e
+che non avevo applicato fino in fondo: la grazia non deve durare quanto
+basta a *sopravvivere*, deve durare quanto basta ad **agire**.
+
+Nessun livello arriva a zero morti, ed è giusto: stare fermi senza far
+niente deve costare.
+
+### 17.4 Cosa insegna
+
+Il §16.5 diceva che le prove guardavano meccanismi e non partite. Questo
+giro dice la cosa dopo: **avevo verificato una correzione su un livello e
+l'avevo chiamata fatta**. Sugli altri otto lo stesso difetto era vivo, e
+sarebbe rimasto vivo se il secondo tester non avesse riaperto il gioco.
+
+E il difetto peggiore dei tre — lo schermo nero — l'ha scoperto la
+correzione precedente togliendo una rete che non sapevo di avere. Una
+rete casuale che copre un difetto vero è peggio del difetto: lo tiene
+nascosto fino al giorno in cui tocchi il codice accanto.

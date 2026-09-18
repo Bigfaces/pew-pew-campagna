@@ -218,17 +218,37 @@ export function projectPoint(
   x: number,
   y: number,
   margin = 0.35,
+  /** Mezza larghezza dello sprite in unità di mondo, se chi disegna la
+   *  conosce. Serve solo a dare un pavimento a `perp`: un oggetto il
+   *  cui centro è più vicino dell'oggetto stesso è un oggetto dentro
+   *  cui stai, e un billboard non sa disegnarlo — senza pavimento
+   *  tileH tende all'infinito e riempie il fotogramma di tinta piatta.
+   *  Con il pavimento lo sprite si ferma alla taglia che avrebbe con la
+   *  propria superficie appoggiata all'occhio, che è il massimo che
+   *  possa voler dire qualcosa. */
+  semiWorld = 0,
 ): Projected {
   const dx = x - camX;
   const dy = y - camY;
   const dist = Math.hypot(dx, dy);
   const rel = wrapAngle(Math.atan2(dy, dx) - camAngle);
 
+  // Un quarto di giro è il limite fisico, non una preferenza: a 90
+  // gradi esatti il punto giace SUL piano di proiezione, oltre ci sta
+  // dietro. Lì cos(rel) è nullo o negativo, `perp` smette di
+  // significare una distanza, e tileH = TILE/perp*projDist esplode:
+  // misurati 3e8 pixel per un nucleo a sei tile, cioè un rettangolo di
+  // tinta piatta su tutto il fotogramma. Il margine serve a non far
+  // sparire di scatto uno sprite che tocca ancora il bordo — è una
+  // tolleranza, e nessuna tolleranza può spostare dove sta il piano.
+  if (Math.abs(rel) >= Math.PI / 2) {
+    return { screenX: 0, perp: 1, floorY: 0, tileH: 0, visible: false };
+  }
   if (Math.abs(rel) > vp.halfFovH + margin) {
     return { screenX: 0, perp: 1, floorY: 0, tileH: 0, visible: false };
   }
 
-  const perp = Math.max(0.0001, dist * Math.cos(rel));
+  const perp = Math.max(0.0001, semiWorld, dist * Math.cos(rel));
   const screenX =
     vp.width / 2 + (Math.tan(rel) / vp.tanHalfFovH) * (vp.width / 2) + fx.shakeX + fx.bobX;
   const tileH = (TILE / perp) * vp.projDist;

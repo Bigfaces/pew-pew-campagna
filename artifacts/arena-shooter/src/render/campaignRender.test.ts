@@ -17,15 +17,26 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { TILE } from '../sim/constants';
 import { BEACON_LIFETIME_MS } from '../sim/campaign/constants';
 import { ALL_LEVELS, levelById } from '../sim/campaign/levels';
+import { archetypeOf } from '../sim/campaign/enemies';
 import { emptyCampaignInput } from '../sim/campaign/types';
 import { CampaignWorld } from '../sim/campaign/world';
 import { CameraFx, SLICE_W, computeViewport, projectPoint } from './camera';
-import { renderCampaignScenery } from './campaignScene';
+import { SEMI_TILE, margineBillboard, renderCampaignScenery } from './campaignScene';
 
 interface Recorder {
   calls: string[];
   bad: string[];
+  /** Disegni di dimensione assurda. Un numero finito non basta: una
+   *  proiezione che esplode produce numeri finiti e giganteschi, e a
+   *  schermo diventano una tinta piatta su tutto il fotogramma. */
+  enormi: string[];
 }
+
+/** Oltre questo nessun disegno è più uno sprite: è una parete di
+ *  colore. Il viewport dei test è 960x540, quindi il limite vale
+ *  venti schermate — larghissimo di proposito, perché deve scattare
+ *  solo sulla patologia, non sul nemico appiccicato alla faccia. */
+const LIMITE_DISEGNO = 20_000;
 
 function makeCtx(rec: Recorder): CanvasRenderingContext2D {
   const check = (name: string, args: unknown[]): void => {
@@ -33,6 +44,10 @@ function makeCtx(rec: Recorder): CanvasRenderingContext2D {
     for (const a of args) {
       if (typeof a === 'number' && !Number.isFinite(a)) {
         rec.bad.push(`${name}(${args.join(', ')})`);
+        return;
+      }
+      if (typeof a === 'number' && Math.abs(a) > LIMITE_DISEGNO) {
+        rec.enormi.push(`${name}(${args.join(', ')})`);
         return;
       }
     }
@@ -101,7 +116,7 @@ describe('scena della campagna', () => {
   let ctx: CanvasRenderingContext2D;
 
   beforeEach(() => {
-    rec = { calls: [], bad: [] };
+    rec = { calls: [], bad: [], enormi: [] };
     installDom(rec);
     ctx = makeCtx(rec);
   });
@@ -208,7 +223,7 @@ describe('Trasponditore', () => {
   let ctx: CanvasRenderingContext2D;
 
   beforeEach(() => {
-    rec = { calls: [], bad: [] };
+    rec = { calls: [], bad: [], enormi: [] };
     installDom(rec);
     ctx = makeCtx(rec);
   });
@@ -229,7 +244,7 @@ describe('Trasponditore', () => {
   }
 
   function render(world: CampaignWorld, depth?: Float32Array): Recorder {
-    rec = { calls: [], bad: [] };
+    rec = { calls: [], bad: [], enormi: [] };
     ctx = makeCtx(rec);
     const vp = computeViewport(960, 540, 1);
     const fx = new CameraFx();
@@ -448,4 +463,195 @@ describe('Trasponditore', () => {
     expect(rec.bad).toHaveLength(0);
     expect(composites.every((v) => v === 'source-over')).toBe(true);
   });
+});
+
+// ================================================================
+// GIRARSI NON DEVE ANNERIRE LO SCHERMO
+// ================================================================
+// Il secondo tester: «quando si gira verso un muro schermo nero e
+// muore, o flash rosso». Non era il muro, ed era una cosa sola.
+//
+// `projectPoint` scarta un punto solo quando esce dal campo visivo più
+// un margine, e i raccoglibili chiedevano margine 1 rad. Su uno schermo
+// 16:9 il semicampo orizzontale è ~0,75 rad, quindi il taglio cadeva a
+// ~1,75 rad: oltre i 90 gradi. Un punto oltre i 90 gradi sta DIETRO il
+// piano di proiezione, cos(rel) è negativo, e `perp` finiva sul suo
+// pavimento di 0,0001. Da lì tileH = TILE/perp*projDist diventa ~3e8
+// pixel, e drawDiamond riempie il fotogramma del suo `#0d0f18`:
+// misurato nel browser, 13,15,24 sul 100% dei pixel campionati. La
+// stessa cosa con una torretta dà l'alone rosso: «o flash rosso».
+//
+// L'ho reso visibile io: la vecchia occlusione a colonna singola
+// rispondeva "coperto" quando screenX usciva dallo schermo, e per puro
+// caso scartava anche questi. Tolta quella, il difetto è venuto fuori.
+describe('proiezione — niente sprite da dietro la camera', () => {
+  let rec: Recorder;
+  let ctx: CanvasRenderingContext2D;
+
+  beforeEach(() => {
+    rec = { calls: [], bad: [], enormi: [] };
+    installDom(rec);
+    ctx = makeCtx(rec);
+  });
+
+  it('un punto oltre i 90 gradi non è mai visibile, per quanto largo sia il margine', () => {
+    const vp = computeViewport(1920, 1080, 1);
+    const fx = new CameraFx();
+    // Il margine che i raccoglibili chiedevano. Anche con questo, un
+    // punto dietro il piano di proiezione non è un punto proiettabile.
+    for (const gradi of [90.001, 91, 95, 120, 179]) {
+      const rel = (gradi * Math.PI) / 180;
+      const d = TILE * 6;
+      const p = projectPoint(vp, fx, 0, 0, 0, Math.cos(rel) * d, Math.sin(rel) * d, 1);
+      expect(p.visible, `${gradi} gradi: perp=${p.perp} tileH=${p.tileH}`).toBe(false);
+    }
+  });
+
+  it('girandosi, un nucleo non diventa una tinta piatta su tutto lo schermo', () => {
+    // Il giro completo, un grado alla volta: la banda cieca misurata è
+    // larga una decina di gradi, quindi un passo grosso la scavalcava
+    // e il test sarebbe passato senza guardare niente.
+    const level = levelById('attracco');
+    const world = new CampaignWorld(level);
+    const core = world.state.cores[0]!;
+    const p = world.state.player;
+    p.x = core.x - TILE * 6;
+    p.y = core.y;
+
+    const vp = computeViewport(1920, 1080, 1);
+    const fx = new CameraFx();
+    const depth = new Float32Array(vp.numRays).fill(1e6);
+    for (let g = 0; g < 360; g++) {
+      p.angle = (g * Math.PI) / 180;
+      renderCampaignScenery(
+        ctx,
+        vp,
+        fx,
+        { x: p.x, y: p.y, angle: p.angle },
+        depth,
+        level,
+        world.state,
+        true,
+        true,
+        1234,
+      );
+    }
+    expect(rec.bad, rec.bad.slice(0, 2).join(' | ')).toHaveLength(0);
+    expect(rec.enormi, rec.enormi.slice(0, 3).join(' | ')).toHaveLength(0);
+  });
+
+  it('girandosi, una torretta non lava lo schermo di rosso', () => {
+    // Stessa patologia, altro oggetto: l'alone della torretta è un
+    // arc() il cui raggio segue tileH. È il «flash rosso» del tester.
+    const level = levelById('attracco');
+    const world = new CampaignWorld(level);
+    const def = level.turrets[0]!;
+    const p = world.state.player;
+    p.x = (def.tx + 0.5) * TILE - TILE * 6;
+    p.y = (def.ty + 0.5) * TILE;
+
+    const vp = computeViewport(1920, 1080, 1);
+    const fx = new CameraFx();
+    const depth = new Float32Array(vp.numRays).fill(1e6);
+    for (let g = 0; g < 360; g++) {
+      p.angle = (g * Math.PI) / 180;
+      renderCampaignScenery(
+        ctx,
+        vp,
+        fx,
+        { x: p.x, y: p.y, angle: p.angle },
+        depth,
+        level,
+        world.state,
+        true,
+        true,
+        1234,
+      );
+    }
+    expect(rec.enormi, rec.enormi.slice(0, 3).join(' | ')).toHaveLength(0);
+  });
+});
+
+// ================================================================
+// LA STESSA PROVA, SU TUTTA LA MAPPA
+// ================================================================
+// I due test qui sopra guidano la scena vera, ma da due punti soli.
+// Questo rinuncia al contesto di disegno e tiene la geometria, che è
+// dove sta il difetto: ogni tile calpestabile di ogni livello, giro
+// completo, ogni billboard, e la domanda è sempre la stessa — quanto
+// diventa largo a schermo. Prima della correzione il massimo misurato
+// era 367 262 schermate; dopo, 0,96, e quel caso è un nemico a una
+// tile il cui centro cade comunque fuori dallo schermo.
+//
+// Semilarghezze da SEMI_TILE e margine da margineBillboard, cioè le
+// stesse funzioni che usa `push`: riscriverne qui una copia a mano
+// vorrebbe dire che rimettere il difetto nel codice vero lascerebbe
+// questo test verde. Resta fuori solo il cablaggio fra push e i siti
+// di disegno, ed è quello che provano i due test qui sopra.
+describe('proiezione — nessuna posizione della mappa fa esplodere uno sprite', () => {
+  // Il 21:9 non è un capriccio: più è largo lo schermo, più è ampio il
+  // semicampo orizzontale, e il difetto viveva proprio nello spazio fra
+  // il semicampo e i 90 gradi. Su un telefono in verticale non si
+  // vedeva affatto — per questo non l'avevo mai visto io.
+  for (const [w, h] of [[1920, 1080], [2560, 1080]] as const) {
+    it(`${w}x${h}: nessuno sprite supera una schermata e mezza`, () => {
+      const vp = computeViewport(w, h, 1);
+      const fx = new CameraFx();
+      let peggio = 0;
+      let dove = '';
+      for (const level of ALL_LEVELS) {
+        const world = new CampaignWorld(level);
+        const st = world.state;
+        const oggetti: [number, number, number, string][] = [];
+        for (const c of st.cores) oggetti.push([c.x, c.y, SEMI_TILE.nucleo, 'nucleo']);
+        for (const sh of st.shields) oggetti.push([sh.x, sh.y, SEMI_TILE.scudo, 'scudo']);
+        for (const b of st.beaconPickups) {
+          oggetti.push([b.x, b.y, SEMI_TILE.trasponditore, 'trasponditore']);
+        }
+        for (const t of level.turrets) {
+          oggetti.push([(t.tx + 0.5) * TILE, (t.ty + 0.5) * TILE, SEMI_TILE.torretta, 'torretta']);
+        }
+        if (level.exit) {
+          oggetti.push([
+            (level.exit.tx + 0.5) * TILE,
+            (level.exit.ty + 0.5) * TILE,
+            SEMI_TILE.uscita,
+            'uscita',
+          ]);
+        }
+        for (const e of st.enemies) {
+          oggetti.push([e.x, e.y, archetypeOf(e.kind).height * 0.5, 'nemico']);
+        }
+        if (st.boss) oggetti.push([st.boss.x, st.boss.y, SEMI_TILE.boss, 'boss']);
+
+        for (let ty = 0; ty < level.height; ty++) {
+          for (let tx = 0; tx < level.width; tx++) {
+            if (world.getTile(tx, ty) !== 0) continue;
+            const cx = (tx + 0.5) * TILE;
+            const cy = (ty + 0.5) * TILE;
+            // Passo di 5 gradi: la banda cieca misurata era larga fra i
+            // 10 e i 19 gradi a seconda dello schermo, quindi un passo
+            // così non può scavalcarla.
+            for (let g = 0; g < 360; g += 5) {
+              const ang = (g * Math.PI) / 180;
+              for (const [ox, oy, semiTile, nome] of oggetti) {
+                const { margine, semiMondo } = margineBillboard(
+                  semiTile,
+                  Math.hypot(ox - cx, oy - cy),
+                );
+                const p = projectPoint(vp, fx, cx, cy, ang, ox, oy, margine, semiMondo);
+                if (!p.visible) continue;
+                const semiPx = p.tileH * semiTile;
+                if (semiPx > peggio) {
+                  peggio = semiPx;
+                  dove = `${level.id} (${tx},${ty}) ${g}deg ${nome} perp=${p.perp.toFixed(2)}`;
+                }
+              }
+            }
+          }
+        }
+      }
+      expect(peggio, `${(peggio / h).toFixed(2)} schermate — ${dove}`).toBeLessThan(h * 1.5);
+    });
+  }
 });

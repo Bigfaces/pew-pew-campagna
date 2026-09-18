@@ -201,7 +201,7 @@ pnpm --filter @workspace/arena-shooter run dev              # gioco su :5173
 pnpm --filter @workspace/api-server  run dev                # API + signaling su :5000
 pnpm --filter @workspace/arena-shooter run balance          # metriche dell'Arena
 pnpm --filter @workspace/arena-shooter run balance:campaign  # metriche della campagna
-pnpm run test                                              # 645 test, headless, ~3 s
+pnpm run test                                              # 654 test, headless, ~3 s
 pnpm run typecheck                                         # typecheck di tutti i pacchetti
 pnpm run build                                             # typecheck + build
 pnpm --filter @workspace/arena-shooter run build:standalone # rigenera il file singolo

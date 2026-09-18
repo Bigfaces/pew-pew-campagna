@@ -65,6 +65,7 @@ import {
   DASH_DURATION_MS,
   DASH_SPEED,
   RESPAWN_GRACE_MS,
+  RESPAWN_HOLD_MS,
   SHIELD_PICKUP_RADIUS,
   TURRET_RADIUS,
   XP_BOSS_DEFEAT,
@@ -358,6 +359,7 @@ export class CampaignWorld {
         // Vedi LEVEL_START_GRACE_MS: entrare in un livello è un
         // respawn come un altro, e merita lo stesso riguardo.
         respawnInvulnerableMs: LEVEL_START_GRACE_MS,
+        respawnHoldMs: RESPAWN_HOLD_MS,
         shieldCharges: 0,
         dashTimer: 0,
         dashCooldown: 0,
@@ -568,7 +570,18 @@ export class CampaignWorld {
     const p = this.state.player;
     if (p.weaponCooldown > 0) p.weaponCooldown = Math.max(0, p.weaponCooldown - TICK_MS);
     if (p.respawnInvulnerableMs > 0) {
-      p.respawnInvulnerableMs = Math.max(0, p.respawnInvulnerableMs - TICK_MS);
+      // La grazia non scorre finché si è dentro una linea di tiro: è
+      // la differenza fra "durare abbastanza da sopravvivere" e
+      // "durare abbastanza da agire", che è la regola scritta accanto
+      // a RESPAWN_GRACE_MS. Senza questo, su cinque livelli su nove si
+      // moriva al tick esatto in cui la grazia finiva, perché non
+      // c'era una sola casella libera in cui arretrare. Il tetto
+      // (respawnHoldMs) impedisce che diventi un riparo.
+      if (p.respawnHoldMs > 0 && !this.isSafeToRespawn(p.x, p.y)) {
+        p.respawnHoldMs = Math.max(0, p.respawnHoldMs - TICK_MS);
+      } else {
+        p.respawnInvulnerableMs = Math.max(0, p.respawnInvulnerableMs - TICK_MS);
+      }
     }
     if (p.dashCooldown > 0) p.dashCooldown = Math.max(0, p.dashCooldown - TICK_MS);
 
@@ -893,6 +906,64 @@ export class CampaignWorld {
     if (boss && boss.phase !== 'defeated' && tiro(boss.x, boss.y)) return false;
 
     return true;
+  }
+
+  /** Il punto sicuro più vicino a (x, y), o (x, y) stesso se non ce
+   *  n'è nessuno a portata.
+   *
+   *  Il giro scorso ho preteso che un checkpoint si prendesse solo dove
+   *  nessuno ha la linea di tiro, e non bastava: il checkpoint si
+   *  prende una volta, i nemici camminano, e quando si muore quel
+   *  punto può essere diventato una linea di tiro. Peggio, il
+   *  checkpoint di partenza — quello che ogni giocatore ha addosso per
+   *  tutto il primo minuto di ogni livello, e quello a cui torna
+   *  finché non ne conquista un altro — non è mai passato per quella
+   *  regola: è lo spawn scritto nel livello, e basta. Misurato: su
+   *  otto livelli su nove si rinasce nella linea di tiro di qualcosa.
+   *
+   *  Quindi la regola si applica dove conta davvero, cioè al momento
+   *  di rimettere in piedi il giocatore, sullo stato di adesso. Si
+   *  cerca a cerchi concentrici e ci si ferma al primo posto buono:
+   *  l'arretramento è il minimo che serve, non una ritirata.
+   *
+   *  Non si tocca lo spawn scritto nel livello: cominciare in vista di
+   *  un nemico è una cosa che il livello ha il diritto di dire, e ci
+   *  sono due o tre secondi per rispondere. Rinascere in vista di un
+   *  nemico no: quei secondi li hai già spesi. */
+  private puntoSicuroVicino(
+    x: number,
+    y: number,
+    room: string,
+  ): { x: number; y: number } {
+    if (this.isSafeToRespawn(x, y)) return { x, y };
+
+    const tx0 = Math.floor(x / TILE);
+    const ty0 = Math.floor(y / TILE);
+    // Sei tile: oltre, l'arretramento smette di essere "un passo
+    // indietro" e diventa un teletrasporto che disorienta.
+    for (let r = 1; r <= 6; r++) {
+      let miglior: { x: number; y: number; d: number } | null = null;
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const tx = tx0 + dx;
+          const ty = ty0 + dy;
+          if (tx < 0 || ty < 0 || tx >= this.level.width || ty >= this.level.height) continue;
+          if (this.getTile(tx, ty) !== 0) continue;
+          // Restare nella propria stanza: attraversare una paratia per
+          // mettersi al sicuro annullerebbe il progresso fatto, ed è
+          // esattamente quello che il vicolo cieco dell'altra volta
+          // faceva senza dirlo.
+          if (roomAt(this.level, tx, ty) !== room) continue;
+          const c = centreOf(tx, ty);
+          if (!this.isSafeToRespawn(c.x, c.y)) continue;
+          const d = Math.hypot(c.x - x, c.y - y);
+          if (!miglior || d < miglior.d) miglior = { x: c.x, y: c.y, d };
+        }
+      }
+      if (miglior) return { x: miglior.x, y: miglior.y };
+    }
+    return { x, y };
   }
 
   /** Riserva di Bordo. Ricarica solo uno scudo *già raccolto*: senza
@@ -1947,11 +2018,13 @@ export class CampaignWorld {
     }
     const cp = this.state.checkpoint;
 
-    p.x = cp.x;
-    p.y = cp.y;
+    const posto = this.puntoSicuroVicino(cp.x, cp.y, cp.room);
+    p.x = posto.x;
+    p.y = posto.y;
     p.angle = cp.angle;
     p.weaponCooldown = 0;
     p.respawnInvulnerableMs = RESPAWN_GRACE_MS[this.state.difficulty];
+    p.respawnHoldMs = RESPAWN_HOLD_MS;
     // Uno scatto sopravvissuto alla morte trascinerebbe il giocatore
     // fuori dal checkpoint appena ripristinato.
     p.dashTimer = 0;

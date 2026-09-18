@@ -61,6 +61,30 @@ export const RESPAWN_GRACE_MS: Readonly<Record<CampaignDifficulty, number>> = {
   roguelike: BULLET_COOLDOWN,
 };
 
+/** Quanto la grazia può *aspettare* prima di cominciare a scorrere,
+ *  quando si rinasce dentro una linea di tiro da cui non si può
+ *  uscire.
+ *
+ *  Il giro scorso ho scritto, qui sopra, che la grazia deve durare
+ *  quanto basta ad agire, e ho creduto che bastasse allungarla. Non
+ *  basta: misurato sui nove livelli, su cinque la vita dopo una morte
+ *  dura **esattamente** RESPAWN_GRACE_MS — 2,00 s in tutorial, al
+ *  tick. Cioè si muore nell'istante in cui si torna toccabili, di
+ *  nuovo, all'infinito, ed è lo stesso ciclo del primo tester con un
+ *  numero diverso sopra.
+ *
+ *  Il motivo è che quei livelli non offrono scampo: ARCHIVIO e NIDO
+ *  hanno la stanza di partenza spazzata da due e da quattro torrette,
+ *  e cercando una casella libera in tutta la mappa non se ne trova
+ *  nessuna. Arretrare non è possibile, quindi la regola va tenuta
+ *  dall'altro capo: finché si è sotto tiro l'orologio non parte.
+ *
+ *  Il tetto esiste perché la grazia non diventi un riparo: un ciclo
+ *  d'otturatore in più, non uno di più. Chi rinasce sotto tiro ha
+ *  comunque il tempo di un gesto, e chi rinasce al sicuro non se ne
+ *  accorge nemmeno. */
+export const RESPAWN_HOLD_MS = BULLET_COOLDOWN;
+
 // ---- Trabocchetti ----
 // I numeri; *dove* stanno i trabocchetti è dato del livello
 // (levels.ts), non di questo file. La distinzione conta: questi si

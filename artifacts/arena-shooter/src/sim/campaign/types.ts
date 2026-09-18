@@ -97,6 +97,10 @@ export interface CampaignPlayer {
    *  already-in-flight turret shot or boss charge cannot kill the
    *  player a second time before they have even moved. */
   respawnInvulnerableMs: number;
+  /** Quanto ancora la grazia può restare ferma perché si è rinati
+   *  dentro una linea di tiro. Vedi RESPAWN_HOLD_MS: senza, su cinque
+   *  livelli su nove si moriva al tick esatto in cui scadeva. */
+  respawnHoldMs: number;
   /** Tactical power-up, not permanent progression: each charge
    *  absorbs one hit (turret or boss contact) and is gone. Un
    *  contatore e non un booleano perché il nodo Piastra Aggiuntiva ne
