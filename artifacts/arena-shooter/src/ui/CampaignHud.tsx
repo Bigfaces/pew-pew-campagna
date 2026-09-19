@@ -168,11 +168,23 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
           {snap.availableSkillPoints > 0 &&
             ` · ${snap.availableSkillPoints} ${snap.availableSkillPoints > 1 ? 'PUNTI' : 'PUNTO'} (ESC)`}
         </div>
-        {snap.shieldCharges > 0 && (
-          <div className="hud-clock" style={{ color: '#44ccff', borderColor: '#44ccff' }}>
-            SCUDO{snap.shieldCharges > 1 ? ` ×${snap.shieldCharges}` : ''}
-          </div>
-        )}
+        {/* Sempre visibile, anche — anzi soprattutto — a zero. Prima
+            compariva solo con almeno una carica, cioè taceva esattamente
+            nel momento in cui l'informazione serve: essere scoperti. Da
+            quando si parte con SHIELD_CHARGES_BASE piastre, "quante me
+            ne restano" è il dato che decide se avanzare o ritirarsi, e
+            un indicatore che sparisce quando la risposta è "nessuna" è
+            peggio di nessun indicatore. */}
+        <div
+          className="hud-clock"
+          style={
+            snap.shieldCharges > 0
+              ? { color: '#44ccff', borderColor: '#44ccff' }
+              : { color: '#ff7a7a', borderColor: '#ff7a7a' }
+          }
+        >
+          {snap.shieldCharges > 0 ? `PIASTRE ×${snap.shieldCharges}` : 'SCOPERTO'}
+        </div>
         {/* A differenza di scudo e scatto, il Trasponditore è innato:
             l'indicatore resta anche a zero cariche, perché "non te ne
             restano" è un'informazione che serve — sapere di dover
@@ -321,6 +333,11 @@ export const CAMPAIGN_CONTROLS: readonly (readonly [string, string])[] = [
   // regola centrale del gioco e non veniva detta da nessuna parte.
   ['CLICK SIN.', 'Sparo — otturatore manuale, uno alla volta. Al corpo serve il doppio'],
   ['PUNTO DEBOLE', 'Vale tre volte: dietro, il nucleo o la testa — la HUD dice quale'],
+  // Le piastre c'erano ma il giocatore partiva a zero, quindi la
+  // riga non esisteva: non c'era niente da spiegare. Ora è la prima
+  // cosa da sapere, perché è quella che rende sbagliare un errore
+  // invece di una condanna.
+  ['PIASTRE', 'Assorbono un colpo ciascuna. Tornano piene entrando in una stanza nuova'],
   ['CLICK DES.', 'Ottica — tieni premuto per mirare col cannocchiale'],
   ['MAIUSC', 'Scatto — dal nodo Scatto in poi, nella direzione in cui vai'],
   ['F', 'Trasponditore — lancia un\'esca, se ne hai una carica'],

@@ -42,8 +42,11 @@ function killViaDrone(world: CampaignWorld): CampaignEvent[] {
   world.state.player.x = 13.5 * TILE;
   world.state.player.y = 7 * TILE;
   // Come quiet(): la finestra di grazia dell'ingresso livello non è
-  // quello che questo test vuole misurare.
+  // quello che questo test vuole misurare. Stessa ragione per le
+  // piastre — qui si misura cosa costa *morire* in ogni modalità, e
+  // con la dotazione di base addosso non morirebbe nessuno.
   world.state.player.respawnInvulnerableMs = 0;
+  world.state.player.shieldCharges = 0;
 
   const ticksToFire = Math.ceil(TURRET_REACTION_MS / TICK_MS) + 2;
   const events: CampaignEvent[] = [];

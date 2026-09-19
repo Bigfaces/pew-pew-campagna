@@ -736,8 +736,48 @@ export const DASH_COOLDOWN_MS = 2600;
 export const NODE_PASSO_LUNGO_MULT = 1.18;
 
 // Sopravvivenza
-export const SHIELD_CHARGES_BASE = 1;
-export const SHIELD_CHARGES_UPGRADED = 2;
+/** Le piastre con cui si comincia ogni livello, e che tornano piene
+ *  entrando in una stanza nuova.
+ *
+ *  Era 1 — e il giocatore partiva a **zero**, quindi qualunque colpo
+ *  uccideva finché non trovava una piastra per terra. È il difetto che
+ *  regge tutti gli altri: il cuore di questo gioco è il punto debole,
+ *  e imparare un punto debole richiede un esperimento fallito a cui si
+ *  sopravvive. Sparo al torace, vedo che non muore, cambio mira. Il
+ *  primo tester ha fatto esattamente quell'esperimento — quello
+ *  giusto — ed è morto, e ha concluso «spari a dei nemici che non
+ *  muoiono». Stava imparando bene: era il gioco a non dargliene il
+ *  tempo.
+ *
+ *  Due, non tre: due bastano a rendere l'esperimento sopravvivibile e
+ *  non bastano a rendere il punto debole facoltativo. */
+export const SHIELD_CHARGES_BASE = 2;
+export const SHIELD_CHARGES_UPGRADED = 3;
+
+/** Quanto si resta intoccabili dopo che una piastra ha assorbito un
+ *  colpo.
+ *
+ *  Senza questa finestra due piastre non valgono due errori: valgono
+ *  due colpi, e i colpi non arrivano distanziati. Misurato stando
+ *  fermi allo spawn: su ARCHIVIO due colpi arrivano a **17 ms** l'uno
+ *  dall'altro — un tick, due torrette che sparano nello stesso
+ *  istante — su MOLO a 100 ms, su PLANCIA a 200. Le piastre
+ *  evaporavano insieme e il giocatore moriva come prima.
+ *
+ *  800 ms è sotto il ciclo di ricarica di qualunque nemico (il più
+ *  rapido è 1250 ms) e sotto quello delle torrette (1800 ms): una
+ *  salva simultanea costa una piastra sola, che è giusto perché è un
+ *  errore solo, ma la salva successiva costa la sua. Non regala
+ *  niente contro il fuoco sostenuto. */
+export const SHIELD_BREAK_INVULN_MS = 800;
+
+/** Riserva di Bordo, dopo questo giro, non è più «ricarica entrando in
+ *  una stanza» — quella è diventata la regola base. Ora è l'asse che
+ *  la regola base non copre: **il tempo**. Una piastra torna da sola
+ *  dopo questi millisecondi senza incassare, quindi il nodo compra la
+ *  possibilità di ritirarsi, respirare e rientrare interi, dentro la
+ *  stessa stanza. */
+export const SHIELD_REGEN_MS = 7000;
 
 // Secondo anello (Atto II)
 /** Slancio: moltiplica la *velocità* dello scatto, non la durata.

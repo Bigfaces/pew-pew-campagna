@@ -402,7 +402,9 @@ describe('CampaignWorld — scudo tattico', () => {
     // Walk over the pickup first.
     const pickupEvents = world.step();
     expect(shieldOf(world).collected).toBe(true);
-    expect(world.state.player.shieldCharges).toBe(1);
+    // La piastra da terra riempie la riserva fino alla capienza, che
+    // da questo giro e' due (SHIELD_CHARGES_BASE).
+    expect(world.state.player.shieldCharges).toBe(2);
     expect(pickupEvents.some((e) => e.type === 'shieldPickup')).toBe(true);
 
     // Now stand where the drone can see us and let it fire.
@@ -419,7 +421,10 @@ describe('CampaignWorld — scudo tattico', () => {
 
     expect(sawBreak).toBe(true);
     expect(sawDeath).toBe(false);
-    expect(world.state.player.shieldCharges).toBe(0);
+    // Un colpo, una piastra: ne resta una. E il colpo successivo non
+    // arriva subito, perche' romperne una apre una finestra
+    // (SHIELD_BREAK_INVULN_MS).
+    expect(world.state.player.shieldCharges).toBe(1);
     // The player never actually died, so they should still be standing
     // in front of the drone, not back at the checkpoint.
     expect(world.state.player.x).toBe(13.5 * TILE);

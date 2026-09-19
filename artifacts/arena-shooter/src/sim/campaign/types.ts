@@ -101,6 +101,14 @@ export interface CampaignPlayer {
    *  dentro una linea di tiro. Vedi RESPAWN_HOLD_MS: senza, su cinque
    *  livelli su nove si moriva al tick esatto in cui scadeva. */
   respawnHoldMs: number;
+  /** Intoccabili perché una piastra ha appena assorbito un colpo.
+   *  Tenuto separato da respawnInvulnerableMs apposta: quello ha la
+   *  regola del fermo-immagine sotto tiro (RESPAWN_HOLD_MS), e
+   *  applicarla anche qui renderebbe immortale chi resta nel fuoco. */
+  hitInvulnerableMs: number;
+  /** Da quanto non si incassa un colpo. Serve solo a Riserva di Bordo
+   *  (SHIELD_REGEN_MS); senza il nodo resta un numero che sale. */
+  sinceHitMs: number;
   /** Tactical power-up, not permanent progression: each charge
    *  absorbs one hit (turret or boss contact) and is gone. Un
    *  contatore e non un booleano perché il nodo Piastra Aggiuntiva ne

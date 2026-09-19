@@ -19,6 +19,7 @@ import { campCircleHitsTile } from './physics';
 import { weaponStatsFor } from './skills';
 import {
   attracco,
+  nudo,
   bossHome,
   doorOf,
   enterBossRoom,
@@ -204,7 +205,10 @@ describe('CampaignWorld — un checkpoint è un posto sicuro', () => {
     // Sull'ATTRACCO si vede col livello così com'è: si muore, e il
     // punto di partenza è nel tiro del Ronzino che nel frattempo è
     // arrivato. Misurato: 21 morti al minuto stando fermi, ridotte a 2.
-    const world = attracco();
+    // Senza piastre: qui si misura *dove si rinasce*, quindi serve
+    // una morte. Con la dotazione di base il Ronzino verrebbe
+    // assorbito e non si morirebbe affatto.
+    const world = nudo(attracco());
     const cp = { ...world.state.checkpoint };
     const p = world.state.player;
 
@@ -348,6 +352,10 @@ describe('CampaignWorld — morte resetta solo il pericolo della propria stanza'
       y: 7 * TILE,
       angle: -Math.PI / 2,
     };
+    // Ci si e' gia' arrivati: la porta alle spalle lo dice. Senza
+    // questo, il primo tick conterebbe il MAGAZZINO come stanza nuova
+    // e ricaricherebbe le piastre che quiet() ha appena tolto.
+    world.state.reachedRoom = 'magazzino';
     world.state.player.x = 13.5 * TILE;
     world.state.player.y = 7 * TILE;
 
@@ -367,7 +375,9 @@ describe('CampaignWorld — morte resetta solo il pericolo della propria stanza'
   });
 
   it('morire nel Molo resetta il boss, non le turret della galleria né i progressi', () => {
-    const world = molo();
+    // Si misura cosa rimette a posto *la morte*, quindi serve morire:
+    // con la dotazione di base la carica del boss verrebbe assorbita.
+    const world = nudo(molo());
     const home = bossHome(world.level);
     enterBossRoom(world);
     world.state.player.x = home.x - 60;

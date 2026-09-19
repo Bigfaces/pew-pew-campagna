@@ -66,6 +66,8 @@ import {
   DASH_SPEED,
   RESPAWN_GRACE_MS,
   RESPAWN_HOLD_MS,
+  SHIELD_BREAK_INVULN_MS,
+  SHIELD_REGEN_MS,
   SHIELD_PICKUP_RADIUS,
   TURRET_RADIUS,
   XP_BOSS_DEFEAT,
@@ -360,7 +362,13 @@ export class CampaignWorld {
         // respawn come un altro, e merita lo stesso riguardo.
         respawnInvulnerableMs: LEVEL_START_GRACE_MS,
         respawnHoldMs: RESPAWN_HOLD_MS,
-        shieldCharges: 0,
+        hitInvulnerableMs: 0,
+        sinceHitMs: 0,
+        // Si comincia coperti. Vedi SHIELD_CHARGES_BASE: partire a
+        // zero voleva dire che qualunque colpo uccideva finché non si
+        // trovava una piastra per terra, e il gioco non dava il tempo
+        // di imparare la cosa che chiede di imparare.
+        shieldCharges: shieldCapacity(profile?.unlockedNodes ?? [], profile?.purchases ?? []),
         dashTimer: 0,
         dashCooldown: 0,
         dashDirX: 0,
@@ -536,6 +544,7 @@ export class CampaignWorld {
   private get invulnerable(): boolean {
     const p = this.state.player;
     if (p.respawnInvulnerableMs > 0) return true;
+    if (p.hitInvulnerableMs > 0) return true;
     return (
       p.dashTimer > 0 &&
       movementStatsFor(this.state.unlockedNodes, this.state.purchases).dashInvulnerable
@@ -584,6 +593,11 @@ export class CampaignWorld {
       }
     }
     if (p.dashCooldown > 0) p.dashCooldown = Math.max(0, p.dashCooldown - TICK_MS);
+    if (p.hitInvulnerableMs > 0) {
+      p.hitInvulnerableMs = Math.max(0, p.hitInvulnerableMs - TICK_MS);
+    }
+    p.sinceHitMs += TICK_MS;
+    this.regenShield();
 
     this.startDashIfRequested(input);
     this.applyMovement(input);
@@ -974,12 +988,29 @@ export class CampaignWorld {
    *  Non è sfruttabile in loop: i checkpoint avanzano soltanto, quindi
    *  tornare indietro e rientrare non conta come stanza nuova. */
   private refillShieldOnRoomEnter(): void {
-    if (!this.state.shields.some((s) => s.collected)) return;
-    if (!refillsShieldOnRoomEnter(this.state.unlockedNodes)) return;
+    // Regola base da questo giro, non piu' un nodo: entrare in una
+    // stanza nuova rimette le piastre a posto. Prima serviva Riserva
+    // di Bordo *e* aver gia' raccolto una piastra da terra, cioe' due
+    // condizioni che chi prova il gioco per la prima volta non ha.
     const capacity = shieldCapacity(this.state.unlockedNodes, this.state.purchases);
     const p = this.state.player;
     if (p.shieldCharges >= capacity) return;
     p.shieldCharges = capacity;
+    this.events.push({ type: 'shieldRefilled', charges: p.shieldCharges });
+  }
+
+  /** Riserva di Bordo. Da quando la ricarica a stanza e' la regola
+   *  base, il nodo copre l'asse che la regola base non copre: il
+   *  tempo. Ritirarsi, staccare il contatto per SHIELD_REGEN_MS e
+   *  rientrare con una piastra in piu', senza cambiare stanza. */
+  private regenShield(): void {
+    if (!refillsShieldOnRoomEnter(this.state.unlockedNodes)) return;
+    const p = this.state.player;
+    if (p.sinceHitMs < SHIELD_REGEN_MS) return;
+    const capacity = shieldCapacity(this.state.unlockedNodes, this.state.purchases);
+    if (p.shieldCharges >= capacity) return;
+    p.shieldCharges++;
+    p.sinceHitMs = 0;
     this.events.push({ type: 'shieldRefilled', charges: p.shieldCharges });
   }
 
@@ -1168,8 +1199,20 @@ export class CampaignWorld {
    *  permanente". */
   private damagePlayer(cause: 'turret' | 'boss' | 'enemy'): void {
     const p = this.state.player;
+    // La guardia sta qui dentro, non nei chiamanti. Due sorgenti che
+    // risolvono nello stesso tick — su ARCHIVIO succede, misurato a
+    // 17 ms — controllerebbero l'invulnerabilità prima che la prima
+    // l'abbia aperta, e la salva costerebbe due piastre invece di
+    // una. Il posto giusto per l'invariante è l'unico punto che sa
+    // cosa vuol dire incassare.
+    if (this.invulnerable) return;
     if (p.shieldCharges > 0) {
       p.shieldCharges--;
+      p.sinceHitMs = 0;
+      // Senza questa finestra due piastre non valgono due errori:
+      // valgono due colpi, e su ARCHIVIO due colpi arrivano a 17 ms
+      // l'uno dall'altro. Vedi SHIELD_BREAK_INVULN_MS.
+      p.hitInvulnerableMs = SHIELD_BREAK_INVULN_MS;
       this.events.push({ type: 'shieldBreak', chargesLeft: p.shieldCharges });
       // Piastra Reattiva: il colpo assorbito paga la finestra che
       // l'attaccante ha appena aperto su di sé. shieldBreak resta
@@ -2025,6 +2068,11 @@ export class CampaignWorld {
     p.weaponCooldown = 0;
     p.respawnInvulnerableMs = RESPAWN_GRACE_MS[this.state.difficulty];
     p.respawnHoldMs = RESPAWN_HOLD_MS;
+    p.hitInvulnerableMs = 0;
+    p.sinceHitMs = 0;
+    // Rinascere senza piastre vorrebbe dire rinascere in un gioco
+    // diverso e piu' duro di quello in cui si e' morti.
+    p.shieldCharges = shieldCapacity(this.state.unlockedNodes, this.state.purchases);
     // Uno scatto sopravvissuto alla morte trascinerebbe il giocatore
     // fuori dal checkpoint appena ripristinato.
     p.dashTimer = 0;

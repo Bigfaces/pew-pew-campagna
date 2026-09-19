@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest';
 
 import { TICK_MS, TILE } from '../constants';
 import { ARBITER_CORE_HITS, ARBITER_HITS_TO_DEFEAT } from './constants';
-import { COLLAPSE_HOLD_MS, GAS_LINGER_MS, TURRET_COOLDOWN_MS } from './constants';
+import { COLLAPSE_HOLD_MS, GAS_LINGER_MS, SHIELD_CHARGES_BASE, TURRET_COOLDOWN_MS } from './constants';
 import {
   CLOSE_RANGE_TILES,
   CORE_BAND_CENTRE,
@@ -505,7 +505,9 @@ describe('passaggio di livello', () => {
     // intatti: niente del run precedente lo attraversa.
     expect(next.state.checkpoint.room).toBe('ingresso');
     expect(next.state.turrets.every((t) => t.alive)).toBe(true);
-    expect(next.state.player.shieldCharges).toBe(0);
+    // Le piastre sono la dotazione di base, non un oggetto che
+    // attraversa i livelli: il livello nuovo ne da' di sue, piene.
+    expect(next.state.player.shieldCharges).toBe(SHIELD_CHARGES_BASE);
   });
 
   it('chiudere l’ultimo livello della campagna è una vittoria, non un passaggio', () => {

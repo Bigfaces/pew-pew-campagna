@@ -4,7 +4,9 @@
 livelli, tre boss, dieci tipi di nemico e un albero di abilità da diciassette
 nodi. Fucile a otturatore: al punto debole uccide in un colpo, al corpo ne serve
 il doppio, e la ricarica dura ~1,4 s, quindi
-ogni colpo va guadagnato prima di essere sparato.
+ogni colpo va guadagnato prima di essere sparato. Dall'altra parte si porta una
+dotazione di due piastre, che assorbono un colpo ciascuna e tornano piene
+entrando in una stanza nuova: sbagliare mira è un errore, non una condanna.
 
 Gira **interamente nel browser** — niente plugin, niente installazione, nessun
 file grafico o sonoro da scaricare. Le texture dei muri sono disegnate in codice
@@ -201,7 +203,7 @@ pnpm --filter @workspace/arena-shooter run dev              # gioco su :5173
 pnpm --filter @workspace/api-server  run dev                # API + signaling su :5000
 pnpm --filter @workspace/arena-shooter run balance          # metriche dell'Arena
 pnpm --filter @workspace/arena-shooter run balance:campaign  # metriche della campagna
-pnpm run test                                              # 654 test, headless, ~3 s
+pnpm run test                                              # 657 test, headless, ~3 s
 pnpm run typecheck                                         # typecheck di tutti i pacchetti
 pnpm run build                                             # typecheck + build
 pnpm --filter @workspace/arena-shooter run build:standalone # rigenera il file singolo

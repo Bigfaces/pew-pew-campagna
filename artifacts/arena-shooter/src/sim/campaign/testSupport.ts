@@ -40,6 +40,22 @@ import { CampaignWorld } from './world';
 export function quiet(world: CampaignWorld): CampaignWorld {
   world.state.enemies = [];
   world.state.player.respawnInvulnerableMs = 0;
+  // Anche le piastre, per la stessa ragione per cui sparisce la
+  // grazia: isolare la variabile. Da quando si comincia coperti
+  // (SHIELD_CHARGES_BASE) un test che non le togliesse misurerebbe la
+  // prima piastra che si rompe e crederebbe di aver visto morire
+  // qualcuno. Chi vuole *le piastre* le rimette a mano.
+  world.state.player.shieldCharges = 0;
+  return world;
+}
+
+/** Toglie le piastre. Da quando si comincia coperti
+ *  (SHIELD_CHARGES_BASE), un test che vuole misurare *la morte* deve
+ *  dire di volerla: altrimenti misura la prima piastra che si rompe e
+ *  crede di aver visto morire qualcuno. Dichiararlo qui, per nome, è
+ *  meglio che azzerare un campo di nascosto in venti setup diversi. */
+export function nudo(world: CampaignWorld): CampaignWorld {
+  world.state.player.shieldCharges = 0;
   return world;
 }
 

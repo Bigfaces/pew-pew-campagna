@@ -22,6 +22,9 @@ import {
   DASH_COOLDOWN_MS,
   DASH_DURATION_MS,
   NODE_PASSO_LUNGO_MULT,
+  SHIELD_BREAK_INVULN_MS,
+  SHIELD_CHARGES_BASE,
+  SHIELD_REGEN_MS,
   SKILL_TREE,
 } from './constants';
 import {
@@ -33,7 +36,7 @@ import {
   shieldCapacity,
 } from './skills';
 import { LEVEL_ATTRACCO } from './levels';
-import { attracco, bossHome, centre, molo, shieldOf } from './testSupport';
+import { attracco, bossHome, centre, molo, nudo, shieldOf } from './testSupport';
 import { emptyCampaignInput, type CampaignInput } from './types';
 import { CampaignWorld } from './world';
 
@@ -230,6 +233,10 @@ describe('Mobilità — Scatto', () => {
     boss.x = world.state.player.x;
     boss.y = world.state.player.y;
     world.state.player.respawnInvulnerableMs = 0;
+    // Qui si misura la *morte*, quindi niente piastre: con quelle la
+    // carica verrebbe assorbita e lo scatto non verrebbe annullato —
+    // che è giusto, ma è un'altra cosa.
+    nudo(world);
     world.step();
 
     expect(world.state.player.dashTimer).toBe(0);
@@ -283,6 +290,10 @@ describe('Mobilità — Passo Lungo e Scatto Evasivo', () => {
       world.state.player.y = boss.y;
       world.state.player.angle = Math.PI;
       world.state.player.respawnInvulnerableMs = 0;
+      // Il nodo promette di non *morire* attraversando la carica: con
+      // le piastre addosso non morirebbe nessuno dei due, e la prova
+      // non distinguerebbe piu' niente.
+      nudo(world);
 
       const timerBefore = boss.phaseTimer;
       let died = false;
@@ -309,6 +320,15 @@ describe('Mobilità — Passo Lungo e Scatto Evasivo', () => {
 });
 
 describe('Sopravvivenza', () => {
+  /** Niente nemici, niente torrette: misurare la rigenerazione mentre
+   *  qualcuno spara vorrebbe dire misurare la morte, perché rinascere
+   *  rimette le piastre piene. */
+  function isolato(world: CampaignWorld): CampaignWorld {
+    world.state.enemies = [];
+    for (const t of world.state.turrets) t.alive = false;
+    return world;
+  }
+
   function shieldWorld(nodes: string[]): CampaignWorld {
     const world = worldWith(nodes, SHIELD.x, SHIELD.y);
     world.state.checkpoint = { room: 'magazzino', x: SHIELD.x, y: SHIELD.y, angle: 0 };
@@ -316,23 +336,34 @@ describe('Sopravvivenza', () => {
     return world;
   }
 
-  it('senza Piastra Aggiuntiva lo scudo vale una carica', () => {
-    const world = shieldWorld([]);
-    const events = world.step();
-    expect(world.state.player.shieldCharges).toBe(1);
-    expect(events.some((e) => e.type === 'shieldPickup' && e.charges === 1)).toBe(true);
+  it('si comincia coperti, non nudi', () => {
+    // La cosa che non c'era. Il giocatore partiva a zero piastre e
+    // qualunque colpo uccideva finché non ne trovava una per terra —
+    // cioè il gioco chiedeva di imparare il punto debole e uccideva
+    // al primo esperimento sbagliato.
+    const world = worldWith([]);
+    expect(world.state.player.shieldCharges).toBe(SHIELD_CHARGES_BASE);
+    expect(SHIELD_CHARGES_BASE).toBeGreaterThan(1);
   });
 
-  it('Piastra Aggiuntiva raddoppia le cariche, e si consumano una alla volta', () => {
-    expect(shieldCapacity(['piastra-aggiuntiva'])).toBe(2);
+  it('senza Piastra Aggiuntiva la riserva vale due cariche', () => {
+    const world = shieldWorld([]);
+    const events = world.step();
+    expect(world.state.player.shieldCharges).toBe(2);
+    // Raccogliere a riserva piena non toglie niente e non mente.
+    expect(events.some((e) => e.type === 'shieldPickup' && e.charges === 2)).toBe(true);
+  });
+
+  it('Piastra Aggiuntiva porta le cariche a tre, e si consumano una alla volta', () => {
+    expect(shieldCapacity([])).toBe(2);
+    expect(shieldCapacity(['piastra-aggiuntiva'])).toBe(3);
 
     const world = shieldWorld(['piastra-aggiuntiva']);
     world.step();
-    expect(world.state.player.shieldCharges).toBe(2);
+    expect(world.state.player.shieldCharges).toBe(3);
 
     // Il drone del Magazzino come sorgente di colpi ripetuti: spara a
-    // cadenza fissa, quindi bastano i tick. Prima il boss, che però
-    // adesso vive in un altro livello — e lo scudo sta in questo.
+    // cadenza fissa, quindi bastano i tick.
     world.state.player.x = 13.5 * TILE;
     world.state.player.y = 7 * TILE;
     world.state.checkpoint = { room: 'magazzino', x: 13.5 * TILE, y: 7 * TILE, angle: 0 };
@@ -340,7 +371,7 @@ describe('Sopravvivenza', () => {
 
     let breaks = 0;
     let deaths = 0;
-    const ticks = Math.ceil((TURRET_REACTION_MS + 3 * TURRET_COOLDOWN_MS) / TICK_MS);
+    const ticks = Math.ceil((TURRET_REACTION_MS + 5 * TURRET_COOLDOWN_MS) / TICK_MS);
     for (let i = 0; i < ticks && deaths === 0; i++) {
       for (const e of world.step()) {
         if (e.type === 'shieldBreak') breaks++;
@@ -348,68 +379,97 @@ describe('Sopravvivenza', () => {
       }
     }
 
-    // Due colpi assorbiti, il terzo uccide. Il ciclo si ferma alla
-    // morte: il checkpoint è sotto il tiro del drone, quindi
-    // continuare conterebbe morti ripetute invece dello scudo.
-    expect(breaks).toBe(2);
+    // Tre colpi assorbiti, il quarto uccide.
+    expect(breaks).toBe(3);
     expect(deaths).toBe(1);
   });
 
-  it('Riserva di Bordo ricarica lo scudo entrando in una stanza nuova', () => {
-    const world = worldWith(['riserva-di-bordo'], SHIELD.x, SHIELD.y);
-    world.state.checkpoint = { room: 'magazzino', x: SHIELD.x, y: SHIELD.y, angle: 0 };
-    world.state.reachedRoom = world.state.checkpoint.room;
-    world.step();
-    expect(world.state.player.shieldCharges).toBe(1);
+  it('una piastra che si rompe apre una finestra: due colpi insieme ne costano una sola', () => {
+    // Senza la finestra due piastre non valgono due errori, valgono
+    // due colpi — e i colpi non arrivano distanziati. Misurato stando
+    // fermi allo spawn: su ARCHIVIO due colpi arrivano a 17 ms l'uno
+    // dall'altro, cioè nello stesso tick.
+    const world = worldWith([]);
+    const p = world.state.player;
+    // La grazia d'ingresso al livello rende intoccabili: qui si
+    // misura la finestra della piastra, quindi va tolta di mezzo.
+    p.respawnInvulnerableMs = 0;
+    expect(p.shieldCharges).toBe(2);
 
+    const before = p.shieldCharges;
+    const colpisci = (): void => {
+      (world as unknown as { damagePlayer: (c: 'enemy') => void }).damagePlayer('enemy');
+    };
+    colpisci();
+    expect(p.shieldCharges).toBe(before - 1);
+    // Una raffica simultanea: nello stesso tick, altri due colpi.
+    colpisci();
+    colpisci();
+    expect(p.shieldCharges, 'la salva simultanea ha bruciato piu di una piastra')
+      .toBe(before - 1);
+
+    // Passata la finestra, il colpo successivo si paga.
+    for (let i = 0; i < Math.ceil(SHIELD_BREAK_INVULN_MS / TICK_MS) + 1; i++) world.step();
+    colpisci();
+    expect(p.shieldCharges).toBe(before - 2);
+  });
+
+  it('entrare in una stanza nuova ricarica le piastre, senza bisogno di nodi', () => {
+    // Da questo giro è la regola base. Prima serviva Riserva di Bordo
+    // *e* aver già raccolto una piastra da terra: due condizioni che
+    // chi prova il gioco per la prima volta non ha nessuna delle due.
+    const world = worldWith([]);
     world.state.player.shieldCharges = 0;
-    world.state.player.x = 18.5 * TILE; // Molo
+    world.state.player.x = 13.5 * TILE; // magazzino, stanza nuova
     const events = world.step();
 
     expect(events.some((e) => e.type === 'shieldRefilled')).toBe(true);
-    expect(world.state.player.shieldCharges).toBe(1);
+    expect(world.state.player.shieldCharges).toBe(2);
   });
 
-  it('non regala uno scudo mai raccolto', () => {
-    // Il nodo ricarica una riserva, non ne crea una: senza la
-    // deviazione al Magazzino non c'è niente da ricaricare.
-    const world = worldWith(['riserva-di-bordo']);
-    world.state.player.x = 8.5 * TILE; // corridoio
-    const events = world.step();
-    expect(events.some((e) => e.type === 'shieldRefilled')).toBe(false);
-    expect(world.state.player.shieldCharges).toBe(0);
+  it('Riserva di Bordo rigenera col tempo, che è quello che la regola base non fa', () => {
+    // Il nodo esisteva per la ricarica a stanza; ora quella è base, e
+    // il nodo copre l'asse scoperto: ritirarsi, staccare il contatto
+    // e rientrare interi *dentro* la stessa stanza.
+    const senza = isolato(worldWith([]));
+    const con = isolato(worldWith(['riserva-di-bordo']));
+    for (const w of [senza, con]) w.state.player.shieldCharges = 1;
+
+    const ticks = Math.ceil(SHIELD_REGEN_MS / TICK_MS) + 2;
+    for (let i = 0; i < ticks; i++) {
+      senza.step();
+      con.step();
+    }
+
+    expect(con.state.player.shieldCharges, 'col nodo la piastra non è tornata').toBe(2);
+    expect(senza.state.player.shieldCharges, 'senza il nodo è tornata lo stesso').toBe(1);
   });
 
-  it('senza il nodo entrare in una stanza non ricarica niente', () => {
-    const world = worldWith([], SHIELD.x, SHIELD.y);
-    world.state.checkpoint = { room: 'magazzino', x: SHIELD.x, y: SHIELD.y, angle: 0 };
-    world.state.reachedRoom = world.state.checkpoint.room;
-    world.step();
-    world.state.player.shieldCharges = 0;
-    world.state.player.x = 18.5 * TILE;
-    world.step();
-    expect(world.state.player.shieldCharges).toBe(0);
+  it('la rigenerazione riparte da capo a ogni colpo incassato', () => {
+    // Altrimenti basterebbe incassare a raffica per vedersi tornare
+    // una piastra in mezzo allo scontro.
+    const world = isolato(worldWith(['riserva-di-bordo']));
+    const p = world.state.player;
+    p.shieldCharges = 1;
+
+    const quasi = Math.ceil(SHIELD_REGEN_MS / TICK_MS) - 4;
+    for (let i = 0; i < quasi; i++) world.step();
+    expect(p.shieldCharges).toBe(1);
+
+    (world as unknown as { damagePlayer: (c: 'enemy') => void }).damagePlayer('enemy');
+    expect(p.shieldCharges).toBe(0);
+    for (let i = 0; i < quasi; i++) world.step();
+    expect(p.shieldCharges, 'il cronometro non si è azzerato').toBe(0);
+
+    for (let i = 0; i < 8; i++) world.step();
+    expect(p.shieldCharges).toBe(1);
   });
 
-  it('tornare indietro e rientrare non ricarica una seconda volta', () => {
-    // I checkpoint avanzano soltanto, quindi la ricarica non è un
-    // loop: è la stessa proprietà che protegge l'XP delle stanze.
-    const world = worldWith(['riserva-di-bordo'], SHIELD.x, SHIELD.y);
-    world.state.checkpoint = { room: 'magazzino', x: SHIELD.x, y: SHIELD.y, angle: 0 };
-    world.state.reachedRoom = world.state.checkpoint.room;
-    world.step();
-
-    world.state.player.x = 18.5 * TILE; // Molo
-    world.step();
-    world.state.player.shieldCharges = 0;
-
-    world.state.player.x = 13.5 * TILE; // indietro nel Magazzino
-    world.step();
-    world.state.player.x = 18.5 * TILE; // di nuovo nel Molo
-    const events = world.step();
-
-    expect(events.some((e) => e.type === 'shieldRefilled')).toBe(false);
-    expect(world.state.player.shieldCharges).toBe(0);
+  it('la rigenerazione non supera la capienza', () => {
+    const world = isolato(worldWith(['riserva-di-bordo']));
+    const ticks = Math.ceil((SHIELD_REGEN_MS * 3) / TICK_MS);
+    for (let i = 0; i < ticks; i++) world.step();
+    expect(world.state.player.shieldCharges).toBe(shieldCapacity(['riserva-di-bordo']));
   });
 });
 

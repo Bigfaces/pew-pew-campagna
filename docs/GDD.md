@@ -419,6 +419,11 @@ Ogni boss ha: **arena dedicata**, **1-2 pattern d'attacco leggibili**, una
 subirla passivamente), e **niente bullet-hell** — coerente col ritmo
 "un colpo uccide" dell'Arena.
 
+> Aggiornamento (§18): in campagna un colpo non uccide più, il giocatore
+> porta due piastre. Il "niente bullet-hell" resta, e per la stessa
+> ragione: i pattern devono essere leggibili, non fitti. Le piastre
+> comprano un errore, non il diritto di starci dentro.
+
 1. **Sentinella del Molo** (fine Atto I) — robot cingolato lento, scudo
    frontale sempre attivo. Vulnerabile solo al "core" sul retro, esposto
    quando carica un attacco a distanza ravvicinata: bisogna farlo mancare
@@ -504,12 +509,19 @@ esplorativo progrediscono entrambi, verso lo stesso tipo di ricompensa.
 Il piano iniziale elencava "passo silenzioso" e "rigenerazione parziale tra
 le stanze". Nessuno dei due descrive una meccanica che questo gioco ha: il
 drone trova il giocatore con la linea di vista e non con l'udito, e non
-esiste una barra di vita da rigenerare, perché un colpo uccide. Tenere quei
+esisteva una barra di vita da rigenerare, perché un colpo uccideva. Tenere quei
 nomi avrebbe voluto dire inventare meccaniche per far tornare le etichette.
 Sono stati riscritti su ciò che la simulazione fa davvero, tenendo l'intento
 di ciascuno: "silenzioso" era *non farsi prendere*, e quello lo fa lo
 Scatto; "rigenerazione" era *un errore che non finisce il run*, e quello lo
-fa la Riserva di Bordo. "Minimappa estesa" non aveva niente da estendere —
+fa la Riserva di Bordo.
+
+> Aggiornamento (§18): "rigenerazione parziale" si è rivelato il nome
+> giusto con tre anni di ritardo. Da quando il giocatore porta due
+> piastre, Riserva di Bordo **è** una rigenerazione a tempo: una piastra
+> torna dopo 7 s senza incassare. Il nome della prima stesura descriveva
+> una meccanica che il gioco non aveva ancora; ora ce l'ha, e la
+> descrive. "Minimappa estesa" non aveva niente da estendere —
 la Campagna non ha mai avuto una minimappa — quindi il primo nodo *è* la
 minimappa e il secondo aggiunge i contatti, cioè la parte che si chiamava
 "estesa", stavolta guadagnata.
@@ -1640,3 +1652,153 @@ E il difetto peggiore dei tre — lo schermo nero — l'ha scoperto la
 correzione precedente togliendo una rete che non sapevo di avere. Una
 rete casuale che copre un difetto vero è peggio del difetto: lo tiene
 nascosto fino al giorno in cui tocchi il codice accanto.
+
+---
+
+## 18. Il giocatore smette di morire in un colpo
+
+> «Il gioco campagna non deve essere che un nemico ti uccide con un colpo,
+> soprattutto se ucciderlo comporta vari shot di base e lui ha aimbot.»
+
+Decisione presa dopo le misure del §17.2, e giusta per una ragione più
+stringente di «è troppo difficile».
+
+### 18.1 Perché la morte in un colpo era sbagliata *qui*
+
+Non lo è in sé: Hotline Miami, Superhot e Rainbow Six ci stanno in piedi.
+Regge quando il giocatore ha informazione completa e reazione rapida. In
+questa campagna è appaiata a tre cose che gliele tolgono entrambe:
+
+- campo visivo orizzontale di **37-43°** — i nemici sparano da fuori
+  inquadratura;
+- nemici **hitscan** — il colpo arriva nell'istante in cui parte, non c'è
+  niente da schivare;
+- otturatore da **1400 ms** — la risposta arriva quando sei già morto.
+
+Ma l'argomento decisivo è un altro. Il cuore di questo gioco è il punto
+debole, e **imparare un punto debole richiede un esperimento fallito a cui
+si sopravvive**: sparo al torace, vedo che non muore, cambio mira. Il primo
+tester ha fatto esattamente quell'esperimento — quello giusto — è morto, e
+ha concluso «spari a dei nemici che non muoiono». Stava imparando bene. Era
+il gioco a non dargliene il tempo.
+
+C'era anche un'asimmetria di vocabolario: i nemici hanno 2-5 punti vita,
+punti deboli, vulnerabilità, piastre frontali. Il giocatore aveva **un
+bit**. Tutto quel lavoro parlava in una direzione sola.
+
+### 18.2 Il meccanismo esisteva già, ed era spento
+
+Niente da costruire. `damagePlayer` spendeva già una piastra prima di
+uccidere, la HUD le disegnava già, la riga di raccolta le spiegava già,
+l'albero le estendeva già. Mancava una cosa: **il giocatore partiva con
+`shieldCharges: 0`**, quindi qualunque colpo uccideva finché non ne trovava
+una per terra.
+
+Quattro modifiche, tutte dentro il sistema che c'era:
+
+| | prima | dopo |
+|---|---|---|
+| `SHIELD_CHARGES_BASE` | 1 | **2** |
+| `SHIELD_CHARGES_UPGRADED` (Piastra Aggiuntiva) | 2 | **3** |
+| cariche all'inizio del livello | 0 | **piene** |
+| ricarica entrando in una stanza nuova | solo col nodo Riserva di Bordo, e solo se una piastra era già stata raccolta | **regola base** |
+
+Morire rimette le piastre piene: rinascere scoperti vorrebbe dire rinascere
+in un gioco più duro di quello in cui si è morti.
+
+### 18.3 La finestra, senza la quale due piastre non valgono due errori
+
+Due piastre valgono due errori solo se i colpi arrivano distanziati. Non lo
+sono. Misurato stando fermi allo spawn, intervallo minimo fra due colpi
+incassati:
+
+| livello | intervallo |
+|---|---|
+| archivio | **17 ms** (un tick — due torrette che sparano insieme) |
+| molo | 100 ms |
+| plancia | 200 ms |
+| nido | 867 ms |
+
+Senza protezione le piastre evaporavano insieme e il giocatore moriva
+esattamente come prima. Da qui `SHIELD_BREAK_INVULN_MS = 800`: rompere una
+piastra apre una finestra di intoccabilità. È sotto il ciclo di ricarica di
+qualunque nemico (il più rapido è 1250 ms) e delle torrette (1800 ms),
+quindi una salva simultanea costa **una** piastra — che è giusto, è un
+errore solo — e la salva successiva costa la sua. Non regala niente contro
+il fuoco sostenuto.
+
+La guardia sta **dentro** `damagePlayer`, non nei chiamanti: due sorgenti
+che risolvono nello stesso tick controllerebbero l'invulnerabilità prima
+che la prima l'abbia aperta.
+
+### 18.4 Riserva di Bordo cambia mestiere
+
+Il nodo esisteva per la ricarica a stanza. Ora quella è la regola base,
+quindi il nodo coprirebbe niente. Gli è stato dato l'asse che la regola
+base non copre — **il tempo**: una piastra torna da sola dopo
+`SHIELD_REGEN_MS` (7 s) senza incassare, e il cronometro riparte a ogni
+colpo. Compra la possibilità di ritirarsi, respirare e rientrare interi
+*dentro* la stessa stanza. La struttura dell'albero non cambia: resta il
+prerequisito di Ancoraggio.
+
+### 18.5 Cosa è successo ai numeri
+
+Morti stando fermi allo spawn, senza toccare niente:
+
+| livello | §17.3 | ora |
+|---|---|---|
+| attracco | 2 | 2 |
+| condotti | 13 | **0** |
+| molo | 1 | 10 |
+| anello | 12 | **0** |
+| refrigerante | 8 | **3** |
+| nucleo | 9 | 6 |
+| plancia | 14 | 8 |
+| archivio | 17 | **11** |
+| nido | 17 | **12** |
+
+E le stanze, con un bot a mira perfetta:
+
+| | mira al centro | mira al punto debole |
+|---|---|---|
+| stanze vinte (un nemico) | 48% → **96%** | 87% → **100%** |
+| tempo medio per ripulire | **2,85 s** | **1,22 s** |
+| piastre spese per stanza | **0,20** | **0,04** |
+
+**È questo il risultato che si voleva.** Il punto debole non è più la
+differenza fra possibile e impossibile — dodici stanze su ventisei erano
+0/20, cioè murate — ma resta **2,3 volte più veloce e cinque volte più
+economico**. La lezione continua a convenire moltissimo; non saperla non
+esclude più dal gioco.
+
+Un avvertimento sul 96%: è un bot che **non sbaglia un colpo**. È un limite
+superiore, non l'esperienza di un umano.
+
+### 18.6 La HUD taceva quando serviva parlare
+
+L'indicatore dello scudo compariva solo con almeno una carica: taceva
+esattamente nel momento in cui l'informazione serve, cioè quando sei
+scoperto. Ora c'è sempre — `PIASTRE ×n` in azzurro, **`SCOPERTO`** in rosso
+— perché «quante me ne restano» è il dato che decide se avanzare o
+ritirarsi, e un indicatore che sparisce quando la risposta è «nessuna» è
+peggio di nessun indicatore.
+
+La legenda della campagna guadagna la riga che prima non aveva senso
+scrivere, non esistendo la dotazione: «PIASTRE — Assorbono un colpo
+ciascuna. Tornano piene entrando in una stanza nuova».
+
+Quella dell'**Arena** dice ancora «un colpo uccide», ed è giusta: lì è
+vero. Sono due modalità con due contratti diversi, e vanno lasciate
+disaccordate.
+
+### 18.7 Cosa insegna
+
+Diciassette test sono diventati rossi, e quasi nessuno perché il codice
+fosse sbagliato: davano per scontata la morte in un colpo come *premessa*
+per misurare altro — il reset di una porta, il boss che si azzera, lo
+scatto annullato. Un cambiamento di regola li ha resi tutti bugiardi
+insieme.
+
+Da qui `nudo(world)`, e `quiet()` che ora toglie anche le piastre: un test
+che vuole misurare **la morte** deve dire di volerla, per nome. Altrimenti
+misura la prima piastra che si rompe e crede di aver visto morire qualcuno.
