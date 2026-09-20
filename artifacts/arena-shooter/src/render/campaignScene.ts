@@ -856,16 +856,168 @@ interface CampaignBillboard {
  *  drone and the boss can all appear in the same shot in Magazzino, so
  *  they share one depth-sorted pass instead of three fixed-order ones
  *  that would let a farther entity paint over a nearer one. */
+
+// ---- occlusione per colonna, condivisa fra billboard e decalcomanie ----
+//
+// Misura in gioco (vedi docs/GDD.md §20): sui livelli con più
+// decalcomanie, isolando i casi in cui il tile è comunque nel campo
+// visivo, il vecchio test "una sola colonna, quella del centro" ne
+// buttava via circa 1 su 11 pur essendo il tile scoperto per metà o
+// più delle colonne che occupava — bordo schermo compreso, dove la
+// colonna centrale può uscire dall'intervallo mentre il resto del
+// tile resta perfettamente a schermo. Stessa storia dei billboard più
+// sotto: qui la si tratta una volta sola e la si riusa per entrambi.
+
+/** Tratti di colonne, fra `colDa` e `colA` inclusi, dove il muro è più
+ *  lontano di `perp` (con lo stesso margine di 2 usato ovunque nel
+ *  file per non far tremare i bordi). */
+function traccePerColonna(
+  depth: Float32Array,
+  colDa: number,
+  colA: number,
+  perp: number,
+): [number, number][] {
+  const tratti: [number, number][] = [];
+  let inizio = -1;
+  for (let c = colDa; c <= colA; c++) {
+    const libera = depth[c]! >= perp - 2;
+    if (libera && inizio < 0) inizio = c;
+    else if (!libera && inizio >= 0) {
+      tratti.push([inizio, c - 1]);
+      inizio = -1;
+    }
+  }
+  if (inizio >= 0) tratti.push([inizio, colA]);
+  return tratti;
+}
+
+/** Come `traccePerColonna`, ma per un billboard: simmetrico attorno a
+ *  `screenX`, di semilarghezza `semiPx`. La semilarghezza la dichiara
+ *  chi disegna, in pixel — vedi il commento su `push` più sotto per
+ *  perché conviene sovrastimarla piuttosto che sottostimarla. */
+function colonneVisibili(
+  vp: Viewport,
+  fx: CameraFx,
+  depth: Float32Array,
+  screenX: number,
+  perp: number,
+  semiPx: number,
+): [number, number][] {
+  const base = screenX - fx.shakeX - fx.bobX;
+  const da = Math.max(0, Math.floor((base - semiPx) / SLICE_W));
+  const a = Math.min(vp.numRays - 1, Math.ceil((base + semiPx) / SLICE_W));
+  return traccePerColonna(depth, da, a, perp);
+}
+
+/** Disegna una volta per ogni tratto scoperto, ritagliando. I tratti
+ *  sono disgiunti, quindi nessun pixel viene disegnato due volte e le
+ *  trasparenze non si sommano. */
+function ritagliato(
+  ctx: CanvasRenderingContext2D,
+  vp: Viewport,
+  fx: CameraFx,
+  tratti: [number, number][],
+  disegna: () => void,
+): void {
+  for (const [da, a] of tratti) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(da * SLICE_W + fx.shakeX + fx.bobX, 0, (a - da + 1) * SLICE_W, vp.height);
+    ctx.clip();
+    disegna();
+    ctx.restore();
+  }
+}
+
+// ---- ritaglio contro il piano della camera, per le decalcomanie ----
+//
+// Un quadrato a pavimento non è un billboard: non ha un centro che
+// possa rappresentarlo, è un poligono a quattro vertici che la
+// prospettiva deforma in modo diverso vertice per vertice. Scartarlo
+// intero se un solo vertice non si può proiettare (misura in
+// docs/GDD.md §20: succede già a ~0.75 tile dal centro, ben prima di
+// calpestarlo) vuol dire far sparire la decalcomania proprio
+// avvicinandosi o stando sopra — il caso che conta di più, perché è
+// lì che la nube di gas o il bordo del pozzo devono restare leggibili.
+//
+// La soluzione è ritagliare il poligono, non scartarlo: Sutherland-
+// Hodgman su un solo piano, quello della camera (avanti > 0). È
+// l'unico piano davvero necessario — oltre non è "il punto è lontano",
+// è "il punto è dietro", e lì `perp` smette di significare una
+// distanza (vedi il commento in camera.ts su projectPoint). Il taglio
+// laterale del campo visivo che projectPoint applica ai billboard
+// (±halfFovH più un margine) è invece un'convenzione pensata per
+// tenere sotto controllo la taglia di uno sprite vicino al bordo: per
+// un poligono già ritagliato per colonna non serve, il canvas ignora
+// da solo i punti fuori dai suoi bordi.
+interface PuntoCamera {
+  avanti: number;
+  lato: number;
+}
+
+/** Distanza minima dal piano della camera per un vertice ritagliato.
+ *  Abbastanza piccola da restare invisibile (una manciata di pixel di
+ *  mondo), abbastanza grande da non far esplodere `tan(rel)` quando il
+ *  vertice ritagliato ha ancora un grande scarto laterale. */
+const CAMERA_NEAR_EPS = 1;
+
+function puntoInCamera(camX: number, camY: number, camAngle: number, x: number, y: number): PuntoCamera {
+  const dx = x - camX;
+  const dy = y - camY;
+  return {
+    avanti: dx * Math.cos(camAngle) + dy * Math.sin(camAngle),
+    lato: dy * Math.cos(camAngle) - dx * Math.sin(camAngle),
+  };
+}
+
+/** Sutherland-Hodgman su un solo piano (avanti >= eps). Un poligono
+ *  interamente dietro la camera ritorna vuoto: è la risposta corretta,
+ *  non un caso speciale. */
+function ritagliaPianoCamera(pts: readonly PuntoCamera[], eps: number): PuntoCamera[] {
+  const out: PuntoCamera[] = [];
+  const n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const curr = pts[i]!;
+    const prev = pts[(i + n - 1) % n]!;
+    const currDentro = curr.avanti >= eps;
+    const prevDentro = prev.avanti >= eps;
+    if (currDentro !== prevDentro) {
+      const t = (eps - prev.avanti) / (curr.avanti - prev.avanti);
+      out.push({ avanti: eps, lato: prev.lato + (curr.lato - prev.lato) * t });
+    }
+    if (currDentro) out.push(curr);
+  }
+  return out;
+}
+
+/** Proietta un punto già in spazio camera sullo schermo, senza il
+ *  taglio laterale di FOV (vedi commento sopra). */
+function proiettaPuntoCamera(
+  vp: Viewport,
+  fx: CameraFx,
+  p: PuntoCamera,
+  lift: number,
+): { x: number; y: number; perp: number } {
+  const perp = Math.max(0.0001, p.avanti);
+  const rel = Math.atan2(p.lato, p.avanti);
+  const x = vp.width / 2 + (Math.tan(rel) / vp.tanHalfFovH) * (vp.width / 2) + fx.shakeX + fx.bobX;
+  const y = heightToScreenY(vp, fx, perp, lift);
+  return { x, y, perp };
+}
+
 /** Un quadrato sul pavimento, in prospettiva: i quattro angoli del
- *  tile proiettati e riempiti.
+ *  tile ritagliati contro il piano della camera e riempiti, occlusi
+ *  colonna per colonna come i billboard.
  *
  *  Gas, pozzo e uscita stanno *per terra*, e disegnarli come cartelli
  *  verticali avrebbe mentito su dove sono — una nube che galleggia
  *  all'altezza degli occhi non si legge come una zona da evitare
- *  camminando. Un tile viene saltato se un angolo finisce dietro la
- *  camera, e occluso sul suo centro invece che per colonna: è una
- *  decalcomania, non geometria, e un tile mezzo nascosto dietro uno
- *  spigolo costa meno di un depth-test per colonna. */
+ *  camminando.
+ *
+ *  Misurato in docs/GDD.md §20, non più dichiarato per intuito: sia lo
+ *  scarto totale su un solo angolo dietro la camera sia l'occlusione
+ *  sulla sola colonna centrale facevano sparire decalcomanie in gran
+ *  parte visibili, proprio avvicinandosi o stando sopra. */
 function drawFloorTile(
   ctx: CanvasRenderingContext2D,
   vp: Viewport,
@@ -878,42 +1030,49 @@ function drawFloorTile(
 ): void {
   const x0 = tile.tx * TILE;
   const y0 = tile.ty * TILE;
-  const corners = [
+  const angoliMondo = [
     [x0, y0],
     [x0 + TILE, y0],
     [x0 + TILE, y0 + TILE],
     [x0, y0 + TILE],
   ] as const;
 
-  const centre = projectPoint(
-    vp,
-    fx,
-    cam.x,
-    cam.y,
-    cam.angle,
-    x0 + TILE / 2,
-    y0 + TILE / 2,
-  );
-  if (!centre.visible) return;
-  const col = Math.round((centre.screenX - fx.shakeX - fx.bobX) / SLICE_W);
-  if (col < 0 || col >= vp.numRays) return;
-  if (depth[col]! < centre.perp - 2) return;
+  const angoliCamera = angoliMondo.map(([cx, cy]) => puntoInCamera(cam.x, cam.y, cam.angle, cx, cy));
+  const ritagliati = ritagliaPianoCamera(angoliCamera, CAMERA_NEAR_EPS);
+  if (ritagliati.length < 3) return; // tutto dietro la camera: niente da disegnare
 
-  const pts: { x: number; y: number }[] = [];
-  for (const [cx, cy] of corners) {
-    const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, cx, cy);
-    if (!p.visible) return;
-    pts.push({ x: p.screenX, y: heightToScreenY(vp, fx, p.perp, lift) });
-  }
+  const pts = ritagliati.map((p) => proiettaPuntoCamera(vp, fx, p, lift));
 
-  ctx.save();
-  ctx.fillStyle = fill;
-  ctx.beginPath();
-  ctx.moveTo(pts[0]!.x, pts[0]!.y);
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
+  // Riferimento di distanza per l'occlusione: il centro del tile, come
+  // prima. Se il centro è dietro la camera (si è già oltre il tile, in
+  // piedi sopra), non c'è muro reale che possa stare "in mezzo" fra
+  // l'occhio e i propri piedi: si tratta come vicinissimo, cioè sempre
+  // scoperto.
+  const centroCamera = puntoInCamera(cam.x, cam.y, cam.angle, x0 + TILE / 2, y0 + TILE / 2);
+  const perpRif = Math.max(CAMERA_NEAR_EPS, centroCamera.avanti);
+
+  const xsSchermo = pts.map((p) => p.x - fx.shakeX - fx.bobX);
+  const colDa = Math.max(0, Math.floor(Math.min(...xsSchermo) / SLICE_W));
+  const colA = Math.min(vp.numRays - 1, Math.ceil(Math.max(...xsSchermo) / SLICE_W));
+  if (colDa > colA) return; // il poligono ritagliato cade fuori da ogni colonna dello schermo
+
+  const tratti = traccePerColonna(depth, colDa, colA, perpRif);
+  if (tratti.length === 0) return;
+
+  const disegna = (): void => {
+    ctx.save();
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.moveTo(pts[0]!.x, pts[0]!.y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const intero = tratti.length === 1 && tratti[0]![0] === 0 && tratti[0]![1] === vp.numRays - 1;
+  if (intero) disegna();
+  else ritagliato(ctx, vp, fx, tratti, disegna);
 }
 
 function drawExitMarker(
@@ -1034,42 +1193,11 @@ export function renderCampaignScenery(
   // muro non si disegna" è una proprietà che vale la pena conservare.
   // Sottostimarla invece rimetterebbe lo sfarfallio ai bordi, che è il
   // difetto da cui si è partiti: nel dubbio si arrotonda per eccesso.
-  const colonneVisibili = (screenX: number, perp: number, semiPx: number): [number, number][] => {
-    const base = screenX - fx.shakeX - fx.bobX;
-    const da = Math.max(0, Math.floor((base - semiPx) / SLICE_W));
-    const a = Math.min(vp.numRays - 1, Math.ceil((base + semiPx) / SLICE_W));
-    const tratti: [number, number][] = [];
-    let inizio = -1;
-    for (let c = da; c <= a; c++) {
-      const libera = depth[c]! >= perp - 2;
-      if (libera && inizio < 0) inizio = c;
-      else if (!libera && inizio >= 0) {
-        tratti.push([inizio, c - 1]);
-        inizio = -1;
-      }
-    }
-    if (inizio >= 0) tratti.push([inizio, a]);
-    return tratti;
-  };
-
-  /** Disegna una volta per ogni tratto scoperto, ritagliando. I tratti
-   *  sono disgiunti, quindi nessun pixel viene disegnato due volte e
-   *  le trasparenze non si sommano. */
-  const ritagliato = (tratti: [number, number][], disegna: () => void) => (): void => {
-    for (const [da, a] of tratti) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(
-        da * SLICE_W + fx.shakeX + fx.bobX,
-        0,
-        (a - da + 1) * SLICE_W,
-        vp.height,
-      );
-      ctx.clip();
-      disegna();
-      ctx.restore();
-    }
-  };
+  //
+  // `colonneVisibili` e `ritagliato` sono le stesse funzioni usate da
+  // `drawFloorTile` per le decalcomanie a pavimento (§20 del GDD):
+  // vivono a livello di modulo apposta per essere condivise, invece di
+  // due copie quasi identiche una per i billboard e una per i tile.
 
   const push = (
     x: number,
@@ -1086,13 +1214,13 @@ export function renderCampaignScenery(
     );
     const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, x, y, margine, semiMondo);
     if (!p.visible) return;
-    const tratti = colonneVisibili(p.screenX, p.perp, p.tileH * semiTile);
+    const tratti = colonneVisibili(vp, fx, depth, p.screenX, p.perp, p.tileH * semiTile);
     if (tratti.length === 0) return;
     const disegna = make(p.screenX, p.perp, p.tileH, p.perp);
     // Il caso normale — niente muro in mezzo — non paga né un save né
     // un clip: è la stragrande maggioranza dei fotogrammi.
     const intero = tratti.length === 1 && tratti[0]![0] === 0 && tratti[0]![1] === vp.numRays - 1;
-    list.push({ dist: p.perp, draw: intero ? disegna : ritagliato(tratti, disegna) });
+    list.push({ dist: p.perp, draw: intero ? disegna : () => ritagliato(ctx, vp, fx, tratti, disegna) });
   };
 
   for (const c of state.cores) {

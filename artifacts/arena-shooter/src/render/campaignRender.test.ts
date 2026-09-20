@@ -20,6 +20,7 @@ import { ALL_LEVELS, levelById } from '../sim/campaign/levels';
 import { archetypeOf } from '../sim/campaign/enemies';
 import { emptyCampaignInput } from '../sim/campaign/types';
 import { CampaignWorld } from '../sim/campaign/world';
+import type { LevelDef } from '../sim/campaign/levelTypes';
 import { CameraFx, SLICE_W, computeViewport, projectPoint } from './camera';
 import { SEMI_TILE, margineBillboard, renderCampaignScenery } from './campaignScene';
 
@@ -654,4 +655,142 @@ describe('proiezione — nessuna posizione della mappa fa esplodere uno sprite',
       expect(peggio, `${(peggio / h).toFixed(2)} schermate — ${dove}`).toBeLessThan(h * 1.5);
     });
   }
+});
+
+// ================================================================
+// DECALCOMANIE A PAVIMENTO — occlusione e ritaglio (GDD §20)
+// ================================================================
+// drawFloorTile aveva due modi per far sparire un tile intero (gas,
+// voragine, pavimento che cede) quando in realtà ne restava visibile
+// una parte consistente:
+//
+//  (a) l'occlusione guardava una sola colonna, quella del centro del
+//      tile, e in base a quella teneva o buttava *tutto* il poligono
+//      — sia quando un muro copriva solo il centro, sia quando quella
+//      colonna cadeva semplicemente fuori dallo schermo mentre il
+//      resto del tile restava a vista.
+//  (b) i quattro angoli venivano proiettati con `projectPoint`, e se
+//      anche uno solo risultava non proiettabile (fuori campo visivo o
+//      dietro il piano della camera) l'intero tile veniva scartato:
+//      avvicinandosi a un tile, o standoci sopra, basta un angolo per
+//      far sparire tutta la decalcomania.
+//
+// Le prove sotto isolano l'una dall'altra, sul modello di quelle già
+// esistenti per i billboard qui sopra.
+describe('decalcomanie a pavimento', () => {
+  /** Un livello base senza decalcomanie proprie (attracco non ne ha),
+   *  con le proprie sostituite da quelle passate: isola il conteggio
+   *  di `fill` a quello che il test mette in scena. */
+  function livelloConGas(tiles: { tx: number; ty: number }[]): LevelDef {
+    const base = levelById('attracco');
+    return {
+      ...base,
+      gasZones: [{ id: 'sonda-gas', tiles, lingerMs: 0, room: 'sonda' }],
+      chasms: [],
+      gravityZones: [],
+      collapsingFloors: [],
+    };
+  }
+
+  /** Stato spoglio: nessun core, scudo, turret, nemico, boss o esca a
+   *  produrre `fill` non pertinenti. */
+  function statoSpoglio(level: LevelDef) {
+    const world = new CampaignWorld(level);
+    world.state.cores = [];
+    world.state.shields = [];
+    world.state.turrets = [];
+    world.state.enemies = [];
+    world.state.boss = null;
+    world.state.beaconPickups = [];
+    world.state.beacon = { active: false, x: 0, y: 0, ms: 0 };
+    world.state.collapsingFloors = [];
+    return world.state;
+  }
+
+  function render(
+    level: LevelDef,
+    cam: { x: number; y: number; angle: number },
+    depth: Float32Array,
+  ): Recorder {
+    const rec: Recorder = { calls: [], bad: [], enormi: [] };
+    installDom(rec);
+    const ctx = makeCtx(rec);
+    const vp = computeViewport(960, 540, 1);
+    const fx = new CameraFx();
+    const state = statoSpoglio(level);
+    renderCampaignScenery(ctx, vp, fx, cam, depth, level, state, true, true, 500);
+    return rec;
+  }
+
+  it('(b) un angolo dietro la camera non deve far sparire tutta la decalcomania', () => {
+    // Tile (10,10), camera dentro il tile stesso a 0.3 tile dal centro,
+    // rivolta verso l'interno: misurato in probe-b.mts, a questa
+    // distanza almeno due dei quattro angoli sono "dietro la camera"
+    // per projectPoint (|rel| >= 90°), eppure la maggior parte del
+    // poligono resta davanti all'occhio e dovrebbe restare a schermo —
+    // è esattamente "la nube di gas sparisce entrandoci dentro".
+    const tx = 10, ty = 10;
+    const cx = tx * TILE + TILE / 2;
+    const cy = ty * TILE + TILE / 2;
+    const cam = { x: cx - 0.3 * TILE, y: cy, angle: 0 };
+
+    const level = livelloConGas([{ tx, ty }]);
+    const vp = computeViewport(960, 540, 1);
+    const depth = new Float32Array(vp.numRays).fill(1e6); // nessun muro: isola (b) da (a)
+
+    const out = render(level, cam, depth);
+    expect(out.bad).toHaveLength(0);
+    // Prima della correzione: `if (!p.visible) return;` nel ciclo sui
+    // quattro angoli buttava via l'intero tile, quindi zero 'fill'.
+    expect(out.calls.filter((c) => c === 'fill').length).toBeGreaterThan(0);
+  });
+
+  it('(a) una colonna coperta nasconde una colonna, non tutta la decalcomania', () => {
+    // Stessa geometria della prova gemella sui billboard più sopra,
+    // applicata a un tile: il tile (8,5) proietta sulle colonne
+    // ~188-292 di 480 con la camera a (5,5)+centro, e la sua colonna
+    // centrale è la 240. Si copre SOLO quella con un muro fittizio.
+    const camX = 5 * TILE + TILE / 2;
+    const camY = 5 * TILE + TILE / 2;
+    const cam = { x: camX, y: camY, angle: 0 };
+    const level = livelloConGas([{ tx: 8, ty: 5 }]);
+
+    const vp = computeViewport(960, 540, 1);
+    const cx = 8 * TILE + TILE / 2;
+    const cy = 5 * TILE + TILE / 2;
+    const centre = projectPoint(vp, new CameraFx(), camX, camY, 0, cx, cy);
+    const col = Math.round(centre.screenX / SLICE_W);
+
+    const depth = new Float32Array(vp.numRays).fill(1e6);
+    depth[col] = centre.perp - 50; // muro che copre solo la colonna centrale
+
+    const out = render(level, cam, depth);
+    expect(out.bad).toHaveLength(0);
+    // Si vede ancora: prima della correzione, la sola colonna centrale
+    // coperta buttava via l'intero tile (zero 'fill').
+    expect(out.calls.filter((c) => c === 'fill').length).toBeGreaterThan(0);
+    // E si vede ritagliato, non intero: senza il clip per-colonna
+    // sarebbe disegnato sopra il muro anziché ai suoi lati.
+    expect(out.calls).toContain('clip');
+  });
+
+  it('(a) colonna centrale fuori schermo non è "coperto": il resto del tile visibile a schermo si vede', () => {
+    // Caso concreto trovato per il canvas 960x540 dei test (numRays =
+    // 480): con la camera a (284.8, 388.8) rivolta a 0°, il tile
+    // (10,10) proietta il proprio centro sulla colonna -26 — fuori
+    // dall'intervallo [0,480) — ma i suoi angoli coprono comunque le
+    // colonne 0-99 a schermo. Nessun muro in mezzo: `depth` è tutto
+    // scoperto.
+    const cam = { x: 284.8, y: 388.8, angle: 0 };
+    const level = livelloConGas([{ tx: 10, ty: 10 }]);
+    const vp = computeViewport(960, 540, 1);
+    const depth = new Float32Array(vp.numRays).fill(1e6);
+
+    const out = render(level, cam, depth);
+    expect(out.bad).toHaveLength(0);
+    // Prima della correzione: `col < 0 || col >= vp.numRays` scartava
+    // il tile per intero, anche se non era affatto coperto — solo
+    // "tagliato" da una colonna di riferimento fuori standard.
+    expect(out.calls.filter((c) => c === 'fill').length).toBeGreaterThan(0);
+  });
 });

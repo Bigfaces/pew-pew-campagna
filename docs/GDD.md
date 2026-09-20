@@ -2009,3 +2009,121 @@ esiste già, con il proprio `VoiceSpec` (`BEACON_PICKUP`), ma nessun punto di
 `campaignGame.ts` lo chiama mai. Non risulta una scelta di design annotata da
 qualche parte — è un metodo scritto e mai collegato. Deciderne il destino non
 era nel perimetro di questa correzione e resta aperto.
+
+## 20. Le decalcomanie a pavimento sparivano avvicinandosi
+
+`drawFloorTile` (`render/campaignScene.ts`) disegna gas, voragini e
+pavimenti che cedono proiettando i quattro angoli del tile e riempiendo
+il poligono. Il commento sopra la funzione dichiarava due scelte come
+deliberate: scartare il tile intero se un angolo finisce dietro la
+camera, e occluderlo sulla sua sola colonna centrale invece che per
+colonna come i billboard (§16.2). La prima non era mai stata messa alla
+prova; la seconda era la stessa semplificazione che il §16 aveva già
+tolto ai billboard, lasciata in piedi qui per un motivo esplicito
+("un tile mezzo nascosto dietro uno spigolo costa meno di un depth-test
+per colonna"). Le due ipotesi sono state misurate separatamente, non
+corrette per simmetria.
+
+### 20.1 Il primo angolo: vero, e prima ancora di essere "dietro la camera"
+
+La sonda (`probe-b.mts`/`probe-b2.mts`, sotto) riproduce la geometria di
+`drawFloorTile` e avvicina la camera al centro di un tile lungo i tre
+assi, chiedendo a ogni passo se `projectPoint` marca ancora visibili
+tutti e quattro gli angoli.
+
+| distanza dal centro (in tile) | angoli ancora tutti visibili? |
+|---|---|
+| ≥ 0,80 | sì |
+| 0,75 → 0,55 | no — due angoli opposti già fuori dal cono di FOV |
+| ≤ 0,50 | no — gli stessi due angoli sono ormai *dietro* il piano della camera |
+
+Il tile ha semilato 0,5: a 0,75 tile dal centro la camera non è ancora
+entrata nel tile, e la decalcomania è già sparita per intero. Con la
+camera ferma sopra al tile e la visuale spazzata a passi di 30°, mai più
+di 2 angoli su 4 restano visibili contemporaneamente, in nessuna delle
+dodici direzioni campionate — cioè in piedi su una nube di gas la
+decalcomania non si vede mai, qualunque parte si guardi. Il sintomo
+descritto ("la nube di gas scompare proprio quando ci stai entrando
+dentro") era vero, ed era pure più severo di quanto suggerisse la sola
+lettura "un angolo dietro la camera": il primo a cedere, misurato, è il
+taglio di FOV che `projectPoint` applica per i billboard (`halfFovH` più
+un margine di 0,35 rad), non il piano della camera in senso stretto —
+che entra in gioco solo più tardi, sotto 0,5 tile.
+
+Per un poligono a pavimento quel taglio di FOV non serve: è una
+convenzione pensata per contenere la taglia di uno sprite vicino al
+bordo (§16.1), non un limite fisico come il piano della camera — un
+`ctx.fill()` con vertici fuori dai bordi del canvas viene ritagliato dal
+canvas stesso, gratis. La correzione (`campaignScene.ts`,
+`ritagliaPianoCamera`) proietta i quattro angoli in coordinate camera
+(avanti, laterale) e li ritaglia con Sutherland-Hodgman contro un solo
+piano — avanti ≥ 1 unità di mondo — senza più applicare il taglio di
+FOV. Un tile interamente dietro la camera produce un poligono vuoto (0
+vertici) e non si disegna: non un caso speciale, la stessa regola che
+tutti gli altri applicano.
+
+### 20.2 La colonna centrale: falsa nel 9% dei casi buoni, non nella maggioranza
+
+Per isolare questo difetto dal primo, la sonda (`probe-a.mts`) considera
+solo le pose in cui tutti e quattro gli angoli del tile sono comunque
+proiettabili — quindi il difetto del §20.1 è già escluso — e confronta il
+vecchio test a colonna singola con la copertura vera per colonna, usando
+il raycast reale della campagna (`campCastRay`) su tre livelli campione
+(uno per atto: `condotti`, `refrigerante` — quello con più decalcomanie
+in assoluto, 66 tile — e `archivio`), spazzando ogni casella calpestabile
+e la visuale a passi di 30°:
+
+- **72 164** pose valide misurate.
+- **58 746** (81,4%) scartate dal vecchio test. La grande maggioranza è
+  occlusione legittima — un muro vero più vicino del tile, altrove nel
+  livello — e non prova nulla contro il vecchio codice.
+- Di queste, **6 542** (**9,1%** di tutte le pose valide) erano falsi
+  scarti veri e propri: o la colonna centrale cadeva fuori dallo
+  schermo mentre il resto del tile restava a vista (6 328 casi), o più
+  della metà delle colonne che il tile occupava erano scoperte (2 193
+  casi, con sovrapposizione fra i due gruppi).
+
+Un tile scoperto per metà o più su quasi un caso su undici, proprio
+mentre lo si guarda, non è il costo trascurabile che il commento
+originale presumeva — è la stessa categoria di difetto già misurata e
+corretta per i billboard al §16.2, solo meno frequente perché i tile
+decorativi sono meno diffusi delle sprite. La correzione riusa
+esattamente quelle due funzioni: `colonneVisibili` e `ritagliato`, prima
+chiuse dentro `renderCampaignActors`, sono state portate a livello di
+modulo (senza cambiarne la logica) così che `drawFloorTile` le chiami
+con lo stesso schema — fascia di colonne occupate dal poligono, tratti
+scoperti secondo il depth buffer, un `ctx.clip()` per tratto — invece di
+scrivere una seconda copia quasi identica.
+
+### 20.3 Le prove
+
+Tre test in `render/campaignRender.test.ts`, sullo schema già usato per
+i billboard (livello sintetico senza decalcomanie proprie, stato
+spoglio, `depth` passato a mano per controllare l'occlusione,
+`Recorder`/`LIMITE_DISEGNO` esistenti):
+
+- *"un angolo dietro la camera non deve far sparire tutta la
+  decalcomania"* — camera a 0,3 tile dal centro di un tile gas, nessun
+  muro nel `depth`: verifica che compaia almeno un `fill`.
+- *"una colonna coperta nasconde una colonna, non tutta la
+  decalcomania"* — tile a distanza, un solo muro fittizio esattamente
+  sulla colonna centrale del suo proiettato: verifica `fill` (si vede
+  ancora) e `clip` (ritagliato, non intero).
+- *"colonna centrale fuori schermo non è coperto"* — caso concreto
+  trovato per il canvas 960×540 dei test (camera a (284,8; 388,8),
+  angolo 0°, tile (10,10)): la colonna centrale proietta a −26, fuori da
+  [0, 480), mentre gli angoli coprono comunque le colonne 0–99 a
+  schermo, e `depth` è tutto scoperto — nessun muro in mezzo.
+
+Tutti e tre, verificati a mano ripristinando temporaneamente il vecchio
+`drawFloorTile` (`git stash` sul solo file sorgente, non sui test):
+falliscono coi vecchi tre difetti (0 chiamate a `fill`) e passano con la
+correzione. Suite invariata per il resto: **578 test in 21 file**.
+
+Le sonde restano in
+`/tmp/claude-0/-home-user-ARENA-BOOM-SHOOTER/f13f9a2a-1a36-5f04-8a29-a0f69335ebce/scratchpad/prova/`
+(`probe-b.mts`, `probe-b2.mts`, `probe-a.mts`, più due script di ricerca
+usati solo per trovare i numeri concreti del terzo test) — fuori dal
+repository, per lo stesso motivo per cui gli script di bilanciamento
+della campagna vivono in `tools/` e non nei test: misurano, non
+verificano un contratto che debba restare vero per sempre.
