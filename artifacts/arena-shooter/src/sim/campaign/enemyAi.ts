@@ -1,9 +1,9 @@
 // ================================================================
 // IA DEI NEMICI
 // ================================================================
-// Scritta sullo schema di sim/bots.ts, che nell'Arena ha già la
-// proprietà che qui serve: **l'IA non muove niente e non spara
-// niente**. Produce un'intenzione — dove vorrebbe andare, dove
+// Scritta sullo schema che avevano i bot dell'Arena (ora rimossi),
+// che avevano già la proprietà che qui serve: **l'IA non muove
+// niente e non spara niente**. Produce un'intenzione — dove vorrebbe andare, dove
 // vorrebbe guardare, se preme il grilletto — e chi la applica è il
 // mondo, con le stesse funzioni che applicano l'intenzione del
 // giocatore. Un nemico è quindi sostituibile con un giocatore senza

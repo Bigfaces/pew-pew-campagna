@@ -9,7 +9,6 @@
     "build:standalone": "vite build --config vite.config.standalone.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "balance": "tsx tools/balance.mts",
     "balance:campaign": "tsx tools/balance-campaign.mts",
     "test": "vitest run",
     "test:watch": "vitest"

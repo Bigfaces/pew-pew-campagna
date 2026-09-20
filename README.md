@@ -14,7 +14,11 @@ all'avvio e ogni suono è sintetizzato con Web Audio: non c'è nulla da scaricar
 perché non esiste alcun asset.
 
 Nasce come fork di [Arena Sniper](https://github.com/bigfaces/arena-boom-shooter),
-che resta dentro e giocabile esattamente com'era.
+ma l'Arena non c'è più: è stata tolta per intero — modalità, bot, partite
+online, statistiche di carriera — per lasciare posto a una campagna sola,
+senza due giochi diversi a contendersi lo stesso menu. Quel che resta del
+fork è la base tecnica: il raycaster, il motore audio, il fucile a
+otturatore.
 
 ## ▶ [GIOCA ORA NEL BROWSER](https://bigfaces.github.io/pew-pew-campagna/)
 
@@ -92,19 +96,16 @@ del sito.
 
 | Come | Cosa serve | Cosa ottieni |
 | --- | --- | --- |
-| [**Link qui sopra**](https://bigfaces.github.io/pew-pew-campagna/) | Un browser | Campagna e Arena contro i bot. Il modo più rapido. |
+| [**Link qui sopra**](https://bigfaces.github.io/pew-pew-campagna/) | Un browser | La campagna. Il modo più rapido. |
 | **Doppio click su [`docs/index.html`](docs/index.html)** | Un browser | Lo stesso gioco, ma funziona anche **offline**. |
-| **Doppio click su `AVVIA.cmd`** (Windows) | Niente: se manca Node si offre di scaricarlo | Tutto: campagna, bot **e** partite online dell'Arena. Apre il browser da solo. |
+| **Doppio click su `AVVIA.cmd`** (Windows) | Niente: se manca Node si offre di scaricarlo | Uguale, ma apre il browser da solo. |
 | **Terminale** | Node.js 20+ | Uguale, ma vedi i log e puoi lanciare i test. Vedi [GUIDA.md](GUIDA.md). |
 
-Il gioco sta in **un unico file HTML da 412 kB** con dentro codice, stili e
-icona. Puoi copiarlo su una chiavetta o mandarlo via email: funziona con un
-doppio click, anche senza rete.
-
-> Le **partite online** ci sono solo nella versione con `AVVIA.cmd` o da
-> terminale, e riguardano solo l'Arena. Aperto da un file locale o da Pages il
-> gioco non ha un server di signaling da contattare, quindi i pulsanti sono
-> nascosti invece di essere mostrati e fallire.
+Il gioco sta in **un unico file HTML** con dentro codice, stili e icona. Puoi
+copiarlo su una chiavetta o mandarlo via email: funziona con un doppio click,
+anche senza rete. Non contatta nessun server: niente partite online, niente
+classifica — la campagna è single-player e i progressi vivono solo nel
+browser da cui giochi.
 
 ---
 
@@ -131,34 +132,6 @@ Il piano completo, con le misure dietro a ogni scelta di bilanciamento, è in
 
 ---
 
-# Arena Sniper
-
-La modalità originale, invariata: sparatutto ad arena **tutti contro tutti**.
-Vince chi arriva per primo al **traguardo di uccisioni** — che cresce col numero
-di giocatori, così una partita dura più o meno lo stesso da 2 a 8 — o chi è in
-testa quando scadono i **5 minuti**.
-
-- **Arena 38×28** simmetrica per rotazione, con un bunker sigillato al centro
-  che contiene l'unico scudo: due ingressi sfalsati, nessuna linea di tiro che
-  lo attraversa. Ci si entra, e si può essere visti entrare.
-- **Tre power-up:** scudo (assorbe un colpo), fuoco rapido, velocità.
-- **Da 1 a 7 avversari**, bot o umani, mescolabili liberamente. Il numero non è
-  una difficoltà: cambia il gioco, e il menu dice come.
-- **Tre difficoltà** (facile / normale / difficile): cambiano reazione, mira,
-  pazienza nel grilletto, velocità di rotazione e ampiezza di vista dei bot.
-  Nessun livello rende i bot più veloci del giocatore.
-- **Informazione guadagnata, non regalata:** la minimappa mostra solo chi vedi
-  davvero e da dove è partito uno sparo; i passi degli avversari si sentono e si
-  localizzano; l'ottica di chi ti ha in mira manda un lampo.
-- **Partite online** peer-to-peer con un codice stanza di 4 caratteri.
-- **Statistiche di carriera** e classifica globale (la classifica richiede un
-  PostgreSQL; senza database le statistiche restano nel browser).
-
-L'ottica ingrandisce 2,6× e dimezza la sensibilità del mouse, ma ti rallenta al
-45%: è uno scambio, non un bonus. Non cambia dove va il proiettile.
-
----
-
 ## Com'è fatto
 
 Nessun motore di gioco: raycaster 2.5D scritto a mano su canvas 2D.
@@ -169,30 +142,27 @@ artifacts/arena-shooter/src/
     campaign/    livelli, nemici, boss, albero delle abilità, Banco
   render/        canvas: muri raycast, sprite, particelle, overlay, ottica
   audio/         sintesi Web Audio, nessun file audio
-  net/           signaling, WebRTC, prediction e interpolazione
-  game/          game loop a fixed timestep, tiene insieme tutto
-  ui/            schermate React (menu, lobby, HUD, statistiche, fine partita)
-  stats/         statistiche e profilo di campagna, con fallback su localStorage
-artifacts/api-server/   API + rendezvous WebRTC (non vede il traffico di gioco)
+  game/          game loop a fixed timestep della campagna
+  ui/            schermate React (menu, HUD, pausa, fine partita)
+  stats/         profilo di campagna, con fallback su localStorage
+artifacts/api-server/   API rimasta dai tempi dell'Arena; il client non la contatta più
 lib/                    schema DB, spec OpenAPI, tipi condivisi
 ```
 
-Le scelte architetturali non ovvie sono spiegate in [replit.md](replit.md). Le tre
+Le scelte architetturali non ovvie sono spiegate in [replit.md](replit.md). Le due
 che contano:
 
 - **La simulazione è pura e avanza a tick fissi di 60 Hz.** Non dipende dal DOM,
   quindi gira nei test, e non dipende dall'orologio, quindi si comporta identica
   su un monitor a 60 Hz e a 240 Hz. Il renderer va libero e interpola.
-- **Tutto ciò che è casuale passa da un PRNG con seme** il cui stato vive nello
-  stato del mondo: una partita è riproducibile da un seme e trasferibile tra peer.
-- **L'input è l'unico modo di influenzare un'entità.** Tastiera, IA dei bot e
-  pacchetti di rete producono la stessa struttura, quindi un posto occupato da un
-  bot e uno occupato da un umano sono davvero interscambiabili.
+- **L'input è l'unico modo di influenzare un'entità.** Tastiera e IA dei nemici
+  producono la stessa struttura di intenzione, applicata dalle stesse funzioni:
+  la simulazione non distingue un nemico scriptato da un giocatore.
 
-Il bilanciamento non si discute a parole: i due banchi headless stampano
-geometria delle mappe, ritmo, distanze di ingaggio, durata di una vita, spazio
-delle build dell'albero e il costo reale di ogni oggetto del Banco. Cambia una
-costante, rilancia, confronta.
+Il bilanciamento non si discute a parole: il banco headless della campagna
+(`balance:campaign`) stampa ritmo, distanze di ingaggio, durata di una vita,
+spazio delle build dell'albero e il costo reale di ogni oggetto del Banco.
+Cambia una costante, rilancia, confronta.
 
 ## Sviluppo
 
@@ -200,10 +170,8 @@ costante, rilancia, confronta.
 corepack enable                                            # abilita pnpm
 pnpm install                                               # da Git Bash su Windows
 pnpm --filter @workspace/arena-shooter run dev              # gioco su :5173
-pnpm --filter @workspace/api-server  run dev                # API + signaling su :5000
-pnpm --filter @workspace/arena-shooter run balance          # metriche dell'Arena
 pnpm --filter @workspace/arena-shooter run balance:campaign  # metriche della campagna
-pnpm run test                                              # 657 test, headless, ~3 s
+pnpm run test                                              # 574 test, headless, ~3 s
 pnpm run typecheck                                         # typecheck di tutti i pacchetti
 pnpm run build                                             # typecheck + build
 pnpm --filter @workspace/arena-shooter run build:standalone # rigenera il file singolo
@@ -219,14 +187,18 @@ copy artifacts\arena-shooter\dist\standalone\index.html docs\index.html
 > alla regola generale: è ciò che rende il gioco provabile senza toolchain, ed è
 > anche la pagina che GitHub Pages serve. Dettagli in [docs/LEGGIMI.md](docs/LEGGIMI.md).
 
-Le manopole dell'Arena (velocità, cooldown, vista dei bot, durata power-up, zoom
-dell'ottica, durata partita, tabella delle difficoltà) stanno in
-`artifacts/arena-shooter/src/sim/constants.ts`; quelle della campagna in
-`src/sim/campaign/constants.ts`. Le mappe sono in `sim/map.ts` e
+Le manopole comuni al fucile (velocità, cooldown, zoom dell'ottica) sono rimaste
+in `artifacts/arena-shooter/src/sim/constants.ts` — molto più piccolo da quando
+l'Arena, che ne era la sola proprietaria, è stata tolta — e la campagna le
+importa invece di ridichiararle. Le sue manopole proprie stanno in
+`src/sim/campaign/constants.ts`. La mappa dell'Arena in `sim/map.ts` è rimasta
+anche lei — `render/overlay.ts` la importa ancora per una minimappa che oggi
+nessuna modalità richiama — invece la mappa che si gioca davvero è in
 `sim/campaign/levels.ts`.
 
 ## Stack
 
 pnpm workspaces · Node.js 24 · TypeScript 5.9 · Vite 7 · React 19 (solo per i
-menu) · canvas 2D per il mondo · Express 5 + `ws` per il signaling · PostgreSQL +
-Drizzle (opzionale) · Vitest
+menu) · canvas 2D per il mondo · Vitest. `artifacts/api-server` (Express 5,
+PostgreSQL + Drizzle) resta nel repository ma il client non lo contatta più:
+serviva il signaling e la classifica dell'Arena.

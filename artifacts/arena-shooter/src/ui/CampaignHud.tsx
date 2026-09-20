@@ -310,14 +310,15 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
  *  6; fino allo Sprint 1 tre di loro erano solo etichette spente. */
 /** I comandi, come li ha la campagna.
  *
- *  Esiste una lista in ui/Screens.tsx, ma vive solo sulle due
- *  schermate dell'Arena e si è fermata a prima che la campagna avesse
- *  uno scatto e un'arma secondaria: nessuna delle quattro schermate
- *  della campagna mostrava un comando, e il tasto del Trasponditore
- *  non era scritto in nessun posto che il giocatore potesse leggere.
- *  Su telefono non si notava — ci sono i pulsanti a schermo — ma chi
- *  gioca con la tastiera raccoglieva un'esca al secondo livello senza
- *  avere modo di sapere come lanciarla.
+ *  Prima che l'Arena venisse rimossa esisteva una lista simile in
+ *  ui/Screens.tsx, ma viveva solo sulle sue due schermate e si era
+ *  fermata a prima che la campagna avesse uno scatto e un'arma
+ *  secondaria: nessuna delle quattro schermate della campagna
+ *  mostrava un comando, e il tasto del Trasponditore non era scritto
+ *  in nessun posto che il giocatore potesse leggere. Su telefono non
+ *  si notava — ci sono i pulsanti a schermo — ma chi gioca con la
+ *  tastiera raccoglieva un'esca al secondo livello senza avere modo
+ *  di sapere come lanciarla.
  *
  *  Le due righe condizionate dicono anche *quando* valgono, invece di
  *  comparire e sparire: un comando che appare a metà partita si nota

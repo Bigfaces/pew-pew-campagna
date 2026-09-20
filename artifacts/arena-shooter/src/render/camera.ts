@@ -24,6 +24,17 @@ export const SLICE_W = 2;
  *  horizon exactly at the vertical midpoint of a wall. */
 export const EYE_HEIGHT = TILE / 2;
 
+/** Posizione e orientamento della telecamera nel mondo.
+ *
+ *  Spostata qui dal vecchio modulo di scena dell'Arena quando quel
+ *  file è stato rimosso: è geometria della telecamera, non della
+ *  scena, ed era l'unica cosa di lì che la campagna usava ancora. */
+export interface CameraView {
+  x: number;
+  y: number;
+  angle: number;
+}
+
 export interface Viewport {
   /** Logical (CSS) pixel size — all drawing uses these units. */
   width: number;

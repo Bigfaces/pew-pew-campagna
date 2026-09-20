@@ -1,10 +1,10 @@
 @echo off
 setlocal enabledelayedexpansion
-title Arena Sniper
+title KESSLER-9
 cd /d "%~dp0"
 
 rem ================================================================
-rem  Avvia il gioco in modalita' completa (singolo giocatore + online)
+rem  Avvia la campagna in locale.
 rem  Doppio click su questo file. Per chiudere: chiudi questa finestra.
 rem ================================================================
 
@@ -56,9 +56,8 @@ if errorlevel 1 (
     echo.
     echo  [i] Node.js non c'e' su questo computer.
     echo.
-    echo      Serve solo per le partite ONLINE. Per giocare contro i bot
-    echo      non serve niente: chiudi questa finestra e fai doppio click
-    echo      su  docs\index.html  ^(funziona anche senza rete^).
+    echo      Per giocare non serve niente: chiudi questa finestra e fai
+    echo      doppio click su  docs\index.html  ^(funziona anche senza rete^).
     echo.
     echo      Altrimenti posso procurarmelo da solo: scarico da
     echo      nodejs.org la versione portable ^(37 MB^) e la estraggo in
@@ -74,7 +73,7 @@ if errorlevel 1 (
       rem finisce, quindi senza questa pausa il suggerimento qui sopra
       rem lampeggia e se ne va prima che si possa leggerlo.
       echo.
-      echo      Va bene. Per giocare subito contro i bot apri:
+      echo      Va bene. Per giocare subito apri:
       echo        %~dp0docs\index.html
       echo.
       pause
@@ -129,20 +128,7 @@ if not exist "node_modules" (
   )
 )
 
-rem Il server di signaling gira dal bundle compilato.
-if not exist "artifacts\api-server\dist\index.mjs" (
-  echo  [i] Compilo il server...
-  call pnpm --filter @workspace/api-server run build >nul
-)
-
 echo.
-echo  Avvio del server ^(partite online^)...
-start "Arena Sniper - server" /min cmd /c "cd /d "%~dp0artifacts\api-server" && set PORT=5000 && node dist\index.mjs"
-
-rem Il gioco e' sulla 5173 e il server sulla 5000: due origini diverse,
-rem quindi il signaling va indicato esplicitamente.
-set "VITE_SIGNAL_URL=ws://localhost:5000/ws"
-
 echo  Avvio del gioco...
 start "" cmd /c "timeout /t 4 /nobreak >nul && start http://localhost:5173"
 
@@ -157,12 +143,6 @@ echo.
 
 call pnpm --filter @workspace/arena-shooter run dev
 
-rem Se Vite termina, chiudiamo anche il server per non lasciarlo appeso.
-echo.
-echo  Arresto del server...
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr /r /c:"LISTENING" ^| findstr ":5000 "') do taskkill /f /pid %%p >nul 2>&1
-echo  Fatto.
-timeout /t 2 /nobreak >nul
 exit /b 0
 
 rem ================================================================

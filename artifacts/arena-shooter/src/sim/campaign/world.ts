@@ -1,10 +1,11 @@
 // ================================================================
 // CAMPAIGN WORLD — la simulazione autorevole di un livello
 // ================================================================
-// Single-player, tick-based like the Arena's World (sim/world.ts),
-// but with campaign rules instead of FFA ones: a checkpoint per room
-// instead of a respawn timer, timed doors and turrets instead of
-// power-ups, a boss with a hit-phase fight instead of a kill target.
+// Single-player, tick-based like the Arena's own World used to be
+// (now removed), but with campaign rules instead of FFA ones: a
+// checkpoint per room instead of a respawn timer, timed doors and
+// turrets instead of power-ups, a boss with a hit-phase fight instead
+// of a kill target.
 // See GDD.md sections 3-6 for the design this implements.
 //
 // Deliberately its own class rather than a mode flag on World: the

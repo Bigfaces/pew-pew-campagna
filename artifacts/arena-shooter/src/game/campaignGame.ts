@@ -1,10 +1,10 @@
 // ================================================================
 // CAMPAIGN GAME CONTROLLER — Sprint 1 vertical slice
 // ================================================================
-// Same fixed-timestep accumulator loop as the Arena's Game (game.ts),
-// pared down to what a single-player level needs: one camera, no
-// net, no roster. See CampaignWorld (sim/campaign/world.ts) for the
-// rules this drives.
+// Same fixed-timestep accumulator loop the Arena's own game
+// controller used to run (removed with it), pared down to what a
+// single-player level needs: one camera, no net, no roster. See
+// CampaignWorld (sim/campaign/world.ts) for the rules this drives.
 // ================================================================
 
 import { AudioEngine } from '../audio/engine';
@@ -31,7 +31,7 @@ import {
   renderScope,
   type Banner,
 } from '../render/overlay';
-import { renderBackdrop } from '../render/scene';
+import { renderBackdrop } from '../render/backdrop';
 import { buildBackdrops, getTextures } from '../render/textures';
 import {
   ADS_SENS_MULT,

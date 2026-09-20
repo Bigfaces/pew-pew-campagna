@@ -1802,3 +1802,117 @@ insieme.
 Da qui `nudo(world)`, e `quiet()` che ora toglie anche le piastre: un test
 che vuole misurare **la morte** deve dire di volerla, per nome. Altrimenti
 misura la prima piastra che si rompe e crede di aver visto morire qualcuno.
+
+---
+
+## 19. L'Arena viene tolta
+
+Decisione del proprietario del progetto, non una misura: l'Arena — la
+modalità originale del fork, deathmatch contro bot — è stata rimossa per
+intero. Resta solo KESSLER-9. Questa sezione dice cosa se n'è andato, perché,
+e cosa è rimasto in piedi.
+
+### 19.1 Cosa se n'è andato
+
+Diciassette file cancellati. La simulazione dell'Arena per intero —
+`sim/world.ts`, `sim/bots.ts`, `sim/physics.ts`, `sim/rng.ts` — insieme al suo
+game loop (`game/game.ts`), alla sua resa a schermo
+(`render/scene.ts`: muri, billboard, gli sprite disegnati a rettangoli
+dell'Arena) e alla cartella `net/` per intero — cinque file, `peer.ts`,
+`protocol.ts`, `reconcile.ts`, `session.ts`, `signaling.ts` — cioè tutto il
+multiplayer WebRTC e la client-side prediction che lo faceva sembrare
+reattivo. Con loro, `stats/client.ts` (classifica globale e carriera) e
+`ui/Hud.tsx`. Da `ui/Screens.tsx` sono sparite `Lobby`, `StatsScreen`,
+`PauseScreen` ed `EndScreen`; `App.tsx` ha perso lo stato e i rami che le
+tenevano in piedi (stanza, host/guest, slot dei bot, riepilogo di fine
+partita). Lo strumento di bilanciamento dell'Arena, `tools/balance.mts`, è
+andato via con lei: non aveva più nulla da misurare.
+
+Tre dei file di test cancellati (`sim/sim.test.ts`, `render/render.test.ts`,
+`net/net.test.ts`) erano guardie sull'Arena e basta: la suite passa da 657 a
+**574 test**, in 20 file di test invece di 23. Nessuno dei diciassette test
+diventati rossi al §18 è tra questi: quelli restano, e restano verdi, perché
+misuravano la campagna.
+
+Due pezzi di `render/scene.ts` sono sopravvissuti perché la campagna li usa
+ancora: l'interfaccia `CameraView` è passata a `render/camera.ts`, e
+`renderBackdrop` (le due strisce di cielo e pavimento sopra e sotto
+l'orizzonte) in un nuovo `render/backdrop.ts`. Tutto il resto del file — la
+proiezione dei billboard, gli sprite a rettangoli dei giocatori dell'Arena,
+`drawPowerUp` — è sparito senza essere riscritto altrove: non serviva a
+nessuno.
+
+`sim/constants.ts`, `sim/types.ts`, `sim/map.ts` e `sim/raycast.ts` sono
+rimasti, perché la campagna (e `render/overlay.ts`, vedi §19.3) ne leggono
+ancora dei pezzi, ma sono stati sfoltiti degli export che non serviva più a
+nessuno: da `constants.ts` sono spariti il bersaglio di uccisioni e la sua
+formula, l'orologio di partita, tutto il tuning dei bot (reazione, mira,
+tolleranza al fuoco, campo visivo, velocità di virata), la tabella delle tre
+difficoltà, i tempi dei power-up. Da `types.ts` sono spariti `InputState` e
+`emptyInput` (l'input di rete), `WorldState` e i sei tipi di evento
+(`ShotEvent`, `KillEvent`, `ShieldBreakEvent`, `PickupEvent`, `SpawnEvent`,
+`MatchEndEvent`) che nessun emettitore emette più. Da `map.ts`, gli otto punti
+di spawn e i cinque piazzamenti di power-up dell'Arena.
+
+### 19.2 Perché
+
+Il §18.6 aveva già scritto la frase che spiega la crepa: «Quella dell'Arena
+dice ancora "un colpo uccide", ed è giusta: lì è vero. Sono due modalità con
+due contratti diversi, e vanno lasciate disaccordate». Tenere in piedi due
+contratti opposti — morte in un colpo di qua, due piastre e una finestra
+d'invulnerabilità di là — dietro lo stesso menu non era gratis: ogni schermata
+condivisa (il menu, la pausa, la sensibilità del mouse) doveva o scegliere
+quale dei due contratti raccontare o raccontarli entrambi, e il menu li
+raccontava già male prima di questo lavoro — la sezione campagna era finita
+sotto la piega perché doveva stare in coda alla legenda comandi dell'Arena
+(vedi il commento rimosso in `ui/Screens.tsx`, `y=871` su una finestra alta
+800).
+
+C'è anche una ragione più semplice: il README dichiarava da tempo che
+l'Arena «resta dentro e giocabile esattamente com'era», ma il lavoro reale —
+nove livelli, tre boss, un albero di abilità, un Banco di Riconfigurazione,
+i due giri di prove dei §16-18 — era da mesi tutto sulla campagna. L'Arena
+non riceveva più modifiche: restava com'era per davvero, cristallizzata,
+mentre il resto del progetto cresceva intorno a lei. Un fork che smette di
+toccare metà di sé stesso non sta "affiancando" quella metà, la sta solo
+trascinando. Toglierla rende vera la frase che il README diceva già.
+
+### 19.3 Cosa resta
+
+La campagna non è stata toccata nel comportamento: stesso `sim/campaign/*`,
+stesso rendering, stessi 574 test verdi. Il menu ora ha un solo modo di
+cominciare — titolo KESSLER-9, la scelta della difficoltà campagna
+(TUTORIAL/MEDIO/ROGUELIKE, §9), il cursore della sensibilità e un pulsante.
+Sono spariti il nome giocatore, il numero di avversari, la difficoltà
+dell'Arena, il codice stanza e la schermata statistiche.
+
+Due cose sono rimaste deliberatamente a metà, ed è giusto dirlo qui invece di
+lasciarle scoperte.
+
+La prima: `render/overlay.ts` non è stato toccato, perché la campagna lo
+importa ancora (`renderBanner`, `renderDamageOverlay`, `renderScope`) e non
+era nell'elenco dei quattro file di `sim/` da sfoltire. Ma buona parte delle
+sue altre funzioni — `renderViewmodel`, `renderCrosshair`, `renderHitDirection`,
+`renderMinimap`, `renderKillFeed`, `renderDeathNotice`, `renderCountdown` —
+non le chiama più nessuno: erano per l'HUD dell'Arena. Restano nel file, e
+sono il motivo per cui `sim/map.ts` (la mappa 38×28 dell'Arena, con il suo
+bunker e il suo scudo) è ancora nel repository: `renderMinimap` ne importa
+`MAP_DATA` per disegnare una minimappa che oggi nessuna modalità richiama.
+Un taglio più aggressivo di `overlay.ts` avrebbe potuto togliere anche
+quello; non è stato fatto in questo giro, perché non era il file in
+questione.
+
+La seconda: l'interfaccia `Entity` in `sim/types.ts` tiene ancora gli otto
+campi «bot-only» (`botState`, `botTargetId`, `botGoalX`...) che nessuno scrive
+più, perché nulla nel progetto istanzia più un `Entity` con l'IA dei bot
+dell'Arena. Sono rimasti perché sono campi di un'interfaccia ancora usata da
+`render/overlay.ts`, non export a sé stanti: il criterio di questo giro era
+«via gli export che non referenzia più nessuno», non «via ogni campo morto
+dentro un tipo ancora vivo». Un taglio del genere avrebbe voluto dire
+ridisegnare `Entity`, che è più di quanto chiesto qui.
+
+Fuori dal pacchetto, `artifacts/api-server` (Express, PostgreSQL, il
+signaling WebRTC) resta intatto ma orfano: serviva la classifica e le stanze
+dell'Arena, e il client oggi non lo contatta più per nessuna ragione. Non è
+stato toccato perché è un pacchetto a sé, fuori dal perimetro di questo
+lavoro — ma è un candidato ovvio per un giro successivo.

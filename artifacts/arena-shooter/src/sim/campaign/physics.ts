@@ -1,12 +1,14 @@
 // ================================================================
 // CAMPAIGN PHYSICS — collision and movement against the campaign map
 // ================================================================
-// A small, deliberately separate copy of the Arena's own physics
-// primitives (sim/physics.ts). The Arena's versions import the Arena
-// map directly, so reusing them here would mean either changing a
-// file the multiplayer Arena depends on, or threading a map parameter
-// through code that has never needed one. Duplicating the handful of
-// functions the campaign actually uses keeps the Arena untouched.
+// A small, deliberately separate copy of the physics primitives the
+// Arena used to have (removed with it). The Arena's versions imported
+// the Arena map directly, so reusing them here would have meant either
+// changing a file the multiplayer Arena depended on, or threading a map
+// parameter through code that had never needed one. Duplicating the
+// handful of functions the campaign actually uses kept the Arena
+// untouched — and now that it is gone, keeps this file free of a map
+// format the campaign never used.
 // ================================================================
 
 import { ENTITY_RADIUS, TILE } from '../constants';

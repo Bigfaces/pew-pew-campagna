@@ -1,7 +1,7 @@
 // ================================================================
 // CAMPAIGN PROFILE — persistenza su localStorage
 // ================================================================
-// Stesso patto delle statistiche dell'Arena (stats/client.ts): il
+// Stesso patto delle statistiche che aveva l'Arena (ora rimossa): il
 // browser è l'unico archivio, e può rifiutarsi di esserlo — in
 // navigazione privata ogni accesso lancia. Qui un salvataggio che
 // fallisce non è un errore da mostrare: si continua a giocare, la

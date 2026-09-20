@@ -46,7 +46,7 @@ import {
   type Viewport,
 } from './camera';
 import { getTextures, shadedTile, TEX_SIZE } from './textures';
-import type { CameraView } from './scene';
+import type { CameraView } from './camera';
 
 /** Oltre questo non c'è niente da disegnare: la diagonale del livello
  *  più grande dell'atto (26x13), arrotondata in su. Era la diagonale

@@ -6,17 +6,17 @@
 
 | Modo | Come | Cosa ottieni |
 | --- | --- | --- |
-| **Browser** | Apri <https://bigfaces.github.io/pew-pew-campagna/> | Campagna e Arena contro i bot. Niente da scaricare. |
+| **Browser** | Apri <https://bigfaces.github.io/pew-pew-campagna/> | La campagna. Niente da scaricare. |
 | **File singolo** | Doppio click su `docs/index.html` | Come sopra, ma funziona anche offline. |
-| **Lanciatore** | Doppio click su `AVVIA.cmd` | Tutto: bot **e** partite online. Apre il browser da solo. |
+| **Lanciatore** | Doppio click su `AVVIA.cmd` | Uguale, ma apre il browser da solo. |
 | **Terminale** | Vedi §1 in poi | Uguale al lanciatore, ma vedi i log e puoi usare i test. |
 
 ### File singolo (il più semplice)
 
-Il file è già nel progetto: **`docs/index.html`**, **un unico file da 412 kB** con
-dentro tutto — codice, stili, icona. Puoi spostarlo dove vuoi, copiarlo su una
-chiavetta o mandarlo via email: funziona con un doppio click, anche senza rete.
-È lo stesso file che GitHub Pages pubblica all'indirizzo qui sopra.
+Il file è già nel progetto: **`docs/index.html`**, un unico file con dentro tutto —
+codice, stili, icona. Puoi spostarlo dove vuoi, copiarlo su una chiavetta o
+mandarlo via email: funziona con un doppio click, anche senza rete. È lo stesso
+file che GitHub Pages pubblica all'indirizzo qui sopra.
 
 Per rigenerarlo dopo una modifica al codice:
 
@@ -28,19 +28,15 @@ copy artifacts\arena-shooter\dist\standalone\index.html docs\index.html
 È possibile perché il gioco non ha alcun asset: le texture dei muri sono disegnate in
 codice all'avvio e ogni suono è sintetizzato da Web Audio. Non c'è nulla da scaricare.
 
-Le partite online **non** ci sono in questa versione: aperto da `file://` il browser non
-ha un'origine da cui raggiungere il server di signaling, quindi i pulsanti sono
-nascosti invece di essere mostrati e fallire.
+### Lanciatore (con un doppio click)
 
-### Lanciatore (tutto, con un doppio click)
-
-Doppio click su **`AVVIA.cmd`** nella cartella del progetto. Avvia il server, avvia il
-gioco, apre il browser. Se la porta è occupata te lo dice e ti chiede se liberarla.
-Per uscire chiudi la finestra nera: chiude anche il server.
+Doppio click su **`AVVIA.cmd`** nella cartella del progetto. Avvia il gioco in
+locale e apre il browser da solo. Se la porta è occupata te lo dice e ti chiede
+se liberarla. Per uscire chiudi la finestra nera.
 
 **Su un computer senza Node** non si arrende: te lo dice, ti ricorda che per
-giocare contro i bot basta `docs/index.html`, e si offre di scaricare da
-nodejs.org la versione portable (37 MB) estraendola in
+giocare basta `docs/index.html`, e si offre di scaricare da nodejs.org la
+versione portable (37 MB) estraendola in
 `%USERPROFILE%\tools\node-v24.18.0-win-x64`. Nessun installer, nessun permesso di
 amministratore, niente PATH di sistema modificato: per disfare tutto si cancella
 quella cartella. Il pacchetto viene verificato con l'impronta SHA-256 pubblicata
@@ -78,93 +74,62 @@ Se non vuoi installare nulla, salta tutto: gioca su
 
 ---
 
-## 1. Giocare contro i bot — il caso più semplice
+## 1. Giocare la campagna
 
-**Non serve nessun server.** Il gioco è completamente client-side: simulazione, bot,
-rendering e audio girano tutti nel browser.
+**Non serve nessun server.** Il gioco è completamente client-side: simulazione,
+nemici, rendering e audio girano tutti nel browser. I progressi si salvano nel
+`localStorage` del browser, non su un server: restano sul computer da cui giochi.
 
 ```powershell
 cd "percorso\della\cartella\del\progetto"
 pnpm --filter @workspace/arena-shooter run dev
 ```
 
-Apri **http://localhost:5173**, scegli il numero di bot, premi **SINGLE PLAYER**.
+Apri **http://localhost:5173**, scegli la modalità e inizia.
 
-Comandi:
+### Modalità
 
-| Tasto        | Azione                                                   |
-| ------------ | -------------------------------------------------------- |
-| `W A S D`    | Movimento (avanti / indietro / laterale)                  |
-| Mouse        | Mira — **clicca una volta** per catturare il puntatore    |
-| `Q` / `E`    | Ruota senza mouse (funziona sempre, anche senza puntatore)|
-| Click sin.   | Spara (al corpo serve il doppio, al punto debole uno)     |
-| **Click des.** | **Ottica** — tieni premuto per mirare col cannocchiale  |
-| `ESC`        | Pausa (rilascia il mouse, e da lì si regola la sensibilità)|
-| `M`          | Muto                                                      |
+Cambiano **solo cosa succede quando muori**, non la forza dei nemici:
 
-Vince chi arriva per primo al traguardo di uccisioni, **oppure** chi è in testa
-quando scadono i 5 minuti. Il traguardo cresce col numero di giocatori (10 in una
-partita da 4) perché in una mischia si accumulano uccisioni molto più in fretta:
-il menu lo scrive sotto la scelta degli avversari, e l'HUD lo ricorda in basso.
-Il tempo restante è in alto al centro e diventa rosso negli ultimi 30 s.
+| Modalità | Morire significa |
+| --- | --- |
+| **TUTORIAL** | Torni alla stanza che avevi raggiunto: si resettano solo i nemici e i trabocchetti lì dentro. |
+| **MEDIO** | Torni allo spawn del livello: si resetta tutto il livello, non solo la stanza. |
+| **ROGUELIKE** | Riparte l'intero atto dal primo livello. Personaggio e core raccolti restano tuoi. |
 
-L'**ottica** (click destro) ingrandisce 2,6× e dimezza la sensibilità del mouse,
-ma ti rallenta al 45%: è uno scambio, non un bonus gratuito. Non cambia dove va
-il proiettile — lo zoom è solo una proprietà della camera.
+Se è la prima volta scegli **TUTORIAL** — è già selezionata all'apertura.
 
-La **sensibilità del mouse** è un moltiplicatore da 0,25× a 3×, con 1× la
-taratura su cui è calibrato tutto il resto. Lo trovi nel menu e — più utile —
-nella schermata di pausa: lì si applica mentre trascini il cursore, così puoi
-riprendere, provare una mira, rimettere in pausa e correggere. Vale solo per il
-mouse: `Q` / `E` girano sempre alla stessa velocità, perché un tasto tenuto
-premuto non ha una velocità di mano da calibrare. La scelta resta salvata in
-questo browser.
+### Comandi
 
-Prima di ogni partita c'è un **conto alla rovescia di 3 secondi**: il mondo è
-fermo ma puoi già guardarti intorno.
+| Tasto | Azione |
+| --- | --- |
+| `W A S D` | Movimento — avanti, indietro, laterale |
+| Mouse | Mira — clicca una volta per catturare il puntatore |
+| `Q` / `E` | Rotazione — funziona sempre, anche senza mouse |
+| Click sinistro | Sparo — otturatore manuale, uno alla volta. Al corpo serve il doppio |
+| *(il punto debole)* | Vale **tre volte**: dietro, il nucleo o la testa. La HUD dice quale, puntando il nemico |
+| Click destro | Ottica — tieni premuto per mirare col cannocchiale |
+| `MAIUSC` | Scatto — dal nodo Scatto in poi, nella direzione in cui vai |
+| `F` | **Trasponditore** — lancia un'esca, se ne hai una carica |
+| `ESC` | Pausa (la legenda è anche lì dentro; da lì si regola anche la sensibilità del mouse) |
+| `M` | Muto |
 
-La **difficoltà** si sceglie nel menu (FACILE / NORMALE / DIFFICILE) e cambia
-reazione, errore di mira, pazienza nel grilletto, velocità di rotazione e
-ampiezza di vista dei bot — nient'altro nella simulazione sa quale livello è
-selezionato. `NORMALE` è la taratura di riferimento, quella su cui sono
-calibrate le metriche di `run balance`.
+Il **Trasponditore** lancia un'esca che richiama i nemici dove l'hai buttata.
+Diversi nemici hanno il punto debole sulla schiena: l'esca è il modo di fartela
+dare da guardare.
 
-### Cosa guardare per capire se il motore funziona
+### Cosa c'è nella campagna
 
-- **Velocità costante:** muoviti e controlla che la velocità non dipenda dagli FPS.
-  Era il bug principale del prototipo.
-- **I bot non ti vedono più alle spalle.** Mettiti dietro a un bot: non deve reagire
-  finché non si gira. Prima aveva visione a 360°.
-- **I bot ruotano gradualmente**, non a scatto istantaneo.
-- **I bot raccolgono i power-up** di proposito, non per caso.
-- **I bot si piantano per sparare.** Chi prende la mira si ferma un istante: è il
-  momento in cui è più facile colpirlo.
-- **La minimappa non ti regala niente.** Mostra solo chi hai davvero in linea di
-  vista, più un anello arancione che si allarga dove è partito uno sparo. Se un
-  avversario tace e sta coperto, sparisce.
-- **Senti i passi.** Un avversario che corre si sente e si localizza; uno che
-  striscia dietro una cassa quasi no. Il ritmo dipende dalla distanza percorsa,
-  non da un timer, quindi chi ha preso VELOCITÀ lo senti arrivare.
-- **Il lampo dell'ottica.** Se un avversario ti ha in mira *e* ha l'otturatore
-  pronto, la sua lente manda un lampo. Se ha appena sparato non lampeggia: quello
-  è il tuo momento per avanzare.
-- **Le texture dei muri** danno il senso di movimento camminando lungo una parete.
-- **Audio posizionale:** uno sparo alla tua sinistra si sente a sinistra. Girati
-  sul posto mentre un bot spara: il suono deve ruotare con te.
-- **Particelle 3D** su impatti e sangue, occluse correttamente dietro i muri.
-- **Ridimensiona la finestra:** la vista si adatta, niente letterboxing.
-- **Ottica:** tieni il click destro. Lo zoom entra progressivamente, il fucile
-  scende fuori inquadratura, il reticolo compare a zoom quasi completo. Mentre
-  ricarichi, l'anello arancione intorno all'ottica misura l'otturatore.
-- **Da dove mi hanno sparato:** quando ti colpiscono compare un arco rosso sul
-  bordo nella direzione dello sparo, e la schermata di morte dice *da chi* con una
-  freccia. Provalo facendoti colpire di spalle.
-- **Power-up attivi:** raccogli VELOCITÀ o FUOCO RAPIDO e guarda in basso a
-  sinistra: etichetta, secondi residui e barra che si svuota.
-- **Callout:** due uccisioni entro ~3 s danno "DOPPIA UCCISIONE"; a 3, 5, 7 e 10
-  uccisioni di fila arriva "IN SERIE ×N".
-- **Difficoltà:** con FACILE i bot ti concedono quasi un secondo prima di sparare,
-  con DIFFICILE circa 0,3 s. Nessun livello rende i bot più veloci di te.
+- **Nove livelli in tre atti**, ognuno diviso in stanze.
+- **Tre boss**, uno per atto.
+- **Dieci tipi di nemico** con punti deboli diversi.
+- **Albero delle abilità a diciassette nodi**, comprato con l'XP guadagnato uccidendo.
+- **Banco di Riconfigurazione**: tra un atto e l'altro puoi scambiare un punto
+  per un oggetto che ti dà qualcosa e ti toglie qualcos'altro.
+- **Trabocchetti** ambientali e core da raccogliere fuori dal percorso.
+
+Il piano completo, con le misure dietro a ogni scelta di bilanciamento, è in
+[docs/GDD.md](docs/GDD.md).
 
 ---
 
@@ -175,14 +140,14 @@ cd "percorso\della\cartella\del\progetto"
 pnpm run test
 ```
 
-77 test: simulazione, rendering, netcode. Girano headless, senza browser (~2 s).
+574 test: simulazione, rendering, campagna. Girano headless, senza browser (~3 s).
 
-Per le metriche di bilanciamento — geometria della mappa, ritmo, distanze di
-ingaggio, precisione dei bot, durata di una vita — c'è un harness dedicato che
-gioca centinaia di partite headless:
+Per le metriche di bilanciamento della campagna — ritmo, distanze di ingaggio,
+durata di una vita, spazio delle build dell'albero, costo reale di ogni oggetto
+del Banco — c'è un harness dedicato che gioca centinaia di partite headless:
 
 ```powershell
-pnpm --filter @workspace/arena-shooter run balance
+pnpm --filter @workspace/arena-shooter run balance:campaign
 ```
 
 In watch mode mentre modifichi:
@@ -200,87 +165,20 @@ pnpm run build
 
 ---
 
-## 3. Partita online con un amico
-
-Qui **serve** l'API server, ma solo per far incontrare i giocatori: una volta
-connessi il traffico di gioco è diretto browser-a-browser.
-
-Servono **due terminali**.
-
-**Terminale A — server di signaling:**
-
-```powershell
-cd "percorso\della\cartella\del\progetto"
-pnpm --filter @workspace/api-server run dev
-```
-
-**Terminale B — il gioco:**
-
-In locale il gioco sta sulla 5173 e l'API sulla 5000, quindi va detto al gioco dove
-trovare il signaling:
-
-```powershell
-cd "percorso\della\cartella\del\progetto"
-$env:VITE_SIGNAL_URL = "ws://localhost:5000/ws"
-pnpm --filter @workspace/arena-shooter run dev
-```
-
-Poi:
-
-1. Apri http://localhost:5173 in **due finestre** del browser.
-2. Nella prima: **HOST ONLINE MATCH** → compare un codice di 4 caratteri.
-3. Nella seconda: **JOIN WITH CODE** → inserisci il codice → **CONNECT**.
-4. Torna alla prima: scegli quanti bot aggiungere → **START MATCH**.
-
-Durante la partita l'HUD mostra in alto `HOSTING` / `GUEST` e il ping.
-
-> Due finestre sulla stessa macchina funzionano, ma **solo una alla volta può
-> catturare il mouse**. Per un test serio usa `Q`/`E` in una delle due, oppure due
-> computer diversi sulla stessa rete.
-
-> Su internet aperto, chi ha un NAT simmetrico non riuscirà a connettersi: manca un
-> server TURN. L'errore viene mostrato invece di restare appeso.
-
----
-
-## 4. Statistiche e classifica (opzionale)
-
-Senza database il gioco funziona lo stesso: le statistiche di carriera finiscono nel
-`localStorage` del browser, e la classifica risponde `503 {available:false}`.
-
-Per attivare la persistenza serve un PostgreSQL:
-
-```powershell
-$env:DATABASE_URL = "postgres://utente:password@host:5432/nomedb"
-pnpm --filter @workspace/db run push        # crea la tabella
-pnpm --filter @workspace/api-server run dev
-```
-
-Endpoint:
-
-- `GET  /api/healthz` — stato del server
-- `GET  /api/stats/health` — dice se il database c'è
-- `POST /api/matches` — registra una partita
-- `GET  /api/leaderboard` — classifica aggregata
-- `GET  /api/stats/:callsign` — statistiche di un giocatore
-
----
-
-## 5. Se qualcosa non va
+## 3. Se qualcosa non va
 
 | Sintomo                                   | Causa e rimedio                                                                        |
 | ----------------------------------------- | -------------------------------------------------------------------------------------- |
 | `node` / `pnpm` non trovati               | Terminale aperto prima dell'installazione. Chiudi e riapri.                              |
-| `Port 5173 is already in use`             | Un dev server precedente è rimasto vivo. Vedi §6.                                        |
+| `Port 5173 is already in use`             | Un dev server precedente è rimasto vivo. Vedi §4.                                        |
 | `pnpm install` fallisce su `sh`           | Lanciato da PowerShell. Lo script `preinstall` richiede `sh`: usa **Git Bash**.          |
 | Errore TypeScript `TS6305`                | `.tsbuildinfo` stantii. Cancellali e rilancia `pnpm run typecheck`.                      |
 | Il mouse non viene catturato              | Alcuni contesti (iframe, anteprime sandboxate) bloccano il Pointer Lock. Usa `Q`/`E`.    |
 | Nessun audio                              | Il browser richiede un gesto prima di attivare l'audio: parte al primo click. O premi `M`. |
-| "room not found" entrando in una partita  | Il codice è scaduto o l'host ha chiuso. Fatti rigenerare un codice.                      |
 
 ---
 
-## 6. Porta occupata
+## 4. Porta occupata
 
 `vite.config.ts` usa `strictPort: true`: se la 5173 è occupata il server **fallisce**
 invece di spostarsi silenziosamente sulla 5174. È voluto — altrimenti apriresti
@@ -313,26 +211,28 @@ alla shell che lo ha lanciato.
 
 ---
 
-## 7. Dov'è il codice
+## 5. Dov'è il codice
 
 ```
 artifacts/arena-shooter/src/
-  sim/      simulazione pura — niente DOM, gira headless nei test
-  render/   disegno su canvas: muri raycast, sprite, particelle, HUD
-  audio/    sintesi Web Audio, nessun file audio
-  net/      signaling, WebRTC, prediction e interpolazione
-  game/     game loop a fixed timestep, tiene insieme tutto
-  ui/       schermate React (menu, lobby, HUD, fine partita)
-  stats/    statistiche con fallback su localStorage
+  sim/           simulazione pura — niente DOM, gira headless nei test
+    campaign/    livelli, nemici, boss, albero delle abilità, Banco
+  render/        canvas: muri raycast, sprite, particelle, overlay, ottica
+  audio/         sintesi Web Audio, nessun file audio
+  game/          game loop a fixed timestep della campagna
+  ui/            schermate React (menu, HUD, pausa, fine partita)
+  stats/         profilo di campagna, con fallback su localStorage
 
 artifacts/api-server/src/
-  signaling.ts   rendezvous WebRTC (non vede mai il traffico di gioco)
-  routes/stats.ts  statistiche e classifica
+  routes/health.ts   /api/healthz — l'unico endpoint rimasto
 ```
 
-Le manopole di gioco (velocità, cooldown, FOV dei bot, durata power-up, zoom
-dell'ottica, durata partita, tabella delle difficoltà) stanno tutte in
-`sim/constants.ts`. La mappa è in `sim/map.ts`.
+Le manopole comuni al fucile (velocità, cooldown, zoom dell'ottica) stanno in
+`sim/constants.ts`. Le manopole della campagna stanno in
+`sim/campaign/constants.ts`, e la mappa che si gioca davvero è in
+`sim/campaign/levels.ts`.
 
-Per cambiare la difficoltà dei bot si modifica **solo** la tabella `BOT_TUNING`:
-nessun altro punto della simulazione sa quale livello è selezionato.
+`artifacts/api-server` (Express, PostgreSQL + Drizzle in `lib/db`) resta nel
+repository come ossatura per una futura classifica della campagna (modalità
+roguelike), ma il gioco non lo contatta: la campagna è single-player e i
+progressi vivono solo nel browser da cui giochi.

@@ -17,4 +17,9 @@
 //   export type InsertPost = z.infer<typeof insertPostSchema>;
 //   export type Post = typeof postsTable.$inferSelect;
 
-export * from "./matches";
+// Schema volutamente vuoto: la tabella delle partite deathmatch
+// dell'Arena è stata rimossa insieme all'Arena stessa. Questa è
+// l'impalcatura di connessione (getDb / isDatabaseConfigured) tenuta
+// pronta per una futura classifica della campagna (modalità
+// roguelike), non un residuo dimenticato.
+export {};

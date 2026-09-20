@@ -10,11 +10,12 @@
 // look alike, which leaves nothing to navigate by; rotating gives the
 // same fairness while letting each half have its own landmarks.
 //
-// Its shape is deliberate, and measurable — `pnpm run balance` prints
-// the figures below. The first arena was 6.5% obstructed with 43% of
-// all position pairs in mutual line of sight, which in a one-shot-kill
-// game meant most deaths arrived from somewhere the victim was not
-// looking. This one is ~24% obstructed:
+// Its shape was deliberate, and measured (dal banco headless
+// dell'Arena, rimosso insieme a lei): il primo arena era 6.5%
+// ostruita con il 43% di tutte le coppie di posizioni in reciproca
+// linea di tiro, il che in un gioco a un colpo solo voleva dire che
+// la maggior parte delle morti arrivava da dove la vittima non stava
+// guardando. Questa era ~24% ostruita:
 //
 //   • A sealed bunker at the centre, holding the only shield. Its two
 //     entrances are on opposite faces and offset, so no line runs
@@ -26,7 +27,7 @@
 //     side of it anyway.
 // ================================================================
 
-import { MAP_H, MAP_W, T_COVER, T_WALL, TILE } from './constants';
+import { MAP_H, MAP_W, T_COVER, T_WALL } from './constants';
 
 // prettier-ignore
 export const MAP_DATA: readonly (readonly number[])[] = [
@@ -61,38 +62,6 @@ export const MAP_DATA: readonly (readonly number[])[] = [
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // 27
 ];
 
-/** Eight spawn points in four rotationally-paired positions. No two
- *  of them can see each other, so nobody materialises already in
- *  somebody's sights — `pnpm run balance` asserts this. */
-export const SPAWN_POINTS: readonly { x: number; y: number }[] = [
-  { x: 1.5 * TILE, y: 1.5 * TILE },
-  { x: 36.5 * TILE, y: 26.5 * TILE },
-  { x: 36.5 * TILE, y: 1.5 * TILE },
-  { x: 1.5 * TILE, y: 26.5 * TILE },
-  { x: 1.5 * TILE, y: 13.5 * TILE },
-  { x: 36.5 * TILE, y: 14.5 * TILE },
-  { x: 14.5 * TILE, y: 1.5 * TILE },
-  { x: 23.5 * TILE, y: 26.5 * TILE },
-];
-
-/** Power-up placement.
- *
- *  The shield is the strongest thing in a game where one bullet kills
- *  — it is an extra life — so there is exactly one, and it sits inside
- *  the bunker. Taking it means entering a room with two known doors.
- *  The other four are rotationally paired, like the spawns. */
-export const POWERUP_DEFS: readonly {
-  kind: 'shield' | 'rapidfire' | 'speed';
-  tx: number;
-  ty: number;
-}[] = [
-  { kind: 'shield', tx: 18, ty: 13 },
-  { kind: 'rapidfire', tx: 5, ty: 10 },
-  { kind: 'rapidfire', tx: 32, ty: 17 },
-  { kind: 'speed', tx: 30, ty: 4 },
-  { kind: 'speed', tx: 7, ty: 23 },
-];
-
 /** Out-of-bounds reads return solid so rays and collision probes
  *  never need their own bounds checks. */
 export function getTile(tx: number, ty: number): number {
@@ -103,9 +72,4 @@ export function getTile(tx: number, ty: number): number {
 export function isSolid(tx: number, ty: number): boolean {
   const t = getTile(tx, ty);
   return t === T_WALL || t === T_COVER;
-}
-
-/** Tile coords of a pixel position. */
-export function tileAt(x: number, y: number): { tx: number; ty: number } {
-  return { tx: Math.floor(x / TILE), ty: Math.floor(y / TILE) };
 }
