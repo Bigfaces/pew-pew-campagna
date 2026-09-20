@@ -1916,3 +1916,48 @@ signaling WebRTC) resta intatto ma orfano: serviva la classifica e le stanze
 dell'Arena, e il client oggi non lo contatta più per nessuna ragione. Non è
 stato toccato perché è un pacchetto a sé, fuori dal perimetro di questo
 lavoro — ma è un candidato ovvio per un giro successivo.
+
+### 19.4 Il primo capo lasciato a metà si chiude
+
+Il §19.3 elencava due cose rimaste deliberatamente a metà. La prima — la
+minimappa dell'Arena in `render/overlay.ts` e la mappa `sim/map.ts` che la
+teneva in vita — è stata chiusa in un secondo giro di potatura, partito
+proprio da quella frase.
+
+La verifica è andata a foglia: `renderMinimap` (e con lei la cache
+`minimapCache`/`minimapBackground` e l'interfaccia `ShotPing`) non compariva
+in nessun `import` fuori da `overlay.ts` stesso — solo un commento in
+`render/campaignScene.ts` la nominava per dire che la campagna disegna la
+propria minimappa per conto suo. Stessa storia, senza nemmeno un commento
+superstite, per `renderViewmodel`, la `renderCrosshair` esportata (la
+campagna ha una propria `renderCrosshair`, privata, dentro
+`game/campaignGame.ts` — un nome uguale, due funzioni indipendenti),
+`renderHitDirection`, `renderKillFeed`, `renderDeathNotice`, `renderCountdown`
+e i tipi `KillFeedEntry`/`DeathInfo` che le servivano solo a loro:
+`game/campaignGame.ts`, l'unico file che importa da `overlay.ts`, prende solo
+`renderBanner`, `renderDamageOverlay`, `renderScope` e il tipo `Banner`. Tutto
+il resto è sparito da `overlay.ts`, che oggi contiene solo quei quattro export
+più `WeaponReadout` (il tipo che serve a `renderScope`).
+
+Con `renderMinimap` è caduto anche l'unico consumatore di `MAP_DATA`, quindi
+`sim/map.ts` non serviva più a nessuno: `getTile` e `isSolid` erano usati solo
+al proprio interno e da `castRay` in `sim/raycast.ts`. E `castRay` a sua volta
+non aveva altri chiamanti oltre `hasLOS` nello stesso file, che a sua volta
+non aveva altri chiamanti oltre `renderMinimap` — la catena si chiudeva da
+sola. Sono spariti insieme: `castRay`, `hasLOS`, l'interfaccia `RayHit`, la
+costante `MAX_STEPS`, e il file `sim/map.ts` per intero (`MAP_DATA`, `getTile`,
+`isSolid`). `sim/raycast.ts` resta, ma oggi contiene solo `angleDelta`, la
+funzione che campagna e Arena si sono sempre spartite e che la campagna
+continua a importare da lì.
+
+Non è cambiato niente nel comportamento del gioco pubblicato: `docs/index.html`
+ricostruito dopo il taglio è risultato byte-per-byte identico a quello già in
+repository, segno che il tree-shaking della build escludeva già quelle
+funzioni morte dal bundle finale — erano davvero raggiungibili solo dal
+sorgente TypeScript, mai da chi gioca. Suite di test invariata, **574 test in
+20 file**: nessuno dei tre file toccati (`sim/map.ts`, cancellato,
+`sim/raycast.ts` e `render/overlay.ts`, ridotti) aveva un file di test proprio.
+
+Il secondo capo lasciato a metà dal §19.3 — i campi bot-only rimasti
+sull'interfaccia `Entity` di `sim/types.ts` — non era nel perimetro di questo
+giro e resta dov'era.

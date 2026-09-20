@@ -191,10 +191,12 @@ Le manopole comuni al fucile (velocità, cooldown, zoom dell'ottica) sono rimast
 in `artifacts/arena-shooter/src/sim/constants.ts` — molto più piccolo da quando
 l'Arena, che ne era la sola proprietaria, è stata tolta — e la campagna le
 importa invece di ridichiararle. Le sue manopole proprie stanno in
-`src/sim/campaign/constants.ts`. La mappa dell'Arena in `sim/map.ts` è rimasta
-anche lei — `render/overlay.ts` la importa ancora per una minimappa che oggi
-nessuna modalità richiama — invece la mappa che si gioca davvero è in
-`sim/campaign/levels.ts`.
+`src/sim/campaign/constants.ts`; la mappa che si gioca davvero è in
+`sim/campaign/levels.ts`. La mappa dell'Arena (`sim/map.ts`) e la minimappa
+che la disegnava in `render/overlay.ts` sono state tolte in un secondo giro di
+potatura: nessuna modalità le richiamava più. Con loro se ne sono andati
+`castRay` e `hasLOS` di `sim/raycast.ts`, che leggevano quella mappa — il file
+oggi contiene solo `angleDelta`, condivisa con la campagna.
 
 ## Stack
 
