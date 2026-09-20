@@ -1961,3 +1961,51 @@ sorgente TypeScript, mai da chi gioca. Suite di test invariata, **574 test in
 Il secondo capo lasciato a metà dal §19.3 — i campi bot-only rimasti
 sull'interfaccia `Entity` di `sim/types.ts` — non era nel perimetro di questo
 giro e resta dov'era.
+
+### 19.5 Un case morto trovato per caso, e il buco che lo nascondeva
+
+Durante questo stesso giro di potatura, `npx vite build` continuava a
+stampare un avviso di esbuild che nessuno aveva mai guardato con attenzione:
+«This case clause will never be evaluated because it duplicates an earlier
+case clause», puntato su `case 'coreCollected'` dentro lo `switch (ev.type)`
+di `handleEvents` (`game/campaignGame.ts`). L'etichetta compariva due volte:
+la prima insieme a `nodeUnlocked` (solo il suono di raccolta), la seconda
+insieme a `beaconPickup` (solo la riga di HUD scritta da `pickupNotice`). In
+uno `switch` vince sempre il primo ramo che combacia con l'etichetta, quindi
+ogni volta che il giocatore raccoglieva un Nucleo Dati sentiva il suono ma non
+leggeva mai «NUCLEO DATI — +20 esperienza, si spende al Banco»: la riga che
+`pickupNotice` scrive apposta per quell'evento non compariva mai in una
+partita vera, mentre la stessa cosa per la Piastra (`shieldPickup` /
+`shieldRefilled`, sullo stesso schema ma senza case duplicato) funzionava da
+sempre.
+
+Nessun test se n'era accorto perché nessuno provava il punto giusto.
+`src/ui/raccoglibili.test.ts` e `src/ui/pubblicato.test.ts` provano
+`pickupNotice` come funzione pura: le passano un evento fabbricato a mano e
+controllano il testo che restituisce. La funzione era — ed è — corretta: il
+difetto non stava in lei, stava nel cablaggio che decide *se* chiamarla, ed è
+esattamente il pezzo di codice che una prova di funzione pura non tocca mai,
+per costruzione. Specularmente, il suono di `coreCollected` non era mai
+mancato: il suo primo ramo, quello col solo suono, era quello rimasto vivo.
+
+La correzione unisce i due rami nell'unico che sopravvive nello switch:
+`coreCollected` ora suona *e* scrive la riga nello stesso case, mentre
+`nodeUnlocked` resta con il solo suono e `beaconPickup` con la sola riga —
+esattamente come erano prima, perché il difetto non era loro.
+
+A guardia del buco vero, non del sintomo, `src/game/eventiRaccolta.test.ts`
+legge il sorgente di `campaignGame.ts` da disco (stesso approccio di
+`pubblicato.test.ts`, che già legge file dal disco dentro un test) e fallisce
+se una stessa etichetta `case` compare due volte nello stesso `switch`, in un
+punto qualunque del file — senza cercare `coreCollected` per nome, perché la
+classe di difetto è la forma («un ramo morto in uno switch di smistamento
+eventi»), non l'evento particolare che l'ha fatta notare stavolta. Rimettendo
+a mano il case duplicato il test passa da verde a rosso, e togliendolo torna
+verde: la controprova che non sarebbe passato comunque con il difetto dentro.
+
+Una nota a margine, per chi si chiedesse se manchi anche un suono a
+`beaconPickup`: `CampaignVoice.beaconPickup()` (`audio/campaignVoice.ts`)
+esiste già, con il proprio `VoiceSpec` (`BEACON_PICKUP`), ma nessun punto di
+`campaignGame.ts` lo chiama mai. Non risulta una scelta di design annotata da
+qualche parte — è un metodo scritto e mai collegato. Deciderne il destino non
+era nel perimetro di questa correzione e resta aperto.

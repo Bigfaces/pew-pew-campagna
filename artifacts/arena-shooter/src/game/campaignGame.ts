@@ -901,9 +901,18 @@ export class CampaignGame {
         case 'roomEntered':
           this.raise(ev.room.toUpperCase(), '', '#9adfff');
           break;
-        case 'coreCollected':
         case 'nodeUnlocked':
           this.audio.pickup(this.world.state.player.x, this.world.state.player.y);
+          break;
+        case 'coreCollected':
+          // Era duplicato con 'nodeUnlocked' qui sopra e con
+          // 'beaconPickup' più sotto: in uno switch vince il primo
+          // ramo, quindi questo evento suonava (il primo case) ma non
+          // scriveva mai la riga della HUD (il secondo, morto). Il
+          // nucleo deve fare entrambe le cose, come gli altri
+          // raccoglibili: il suono qui, la riga in coda al metodo.
+          this.audio.pickup(this.world.state.player.x, this.world.state.player.y);
+          this.pickupLine = { text: pickupNotice(ev, XP_CORE), at: performance.now() };
           break;
         case 'xpGained':
           break;
@@ -927,7 +936,6 @@ export class CampaignGame {
           this.audio.pickup(this.world.state.player.x, this.world.state.player.y);
           this.pickupLine = { text: pickupNotice(ev, XP_CORE), at: performance.now() };
           break;
-        case 'coreCollected':
         case 'beaconPickup':
           this.pickupLine = { text: pickupNotice(ev, XP_CORE), at: performance.now() };
           break;
