@@ -79,7 +79,10 @@ import {
   clearCampaignProfile,
   loadCampaignDifficultyChoice,
   loadCampaignProfile,
+  loadLegendEnabled,
+  loadLegendShown,
   saveCampaignProfile,
+  saveLegendShown,
 } from '../stats/campaignProfile';
 
 /** 'actBreak' è nuova: il gioco è fermo fra la fine di un atto e
@@ -89,8 +92,17 @@ import {
  *  l'unica via è avanti (vedi continueFromActBreak). 'over' resta la
  *  fine vera della campagna: da qui in poi coincide sempre con l'atto
  *  III, perché ogni altro atto ha un atto dopo (vedi
- *  planLevelCompletion in campaignNarrative.ts). */
-export type CampaignPhase = 'playing' | 'paused' | 'over' | 'actBreak';
+ *  planLevelCompletion in campaignNarrative.ts).
+ *
+ *  'legenda' (GDD.md sezione 22): il gioco si ferma alla prima
+ *  comparsa di un nemico per spiegare il punto debole. Non è nemmeno
+ *  questa una terza forma di 'paused' — chi la chiude non ha scelto di
+ *  interrompersi, è la sim che lo ha deciso per lui (vedi l'evento
+ *  'enemySighted' in sim/campaign/world.ts) — ma si comporta come la
+ *  pausa per tutto ciò che conta qui: la sim resta ferma (il ciclo in
+ *  fondo a questo file avanza solo con `phase === 'playing'`) e il
+ *  puntatore si libera, esattamente come pause()/resume(). */
+export type CampaignPhase = 'playing' | 'paused' | 'over' | 'actBreak' | 'legenda';
 
 export interface CampaignHudSnapshot {
   phase: CampaignPhase;
@@ -344,6 +356,48 @@ export class CampaignGame {
 
   resume(): void {
     if (this.phase !== 'paused') return;
+    this.phase = 'playing';
+    this.accumulator = 0;
+    this.lastFrame = performance.now();
+    this.requestPointerLock();
+    this.pushHud(true);
+  }
+
+  /** GDD.md sezione 22. Chiamato dal `case 'enemySighted'` di
+   *  handleEvents: l'evento stesso arriva dalla sim una volta sola per
+   *  mondo (vedi CampaignWorld.updateEnemySighting), ma se la schermata
+   *  è disattivata dal menu o è già stata mostrata in questo browser
+   *  (localStorage, stats/campaignProfile.ts) non c'è niente da
+   *  fermare — sono le due uniche ragioni per cui un giocatore che ha
+   *  già capito il punto debole dovrebbe rivedere questa schermata,
+   *  ed entrambe si controllano qui, non nella sim: la sim non sa cosa
+   *  sia un menu.
+   *
+   *  Guardia esplicita su `phase !== 'playing'` anche se la sim non
+   *  dovrebbe mai generare l'evento fuori da un tick giocato: un
+   *  intervallo d'atto o la fine della campagna non devono mai poter
+   *  essere scavalcati da questa schermata, ed è più sicuro dirlo qui
+   *  che fidarsi che nessun cambiamento futuro alla sim lo renda
+   *  possibile. */
+  private maybeShowLegend(): void {
+    if (this.phase !== 'playing') return;
+    if (!loadLegendEnabled() || loadLegendShown()) return;
+    saveLegendShown(true);
+    this.phase = 'legenda';
+    // Stessa disciplina di pause(): un tasto del mouse tenuto non
+    // viene riportato mentre il puntatore è rilasciato, quindi
+    // l'ottica va abbassata a mano o resterebbe alzata al ritorno.
+    this.adsHeld = false;
+    if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+    this.pushHud(true);
+  }
+
+  /** Il pulsante — e ESC/INVIO/SPAZIO — della schermata di
+   *  avvistamento. Stessa forma di resume(): la sim non ha perso
+   *  niente restando ferma, quindi si riparte esattamente come si
+   *  era lasciata. */
+  closeLegend(): void {
+    if (this.phase !== 'legenda') return;
     this.phase = 'playing';
     this.accumulator = 0;
     this.lastFrame = performance.now();
@@ -689,12 +743,23 @@ export class CampaignGame {
   private onKeyDown = (e: KeyboardEvent): void => {
     const k = e.key.toLowerCase();
     this.keys.add(k);
-    if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) {
+    // In 'legenda' la barra spaziatrice NON va soffocata: il pulsante
+    // della schermata ha il fuoco, e su un <button> SPAZIO e INVIO li
+    // attiva il browser da solo — ma solo se l'evento arriva intatto.
+    // Misurato nel browser vero: con il preventDefault incondizionato
+    // INVIO chiudeva e SPAZIO no, che è esattamente il tipo di mezza
+    // funzione che nessun test headless può vedere. La sim è ferma in
+    // questa fase, quindi non c'è nessuno scorrimento da impedire.
+    if (
+      this.phase !== 'legenda' &&
+      [' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)
+    ) {
       e.preventDefault();
     }
     if (k === 'escape') {
       if (this.phase === 'playing') this.pause();
       else if (this.phase === 'paused') this.resume();
+      else if (this.phase === 'legenda') this.closeLegend();
     }
     if (k === 'm') this.toggleMute();
     // repeat: il browser ripete keydown mentre il tasto resta giù, e
@@ -937,7 +1002,15 @@ export class CampaignGame {
           this.pickupLine = { text: pickupNotice(ev, XP_CORE), at: performance.now() };
           break;
         case 'beaconPickup':
+          // Ha una voce sua apposta (CampaignVoice.beaconPickup): non
+          // è il pickup generico dell'Arena, quindi non richiama
+          // `this.audio.pickup(...)` come gli altri raccoglibili qui
+          // sopra.
+          this.voice.beaconPickup();
           this.pickupLine = { text: pickupNotice(ev, XP_CORE), at: performance.now() };
+          break;
+        case 'enemySighted':
+          this.maybeShowLegend();
           break;
         case 'dashStarted':
           // Aveva in prestito il suono del respawn dell'Arena, con un
@@ -1330,7 +1403,10 @@ export class CampaignGame {
     renderDamageOverlay(ctx, vp, fx);
     if (this.banner) renderBanner(ctx, vp, this.banner, now);
 
-    if (this.phase === 'paused') {
+    // Stesso trattamento di 'paused': la scena resta congelata sotto,
+    // e questo lo dice anche visivamente invece di lasciarla nitida
+    // sotto un overlay che dovrebbe bastare da solo.
+    if (this.phase === 'paused' || this.phase === 'legenda') {
       ctx.fillStyle = 'rgba(6,7,12,0.72)';
       ctx.fillRect(0, 0, vp.width, vp.height);
     }

@@ -32,6 +32,15 @@ const KEY = 'pew-pew.campaign.profile';
  *  prossimo run che comincia da zero. */
 const DIFFICULTY_KEY = 'pew-pew.campaign.difficulty';
 
+/** GDD.md sezione 22. Due chiavi, non una: "l'interruttore è acceso" e
+ *  "l'ho già vista" sono due domande diverse, e la seconda deve poter
+ *  tornare a 'no' (riaccendere l'interruttore da spento) senza toccare
+ *  la prima. Stesso trattamento difensivo di DIFFICULTY_KEY qui sopra
+ *  — in navigazione privata localStorage lancia, e il gioco deve
+ *  continuare lo stesso, solo senza ricordare la scelta. */
+const LEGEND_ENABLED_KEY = 'pew-pew.campaign.legenda.attiva';
+const LEGEND_SHOWN_KEY = 'pew-pew.campaign.legenda.vista';
+
 const VALID_DIFFICULTIES: ReadonlySet<string> = new Set(CAMPAIGN_DIFFICULTIES);
 
 function isCampaignDifficulty(value: unknown): value is CampaignDifficulty {
@@ -151,4 +160,46 @@ export function loadCampaignDifficultyChoice(): CampaignDifficulty {
     // Fallthrough al default sotto.
   }
   return 'tutorial';
+}
+
+/** Attiva di default: il difetto che questa schermata risolve (il
+ *  punto debole non insegnato a nessuno, vedi GDD.md sezione 22) è
+ *  peggiore del fastidio di vederla una volta. Chi non la vuole la
+ *  spegne dal menu. */
+export function loadLegendEnabled(): boolean {
+  try {
+    const raw = localStorage.getItem(LEGEND_ENABLED_KEY);
+    if (raw === null) return true;
+    return raw === 'true';
+  } catch {
+    return true;
+  }
+}
+
+export function saveLegendEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(LEGEND_ENABLED_KEY, String(enabled));
+  } catch {
+    // Non-fatal: la scelta semplicemente non sopravvive alla sessione.
+  }
+}
+
+/** Non ancora mostrata, di default: un profilo nuovo — o uno che
+ *  esisteva prima di questa chiave — deve poter vedere la schermata la
+ *  prima volta buona, non saltarla per un valore mancante letto come
+ *  "già fatto". */
+export function loadLegendShown(): boolean {
+  try {
+    return localStorage.getItem(LEGEND_SHOWN_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function saveLegendShown(shown: boolean): void {
+  try {
+    localStorage.setItem(LEGEND_SHOWN_KEY, String(shown));
+  } catch {
+    // Non-fatal: nel peggiore dei casi la si rivede alla prossima sessione.
+  }
 }

@@ -9,7 +9,10 @@ import {
 } from '../sim/constants';
 import {
   loadCampaignDifficultyChoice,
+  loadLegendEnabled,
   saveCampaignDifficultyChoice,
+  saveLegendEnabled,
+  saveLegendShown,
 } from '../stats/campaignProfile';
 import { CAMPAIGN_DIFFICULTIES, type CampaignDifficulty } from '../sim/campaign/types';
 
@@ -59,6 +62,37 @@ function SensitivityField({
   );
 }
 
+/** GDD.md sezione 22. Un solo pulsante on/off invece di un cursore
+ *  come la sensibilità: qui non c'è una via di mezzo, la schermata
+ *  compare o non compare mai. */
+function LegendToggleField({
+  value,
+  onChange,
+}: {
+  value: boolean;
+  onChange: (v: boolean) => void;
+}): React.ReactElement {
+  return (
+    <div className="field">
+      <label>LEGENDA AL PRIMO NEMICO</label>
+      <div className="seg">
+        <button type="button" data-on={value} onClick={() => onChange(true)}>
+          ATTIVA
+        </button>
+        <button type="button" data-on={!value} onClick={() => onChange(false)}>
+          DISATTIVA
+        </button>
+      </div>
+      <p className="hint">
+        Spiega il punto debole (×3 danno) e le piastre alla prima comparsa di
+        un nemico, una sola volta. Riaccenderla dopo averla spenta la fa
+        ricomparire al prossimo nemico avvistato, come se non l'avessi mai
+        vista.
+      </p>
+    </div>
+  );
+}
+
 export interface MenuConfig {
   /** Multiplier on MOUSE_SENSITIVITY, 1 by default. */
   sensitivity: number;
@@ -80,6 +114,7 @@ export function Menu({
   const [campaignDifficulty, setCampaignDifficulty] = useState<CampaignDifficulty>(
     loadCampaignDifficultyChoice(),
   );
+  const [legendEnabled, setLegendEnabled] = useState<boolean>(loadLegendEnabled());
 
   return (
     <div className="overlay">
@@ -108,6 +143,19 @@ export function Menu({
         </div>
 
         <SensitivityField value={sensitivity} onChange={setSensitivity} />
+
+        <LegendToggleField
+          value={legendEnabled}
+          onChange={(v) => {
+            // Riaccenderla da spenta azzera "già mostrata": è l'unico
+            // modo che il giocatore ha di rivederla, e senza questo
+            // l'interruttore riacceso non farebbe mai ricomparire
+            // niente — sembrerebbe rotto.
+            if (v && !legendEnabled) saveLegendShown(false);
+            setLegendEnabled(v);
+            saveLegendEnabled(v);
+          }}
+        />
 
         <button
           className="btn"

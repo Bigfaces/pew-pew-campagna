@@ -344,6 +344,10 @@ export const CAMPAIGN_CONTROLS: readonly (readonly [string, string])[] = [
   ['F', 'Trasponditore — lancia un\'esca, se ne hai una carica'],
   ['ESC', 'Pausa'],
   ['M', 'Muto'],
+  // ESC chiude anche la schermata di avvistamento (vedi sopra), ma
+  // quella si apre da sola — non è una pausa scelta — e chi la vede
+  // deve poter proseguire col primo tasto qualunque a portata di mano,
+  // non doverne prima trovare uno specifico.
 ];
 
 function CampaignControls(): React.ReactElement {
@@ -430,6 +434,69 @@ export function CampaignPauseScreen({
           style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
         >
           AZZERA LA PROGRESSIONE
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Le voci di CAMPAIGN_CONTROLS che spiegano il primo nemico appena
+ *  visto (GDD.md sezione 22): quanto vale un colpo al corpo, quanto
+ *  vale al punto debole, e cosa assorbe un colpo sbagliato mentre lo
+ *  si impara. Chiavi, non indici — un riordino della legenda non deve
+ *  poter spostare la spiegazione sbagliata sotto l'etichetta sbagliata,
+ *  e un `!` che non trova la chiave deve rompersi in fase di sviluppo,
+ *  non mostrare una riga vuota in produzione. */
+const SIGHTING_KEYS: readonly string[] = ['CLICK SIN.', 'PUNTO DEBOLE', 'PIASTRE'];
+
+/** Le due che contano davvero: il resto della legenda spiega come si
+ *  gioca, queste due spiegano perché la prossima stanza si vince o si
+ *  perde. */
+const SIGHTING_EMPHASIS: ReadonlySet<string> = new Set(['PUNTO DEBOLE', 'PIASTRE']);
+
+/** Schermata del primo avvistamento (GDD.md sezione 22): ferma il
+ *  gioco una sola volta, alla prima comparsa di un nemico, per dire la
+ *  regola che il resto del gioco lascia scoprire sparando — il fucile
+ *  fa 1 danno al corpo, 3 al punto debole, cioè uccide in un colpo
+ *  solo lì. Legge da CAMPAIGN_CONTROLS invece di ripetere il testo:
+ *  una seconda copia diverge il giorno in cui la prima cambia, e
+ *  comandi.test.ts / pubblicato.test.ts sorvegliano quella, non
+ *  questa. */
+export function CampaignLegendScreen({
+  onClose,
+}: {
+  onClose: () => void;
+}): React.ReactElement {
+  const rows = SIGHTING_KEYS.map(
+    (k) => CAMPAIGN_CONTROLS.find(([key]) => key === k)!,
+  );
+  return (
+    <div className="overlay">
+      <div className="panel" style={{ maxWidth: 480 }}>
+        <p className="subtitle">PRIMO CONTATTO</p>
+        <p className="hint" style={{ textAlign: 'center', marginTop: 0 }}>
+          Contatto ostile catalogato. Il registro sottostante esisteva già —
+          non lo leggevi, quindi te lo mostro.
+        </p>
+        <dl className="controls" style={{ marginTop: 20 }}>
+          {rows.map(([k, v]) => {
+            const emphasis = SIGHTING_EMPHASIS.has(k) || undefined;
+            return (
+              <div key={k} style={{ display: 'contents' }}>
+                <dt data-emphasis={emphasis}>{k}</dt>
+                <dd data-emphasis={emphasis}>{v}</dd>
+              </div>
+            );
+          })}
+        </dl>
+        {/* autoFocus e non un binding a mano: su un <button> il
+            browser attiva gia' con INVIO e con SPAZIO. Legarli nel
+            controller costringeva ad aggiungerli alla legenda —
+            comandi.test.ts pretende una riga per ogni tasto legato,
+            giustamente — e la legenda si sarebbe portata per sempre
+            una voce su una schermata che si vede una volta sola. */}
+        <button className="btn" type="button" autoFocus onClick={onClose}>
+          HO CAPITO
         </button>
       </div>
     </div>

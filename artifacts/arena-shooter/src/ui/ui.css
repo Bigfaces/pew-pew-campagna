@@ -118,6 +118,20 @@
   color: var(--dim);
 }
 
+/* Le due voci che contano nella schermata del primo avvistamento
+   (GDD.md sezione 22): il punto debole e le piastre non sono un
+   comando in più da imparare come gli altri, sono la regola che
+   decide se la prossima stanza si vince — e devono leggersi come
+   tale anche a colpo d'occhio, non solo nel testo. */
+.controls dt[data-emphasis] {
+  color: var(--good);
+}
+
+.controls dd[data-emphasis] {
+  color: var(--text);
+  font-weight: 600;
+}
+
 /* ---- buttons ---- */
 
 .btn {

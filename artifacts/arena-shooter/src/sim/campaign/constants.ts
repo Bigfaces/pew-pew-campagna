@@ -202,6 +202,14 @@ export const PLAYER_EYE_Z = TILE / 2;
 
 export const ENEMY_REVEAL_MS = 1500;
 
+/** Semi-apertura del cono usato per capire se il primo nemico avvistato
+ *  è "davanti" al giocatore, ai fini della legenda del punto debole
+ *  (GDD.md sezione 22). Generoso apposta: chi gioca con un campo
+ *  visivo stretto ha comunque il nemico ben oltre il bordo dello
+ *  schermo, e l'innesco deve scattare lo stesso — non è un test di
+ *  mira, è "l'hai appena visto?". */
+export const ENEMY_SIGHTING_CONE_HALF = (50 * Math.PI) / 180;
+
 /** Distanza minima, in tile, fra lo spawn di un livello e il nemico
  *  più vicino. Un test la impone su tutte e nove le mappe. */
 export const ENEMY_SPAWN_CLEARANCE_TILES = 3;

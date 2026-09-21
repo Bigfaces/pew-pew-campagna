@@ -83,6 +83,7 @@ import {
   BEACON_WALL_MARGIN,
   CROGIOLO_CLOUD_TILES,
   ENEMY_REVEAL_MS,
+  ENEMY_SIGHTING_CONE_HALF,
   LEVEL_START_GRACE_MS,
   PLAYER_EYE_Z,
   levelForXp,
@@ -486,6 +487,7 @@ export class CampaignWorld {
       outcome: 'playing',
       difficulty: profile?.difficulty ?? difficulty,
       reachedRoom: roomAt(level, level.spawn.tx, level.spawn.ty),
+      enemySightedFired: false,
     };
     this.spawnCheckpoint = { ...this.state.checkpoint };
   }
@@ -620,6 +622,7 @@ export class CampaignWorld {
     this.updateBeacon();
     this.updateTurrets();
     this.updateEnemies();
+    this.updateEnemySighting();
     this.updateBoss();
     // Dopo il boss, non prima: il Custode capovolge la stanza come
     // fase, e leggere la gravità prima di aggiornarlo la lascerebbe
@@ -1525,6 +1528,36 @@ export class CampaignWorld {
       // ricontrollarla vorrebbe dire poterla trovare rotta dopo che il
       // colpo è partito, cioè un colpo annunciato che poi non arriva.
       this.damagePlayer('enemy');
+    }
+  }
+
+  /** Il primo nemico mobile mai avvistato in linea di vista, davanti
+   *  al giocatore: l'innesco della legenda del punto debole (GDD.md
+   *  sezione 22). Un evento della simulazione e non un controllo del
+   *  renderer perché deve restare provabile senza un canvas — è tutto
+   *  il motivo per cui vive qui e non in campaignScene.ts.
+   *
+   *  Solo `state.enemies`: le torrette e i droni (`state.turrets`)
+   *  sono un bersaglio diverso, con le sue regole (GDD.md sezione 6),
+   *  e non hanno niente da insegnare sul punto debole. */
+  private updateEnemySighting(): void {
+    if (this.state.enemySightedFired) return;
+    // Guardia esplicita e non solo implicita nel ciclo qui sotto: un
+    // giocatore appena morto in Roguelike (outcome diventato
+    // 'actRestart' in questo stesso tick, vedi killPlayer) non deve
+    // "avvistare" niente — il mondo sta per essere buttato via.
+    if (this.state.outcome !== 'playing') return;
+    const p = this.state.player;
+    for (const e of this.state.enemies) {
+      if (!e.alive) continue;
+      const toEnemy = Math.atan2(e.y - p.y, e.x - p.x);
+      if (Math.abs(angleDelta(p.angle, toEnemy)) > ENEMY_SIGHTING_CONE_HALF) continue;
+      if (!campHasLOS(this.getTile, p.x, p.y, e.x, e.y, this.level.width, this.level.height)) {
+        continue;
+      }
+      this.state.enemySightedFired = true;
+      this.events.push({ type: 'enemySighted', id: e.id, kind: e.kind });
+      break;
     }
   }
 

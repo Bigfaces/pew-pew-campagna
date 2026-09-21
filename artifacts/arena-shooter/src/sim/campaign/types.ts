@@ -441,6 +441,13 @@ export interface CampaignState {
    *  vero anche dentro una stanza battuta da una torretta. Ci pendono
    *  la battuta narrativa, l'XP di stanza e il risveglio del boss. */
   reachedRoom: string;
+  /** True dopo il primo `enemySighted` di questo mondo. Non
+   *  serializzato nel profilo (vedi CampaignProfile.toProfile): un
+   *  livello nuovo, o un respawn che ricostruisce il mondo, deve poter
+   *  rilevare di nuovo il primo avvistamento *di quel mondo* — è la
+   *  persistenza fra sessioni ("già mostrata almeno una volta nella
+   *  run") a vivere altrove, in campaignProfile.ts via localStorage. */
+  enemySightedFired: boolean;
 }
 
 export type CampaignEvent =
@@ -457,6 +464,13 @@ export type CampaignEvent =
   | { type: 'beaconThrown'; x: number; y: number }
   | { type: 'beaconExpired' }
   | { type: 'beaconPickup'; charges: number }
+  /** Il primo nemico mobile mai avvistato in linea di vista, davanti
+   *  al giocatore. Emesso una volta sola per mondo (vedi
+   *  `CampaignState.enemySightedFired`) — è l'innesco della legenda
+   *  del punto debole (GDD.md sezione 22), non un evento tattico:
+   *  torrette e droni (state.turrets) non lo generano, sono un'altra
+   *  cosa e non insegnano nulla sul punto debole. */
+  | { type: 'enemySighted'; id: string; kind: EnemyKind }
   /** Un nemico ha appena cambiato bersaglio. Sul fronte di salita
    *  soltanto: un evento per tick di richiamo sarebbe rumore, e
    *  quello che serve — al suono e alla HUD — è l'istante in cui

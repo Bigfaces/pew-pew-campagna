@@ -2212,3 +2212,154 @@ prova): la suite è tornata **579 test su 21 file**, tutti VERDI — il
 numero è cresciuto di uno rispetto a prima di questo lavoro perché il
 nuovo test dell'impronta si è aggiunto a `pubblicato.test.ts`, non ha
 sostituito nessuno dei test esistenti.
+
+---
+
+## 22. La legenda al primo nemico
+
+### 22.1 Il problema: la regola centrale non veniva insegnata a nessuno
+
+Il §18.5 aveva già misurato, con un bot a mira perfetta, la differenza fra
+mirare al centro e mirare al punto debole: **48% delle stanze vinte contro
+87%** (96%/100% dopo la correzione delle piastre — la proporzione fra le
+due colonne è quella che conta qui, non i valori assoluti). Il fucile fa 1
+danno al corpo contro 2-5 punti vita; al punto debole vale ×3, cioè uccide
+in un colpo solo. Senza saperlo, tre stanze restano proprio impossibili:
+non più difficili, murate.
+
+Il gioco non taceva per pigrizia: il cerchio pulsante sul punto debole si
+disegna già in scena, la HUD lo nomina già sotto il mirino col nodo Lettura
+Termica, la legenda del menu lo dice già («PUNTO DEBOLE — Vale tre volte:
+dietro, il nucleo o la testa — la HUD dice quale»). Tre posti diversi
+dicevano la stessa cosa, e non bastava, perché tutti e tre presuppongono
+che qualcuno li stia già leggendo. Un giocatore che preme "inizia" e basta
+non passa mai dal menu, e il cerchio sul punto debole non significa niente
+finché non si sa che vale tre volte tanto: è un'informazione che risponde
+a una domanda che non è ancora stata fatta.
+
+### 22.2 L'innesco vive nella simulazione, non nel renderer
+
+La tentazione ovvia era un controllo nel ciclo di disegno: "il primo
+nemico che finisce dentro il campo visivo, mostra la schermata". È lì che
+*sembra* naturale metterlo — è lì che si decide cosa il giocatore vede —
+ma è il posto sbagliato, per lo stesso motivo per cui `campaignGame.ts`
+non calcola mai da sé se un colpo ha toccato un punto debole: quel calcolo
+vive in `sim/campaign/world.ts`, dietro un evento, perché **la sim è
+testabile headless e il renderer no**. Un controllo scritto dentro
+`campaignScene.ts` avrebbe richiesto un canvas, un contesto 2D e una
+camera per essere provato — cioè, in pratica, non sarebbe stato provato,
+esattamente come non lo è il resto del ciclo di disegno.
+
+L'evento nuovo, `enemySighted`, nasce quindi in `CampaignWorld.step`
+(metodo `updateEnemySighting`, chiamato dopo `updateEnemies`) e si accende
+la prima volta in cui, nello stesso tick, sono vere tutte queste cose:
+
+- un nemico di `state.enemies` è vivo — **non** una torretta o un drone di
+  `state.turrets`, che sono un bersaglio con regole proprie (§6) e non
+  hanno niente da insegnare sul punto debole;
+- il giocatore è vivo, cioè `state.outcome === 'playing'` — la sim non sa
+  cosa sia una schermata, ma sa dire quando il mondo sta per essere
+  buttato via (vedi `killPlayer`, Roguelike), ed è la stessa domanda;
+- c'è linea di vista fra i due (`campHasLOS`, la stessa funzione — e la
+  stessa garanzia di simmetria — che regge le torrette);
+- il nemico sta dentro un cono in avanti di 50° di semiapertura
+  (`angleDelta`, `ENEMY_SIGHTING_CONE_HALF`): generoso apposta, perché il
+  campo visivo del giocatore può essere strettissimo (37-43°, vedi §18.1)
+  e "davanti a te" deve restare vero anche per chi ha quel taglio.
+
+Un flag nuovo in `CampaignState` (`enemySightedFired`) impedisce che
+riaccada nello stesso mondo. Tutto questo è provato in
+`src/sim/campaign/avvistamento.test.ts` senza toccare un canvas: arriva
+una volta sola, non arriva se il nemico è dietro, non arriva senza linea
+di vista, non arriva per una torretta, non arriva a giocatore morto.
+
+Il controller (`campaignGame.ts`) resta libero da qualunque geometria: al
+`case 'enemySighted'` legge solo due interruttori — è attiva? è già stata
+mostrata? — e se entrambi rispondono sì ferma il gioco. Tutta la domanda
+"quando" è già stata risolta a monte, nella sim.
+
+### 22.3 La schermata e l'interruttore
+
+`CampaignPhase` guadagna `'legenda'`, quarta fase che si comporta come
+`'paused'` in tutto ciò che conta — la sim smette di avanzare (il ciclo
+principale accumula tick solo con `phase === 'playing'`), il puntatore si
+rilascia — ma non è una pausa scelta: è la sim che la impone, e per questo
+si chiude anche con ESC, non solo col pulsante. INVIO e SPAZIO la
+chiudono a loro volta, ma senza che il controller li leghi: il pulsante
+prende il fuoco all'apertura (`autoFocus`) e su un `<button>` quei due
+tasti li attiva il browser da solo. La prima stesura li legava a mano, e
+`comandi.test.ts` — che pretende una riga di legenda per ogni tasto che
+il controller lega, giustamente — ha costretto ad aggiungerne una. Era
+una riga che la legenda si sarebbe portata per sempre per una schermata
+che si vede una volta sola, in una legenda la cui lunghezza era gia'
+stata un difetto (sezione 16.1). Il fuoco sul pulsante da' gli stessi due
+tasti senza costare niente alla legenda: la guardia resta severa e non
+c'e' piu' niente da dichiararle.
+
+Il fuoco da solo pero' non bastava, e l'ha detto il browser e nessun
+test. Il gestore della tastiera chiamava `preventDefault()` su SPAZIO
+— serve, in gioco, perche' altrimenti la pagina scorre — e un evento
+soffocato non attiva piu' il pulsante che ha il fuoco. Risultato
+misurato in tre corse controllate, una per modo di chiusura: INVIO
+chiudeva, ESC chiudeva, SPAZIO no. Mezza funzione, verde in tutta la
+suite, invisibile a chiunque non aprisse davvero il gioco e provasse
+quel tasto. Ora il `preventDefault` si esclude quando la fase e'
+`'legenda'`: li' la sim e' ferma, non c'e' nessuno scorrimento da
+impedire, e l'evento arriva intatto al pulsante.
+
+Che la sim sia davvero ferma e' stato verificato per comportamento e
+non per pixel — un primo tentativo confrontava due fotogrammi e li
+trovava diversi, ma stava misurando la HUD che pulsa, non la
+simulazione. La prova giusta: lasciare la schermata aperta quindici
+secondi col Ronzino del corridoio in vista che mira, e guardare le
+piastre alla chiusura. Sono ancora due su due: in quindici secondi non
+e' arrivato un colpo. Non può comparire a giocatore morto o durante un intervallo
+d'atto: la sim stessa non genera l'evento fuori da `outcome === 'playing'`,
+e il controller ripete la stessa guardia sul proprio `phase`, per
+sicurezza contro un futuro cambiamento della sim di cui questo file non
+sappia nulla.
+
+Il contenuto non è una seconda copia della legenda: `CampaignLegendScreen`
+(in `ui/CampaignHud.tsx`) legge `CAMPAIGN_CONTROLS` — la stessa fonte già
+sorvegliata da `comandi.test.ts` e da `pubblicato.test.ts` — e mostra tre
+delle sue voci (colpo, punto debole, piastre), con le ultime due messe in
+evidenza rispetto alla prima. Una seconda copia del testo sarebbe
+divergita al primo bilanciamento successivo, e nessuna delle due guardie
+citate se ne sarebbe accorta: sorvegliano `CAMPAIGN_CONTROLS`, non un
+paragrafo scritto altrove. `src/ui/legenda.test.ts` verifica proprio
+questo — che nessuna delle frasi mostrate sia ricopiata a mano nel
+componente.
+
+Due chiavi nuove in `stats/campaignProfile.ts`, accanto a
+`DIFFICULTY_KEY` e con lo stesso trattamento difensivo (ogni accesso a
+`localStorage` in un `try/catch`, perché la navigazione privata lancia e
+il gioco deve continuare lo stesso): se la schermata è attiva (default
+**sì**) e se è già stata mostrata (default **no**). Il menu (`Screens.tsx`)
+aggiunge l'interruttore accanto alla sensibilità del mouse. La regola che
+conta è quella scritta nella sua didascalia: **riaccenderlo da spento
+azzera il flag "già mostrata"**, così spegnere e riaccendere è l'unico modo
+che un giocatore ha di rivederla. Senza dirlo nella didascalia, nessuno lo
+avrebbe scoperto da solo — è esattamente il difetto che questa intera
+sezione esiste per correggere, applicato questa volta all'interruttore
+invece che al punto debole.
+
+### 22.4 Il trasponditore era muto
+
+Difetto minore, trovato per la stessa ragione degli altri due (§17, §21):
+qualcosa era stato costruito e non collegato. `CampaignVoice.beaconPickup()`
+esiste da prima di questo lavoro, ha il suo `VoiceSpec` dedicato in
+`audio/campaignVoice.ts` ed è provato da `campaignVoice.test.ts` — ma
+niente lo chiamava mai. Il nucleo suona (`case 'coreCollected'`), la
+piastra suona (`case 'shieldPickup'`/`'shieldRefilled'`), l'esca no: il
+suo `case 'beaconPickup'` in `campaignGame.ts` scriveva solo la riga della
+HUD. Un solo comando aggiunto — `this.voice.beaconPickup()`, non
+`this.audio.pickup(...)`, che sarebbe stato il suono generico dell'Arena
+al posto di quello scritto apposta per l'esca — e il trasponditore ha
+smesso di essere muto.
+
+---
+
+**Verifica finale**: `npx vitest run` — tutti verdi, `npx tsc --noEmit` —
+nessun errore, `npx vite build --config vite.config.standalone.ts` seguito
+dalla copia di `dist/standalone/index.html` sopra `docs/index.html`, md5
+dei due file confrontato e identico.

@@ -6,6 +6,7 @@ import {
   CampaignActBreakScreen,
   CampaignEndScreen,
   CampaignHud,
+  CampaignLegendScreen,
   CampaignPauseScreen,
 } from './ui/CampaignHud';
 import { Menu, type MenuConfig } from './ui/Screens';
@@ -104,6 +105,9 @@ export default function App(): React.ReactElement {
       )}
       {ui === 'campaign' && campaignSnap?.phase === 'over' && (
         <CampaignEndScreen snap={campaignSnap} onMenu={exitCampaign} />
+      )}
+      {ui === 'campaign' && campaignSnap?.phase === 'legenda' && (
+        <CampaignLegendScreen onClose={() => campaignRef.current?.closeLegend()} />
       )}
       {ui === 'campaign' && campaignSnap?.phase === 'actBreak' && (
         <CampaignActBreakScreen
