@@ -26,6 +26,8 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 
+import { calcolaImpronta } from './tools/impronta';
+
 /** Turn the inlined `<script type="module">` into a classic script, and
  *  move it to the end of the body.
  *
@@ -108,6 +110,36 @@ function classicScript(outDir: string): Plugin {
           'standalone build runs its script before #root exists — ' +
             'a classic script is not deferred, so it must come after the ' +
             'mount point or createRoot gets null and the page stays blank',
+        );
+      }
+
+      // Impronta dei sorgenti: un hash dei file che sono davvero
+      // entrati in questo bundle, calcolato leggendoli da disco — non
+      // dall'output che stiamo scrivendo, altrimenti sarebbe un
+      // auto-riferimento che torna sempre vero. `src/ui/pubblicato.test.ts`
+      // ricalcola la stessa impronta e pretende di trovarla qui: se
+      // un sorgente cambia — anche solo la logica, senza toccare una
+      // stringa a schermo — l'hash cambia e quel test lo scopre dove
+      // il confronto per stringhe non può arrivare.
+      const { hash: improntaSorgenti } = calcolaImpronta();
+      const metaImpronta = `<meta name="impronta-sorgenti" content="${improntaSorgenti}">`;
+      if (!patched.includes('<head>')) {
+        throw new Error('standalone build has no <head> to inject the impronta-sorgenti meta into');
+      }
+      patched = patched.replace('<head>', `<head>\n    ${metaImpronta}`);
+
+      // vite-plugin-singlefile ha già fatto il suo inlining prima che
+      // questo plugin giri (gira in generateBundle, questo in
+      // writeBundle, dopo), e tutte le riscritture sopra sono già
+      // finite: non c'è un passo successivo che potrebbe ancora
+      // toccare <head>. Ma è proprio perché l'ordine dei plugin è
+      // implicito che vale la pena controllare invece di fidarsi: se
+      // per qualunque motivo il replace non avesse trovato <head>, la
+      // build deve fermarsi qui e non spedire un file senza impronta.
+      if (!patched.includes(metaImpronta)) {
+        throw new Error(
+          'il meta impronta-sorgenti non è sopravvissuto nel file finale — ' +
+            'controllare l\'ordine dei plugin rispetto a vite-plugin-singlefile',
         );
       }
 

@@ -2127,3 +2127,88 @@ usati solo per trovare i numeri concreti del terzo test) — fuori dal
 repository, per lo stesso motivo per cui gli script di bilanciamento
 della campagna vivono in `tools/` e non nei test: misurano, non
 verificano un contratto che debba restare vero per sempre.
+
+## 21. Il buco nella guardia del file pubblicato: cieca alla sola logica
+
+`src/ui/pubblicato.test.ts` (§15, e vedi `docs/LEGGIMI.md`) esiste per
+un difetto già successo una volta — `docs/index.html` rimasto congelato
+al giorno del fork per tutta la costruzione della campagna — e verifica
+che il file pubblicato sia allineato al sorgente cercandoci dentro le
+stesse stringhe che il sorgente disegna: voci di legenda, note dei
+raccoglibili, nomi delle difficoltà. Funziona, ma per costruzione vede
+solo *cosa si legge*, non *cosa gira*: una modifica che cambia la
+logica senza toccare una parola a schermo le resta invisibile.
+
+### 21.1 L'esempio vero, non ipotetico
+
+È già capitato, un commit prima di questo (`8d6f20e`, "Il nucleo
+raccolto non ha mai mostrato la sua nota"): in `campaignGame.ts`,
+dentro `handleEvents`, il case `'coreCollected'` compariva due volte
+nello stesso `switch` — una accanto a `'nodeUnlocked'` (suona e basta),
+una accanto a `'beaconPickup'` (scrive la riga della HUD). In uno
+`switch` vince il primo ramo: il secondo, identico a vedersi, non
+veniva mai eseguito. Risultato, raccogliendo un nucleo: il suono si
+sentiva, la riga in HUD no.
+
+La riga che doveva comparire (`pickupNotice` restituisce "NUCLEO DATI —
++20 esperienza, si spende al Banco") era scritta, era provata come
+funzione pura, ed era comunque, da qualche parte nel sorgente, dentro
+il bundle — quindi dentro `docs/index.html` anche prima della
+correzione. La guardia per stringhe l'avrebbe trovata lo stesso, in un
+`docs/index.html` vecchio quanto si vuole: cercava una stringa che
+esisteva, non il ramo di codice che la produce. La correzione a quel
+difetto non ha cambiato una sola parola a schermo — ha spostato quale
+`case` viene eseguito. Una guardia che guarda solo il testo non aveva
+alcun modo di accorgersene.
+
+### 21.2 L'impronta
+
+La correzione, in questo lavoro, non sostituisce le prove per stringhe:
+le affianca. `tools/impronta.ts` calcola un hash sha256 di tutti i
+sorgenti che entrano nel bundle standalone — ogni `.ts`/`.tsx`/`.css`
+sotto `src/` che non sia un file di test, più `index.html`,
+`vite.config.standalone.ts` e `public/favicon.svg` — leggendoli dal
+disco in un ordine ordinato e stabile, con i fine-riga normalizzati
+(CRLF → LF) perché un checkout Windows non deve produrre un'impronta
+diversa. `vite.config.standalone.ts` la incide in un
+`<meta name="impronta-sorgenti" content="…">` dentro `<head>`, dentro
+lo stesso plugin `classicScript` che già riscrive l'HTML e già fallisce
+la build se qualcosa non torna — con un controllo in più che verifica
+che quel meta sia davvero sopravvissuto alla riscrittura, invece di
+darlo per scontato. `pubblicato.test.ts` ricalcola la stessa impronta e
+pretende di trovarla identica, byte per byte, nel file pubblicato.
+
+Il confronto per stringhe dice *cosa* manca quando il file è vecchio.
+L'impronta dice solo *che* lo è — ma lo dice per qualunque cambiamento,
+compresi quelli di sola logica che le stringhe non possono vedere.
+
+### 21.3 La controprova, fatta a mano e non solo dichiarata
+
+Per dimostrare che la nuova guardia prende davvero quello che la
+vecchia non vedeva, e non solo per ipotesi: in `campaignGame.ts`, nello
+stesso `case 'coreCollected'` dell'esempio sopra, sono state introdotte
+due variabili intermedie del tutto inutili (`const px = …; const py =
+…;` al posto di leggere `this.world.state.player.x/y` due volte inline)
+— un cambiamento che altera i byte del sorgente e null'altro: stesso
+comportamento, nessuna stringa toccata.
+
+Con `docs/index.html` non rigenerato dopo quella modifica:
+
+- **il test dell'impronta è diventato ROSSO** — l'unico fallimento
+  della suite, col messaggio che nomina `campaignGame.ts` come sorgente
+  più recente del file pubblicato (dichiarato nel messaggio stesso come
+  aiuto, non prova);
+- **tutti gli altri 578 test sono rimasti VERDI**, comprese tutte le
+  prove per stringhe di `pubblicato.test.ts` — le voci di legenda, le
+  note dei raccoglibili, le difficoltà erano ancora tutte lì, invariate,
+  esattamente come lo sarebbero state nel file rimasto indietro
+  dell'esempio reale.
+
+Rimesso il sorgente com'era (md5 del file identico a prima della
+prova), ricostruito con `vite build --config vite.config.standalone.ts`
+e ricopiato `dist/standalone/index.html` sopra `docs/index.html` (md5
+dei due file identico fra loro, e identico al build precedente la
+prova): la suite è tornata **579 test su 21 file**, tutti VERDI — il
+numero è cresciuto di uno rispetto a prima di questo lavoro perché il
+nuovo test dell'impronta si è aggiunto a `pubblicato.test.ts`, non ha
+sostituito nessuno dei test esistenti.

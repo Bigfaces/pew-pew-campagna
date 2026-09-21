@@ -21,6 +21,24 @@
 // disegnano, così un comando nuovo o una modalità nuova fanno
 // fallire il test finché il file non viene rigenerato.
 //
+// Ma un confronto per stringhe vede solo *cosa si legge*, non *cosa
+// gira*: una modifica che cambia logica senza toccare una parola a
+// schermo gli resta invisibile. È successo davvero, non per ipotesi:
+// in campaignGame.ts un `case 'coreCollected'` compariva due volte
+// nello stesso switch, e in uno switch vince il primo ramo — il
+// secondo, identico a vedersi, non veniva mai eseguito. Si sentiva il
+// suono del nucleo raccolto e non compariva mai la sua riga in HUD, e
+// ogni stringa che questo file sapeva cercare era comunque, da
+// qualche parte nel sorgente, dentro il bundle: nessuna delle prove
+// qui sotto se ne sarebbe accorta. Da qui l'impronta
+// (`../../tools/impronta.ts`): un hash sha256 di tutti i sorgenti che
+// finiscono nel bundle, calcolato leggendoli dal disco, inciso
+// nell'HTML pubblicato da `vite.config.standalone.ts` e confrontato
+// qui sotto byte per byte. Cambia un `case`, cambia l'impronta — non
+// serve che cambi anche una stringa. Le prove per stringhe restano,
+// non sono sostituite: dicono *cosa* manca quando il file è vecchio;
+// l'impronta dice solo *che* lo è.
+//
 // Quando diventa rosso non c'è da correggere il test, c'è da rifare
 // la build:
 //
@@ -37,6 +55,7 @@ import { XP_CORE } from '../sim/campaign/constants';
 import { CAMPAIGN_DIFFICULTIES } from '../sim/campaign/types';
 import { pickupNotice, type PickupEvent } from './arbiter';
 import { CAMPAIGN_CONTROLS } from './CampaignHud';
+import { calcolaImpronta } from '../../tools/impronta';
 
 /** Vitest gira con la radice del pacchetto come cwd; il file
  *  pubblicato sta due livelli più su, alla radice del repository. */
@@ -102,6 +121,49 @@ describe('docs/index.html — il file che riceve chi non compila', () => {
       pubblicato().includes(difficolta.toUpperCase()),
       `il file pubblicato non offre la modalità ${difficolta.toUpperCase()}: ` +
         'va rigenerato con build:standalone',
+    ).toBe(true);
+  });
+
+  // L'impronta prende quello che le stringhe qui sopra non possono
+  // vedere: una modifica alla *logica* che non cambia una parola a
+  // schermo. Ricalcolata dal sorgente vero (stessa funzione che usa
+  // vite.config.standalone.ts per inciderla nell'HTML) e pretesa
+  // identica, byte per byte, dentro il file pubblicato.
+  it('porta l\'impronta esatta dei sorgenti — non solo le stringhe che sa nominare', () => {
+    const { hash, file } = calcolaImpronta();
+    const atteso = `<meta name="impronta-sorgenti" content="${hash}">`;
+    const trovato = pubblicato().includes(atteso);
+
+    // Aiuto per capire *cosa* è cambiato, non prova di niente: le date
+    // del filesystem sopravvivono a una modifica locale ma non a un
+    // clone, dove git non le preserva e ogni file può risultare
+    // "modificato adesso". Su un clone fresco questo elenco può quindi
+    // uscire vuoto, o pieno di file che in realtà non c'entrano — è
+    // per questo dichiarato come aiuto e non incluso nell'asserzione.
+    let aiuto = '';
+    if (!trovato && existsSync(PUBBLICATO)) {
+      const etaPubblicato = statSync(PUBBLICATO).mtimeMs;
+      const radice = path.resolve(PUBBLICATO, '..', '..', 'artifacts/arena-shooter');
+      const piuRecenti = file
+        .map((relativo) => ({ relativo, mtime: statSync(path.join(radice, relativo)).mtimeMs }))
+        .filter((f) => f.mtime > etaPubblicato)
+        .sort((a, b) => b.mtime - a.mtime);
+      aiuto =
+        '\n\n(aiuto, non prova — su un clone fresco le date del filesystem non sono ' +
+        "affidabili e questo elenco può essere vuoto o fuorviante: sorgenti con data " +
+        `di modifica più recente di ${PUBBLICATO}:\n` +
+        (piuRecenti.length > 0
+          ? piuRecenti.map((f) => `  ${f.relativo}`).join('\n')
+          : '  (nessuno — le date non aiutano qui)');
+    }
+
+    expect(
+      trovato,
+      `il file pubblicato non porta l'impronta attesa (${hash}): non è questo test ` +
+        'da correggere, è la build da rifare —\n\n' +
+        '  pnpm --filter @workspace/arena-shooter run build:standalone\n' +
+        '  copy artifacts\\arena-shooter\\dist\\standalone\\index.html docs\\index.html' +
+        aiuto,
     ).toBe(true);
   });
 });
