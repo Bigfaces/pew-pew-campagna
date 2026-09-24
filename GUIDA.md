@@ -47,8 +47,9 @@ lanciatore già controlla, quindi dal secondo avvio non scarica più niente.
 
 ## 0. Prerequisito (una volta sola)
 
-Serve **Node.js 20 o superiore**. Scaricalo da <https://nodejs.org> oppure usa una
-copia portable. `pnpm` arriva con Node tramite corepack:
+Serve **Node.js 22 o più recente (consigliato 24)**. Scaricalo da
+<https://nodejs.org> oppure usa una copia portable. `pnpm` arriva con Node
+tramite corepack:
 
 ```powershell
 corepack enable
@@ -57,7 +58,7 @@ corepack enable
 Verifica:
 
 ```powershell
-node --version    # v20 o superiore
+node --version    # v22 o più recente, consigliato v24
 pnpm --version
 ```
 
@@ -140,11 +141,14 @@ cd "percorso\della\cartella\del\progetto"
 pnpm run test
 ```
 
-574 test: simulazione, rendering, campagna. Girano headless, senza browser (~3 s).
+Tutta la suite — simulazione, rendering, campagna. Gira headless, senza
+browser (~3 s).
 
-Per le metriche di bilanciamento della campagna — ritmo, distanze di ingaggio,
-durata di una vita, spazio delle build dell'albero, costo reale di ogni oggetto
-del Banco — c'è un harness dedicato che gioca centinaia di partite headless:
+Per le metriche di bilanciamento della campagna — invarianti dell'albero
+delle abilità, ritmo di Sentinella e Custode, finestra reale del
+Trasponditore misurata sull'IA nemica, spazio delle build, costo reale di
+ogni oggetto del Banco di Riconfigurazione — c'è un harness dedicato che
+gioca centinaia di partite headless:
 
 ```powershell
 pnpm --filter @workspace/arena-shooter run balance:campaign

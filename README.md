@@ -99,7 +99,7 @@ del sito.
 | [**Link qui sopra**](https://bigfaces.github.io/pew-pew-campagna/) | Un browser | La campagna. Il modo più rapido. |
 | **Doppio click su [`docs/index.html`](docs/index.html)** | Un browser | Lo stesso gioco, ma funziona anche **offline**. |
 | **Doppio click su `AVVIA.cmd`** (Windows) | Niente: se manca Node si offre di scaricarlo | Uguale, ma apre il browser da solo. |
-| **Terminale** | Node.js 20+ | Uguale, ma vedi i log e puoi lanciare i test. Vedi [GUIDA.md](GUIDA.md). |
+| **Terminale** | Node.js 22 o più recente (consigliato 24) | Uguale, ma vedi i log e puoi lanciare i test. Vedi [GUIDA.md](GUIDA.md). |
 
 Il gioco sta in **un unico file HTML** con dentro codice, stili e icona. Puoi
 copiarlo su una chiavetta o mandarlo via email: funziona con un doppio click,
@@ -160,9 +160,11 @@ che contano:
   la simulazione non distingue un nemico scriptato da un giocatore.
 
 Il bilanciamento non si discute a parole: il banco headless della campagna
-(`balance:campaign`) stampa ritmo, distanze di ingaggio, durata di una vita,
-spazio delle build dell'albero e il costo reale di ogni oggetto del Banco.
-Cambia una costante, rilancia, confronta.
+(`balance:campaign`) stampa le invarianti dell'albero delle abilità, il ritmo
+di Sentinella e Custode, la finestra reale del Trasponditore misurata
+facendo girare l'IA nemica (non solo l'aritmetica degli HP), lo spazio delle
+build dell'albero e il costo reale — in guadagni e rinunce — di ogni oggetto
+del Banco di Riconfigurazione. Cambia una costante, rilancia, confronta.
 
 ## Sviluppo
 
@@ -171,7 +173,7 @@ corepack enable                                            # abilita pnpm
 pnpm install                                               # da Git Bash su Windows
 pnpm --filter @workspace/arena-shooter run dev              # gioco su :5173
 pnpm --filter @workspace/arena-shooter run balance:campaign  # metriche della campagna
-pnpm run test                                              # 574 test, headless, ~3 s
+pnpm run test                                              # tutta la suite, headless, ~3 s
 pnpm run typecheck                                         # typecheck di tutti i pacchetti
 pnpm run build                                             # typecheck + build
 pnpm --filter @workspace/arena-shooter run build:standalone # rigenera il file singolo
