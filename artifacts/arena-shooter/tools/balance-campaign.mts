@@ -214,9 +214,19 @@ const gainsEveryLevel = (w: Walk): boolean =>
 
 console.log('\n\nINVARIANTI');
 
+// GDD.md §12: diciassette nodi, quattordici punti, di proposito — tre
+// nodi che non si possono avere in una run sola sono ciò che
+// trasforma l'albero in una build invece che in una lista della
+// spesa. Non è quindi "punti massimi === nodi", che qui sarà sempre
+// falso per design: è che lo scarto valga esattamente i tre nodi che
+// il GDD dichiara irraggiungibili.
+const NODI_IRRAGGIUNGIBILI_DA_GDD = 3;
+
 console.log(
-  `\n  1. Nessun punto senza un nodo su cui finire\n` +
-    `     ${maxPoints} punti massimi / ${NODES} nodi → ${maxPoints === NODES ? 'SÌ' : 'NO'}`,
+  `\n  1. Nodi irraggiungibili in una run sola (GDD §12: di proposito)\n` +
+    `     ${NODES} nodi − ${maxPoints} punti massimi = ${NODES - maxPoints} → ${
+      NODES - maxPoints === NODI_IRRAGGIUNGIBILI_DA_GDD ? 'OK' : 'NO, controllare'
+    }`,
 );
 
 console.log(
@@ -249,11 +259,17 @@ console.log(
     }`,
 );
 
+// Anche qui il confronto giusto è coi punti massimi (14), non coi nodi
+// (17): l'albero non può mai riempirsi del tutto (invariante 1), quindi
+// "totali a fine atto ≥ nodi" sarebbe NO per sempre. La domanda vera è
+// se si arriva al tetto dei punti spendibili — e solo all'ultimo
+// istante, non prima del colpo decisivo.
 console.log(
-  `\n  4. L'albero NON si riempie tutto prima del boss, ma si riempie\n` +
-    `     spendibili prima del colpo decisivo: ${thorough.useful}/${NODES}\n` +
-    `     totali a fine atto: ${pointsAt(thorough.xp)}/${NODES} → ${
-      thorough.useful < NODES && pointsAt(thorough.xp) >= NODES ? 'SÌ' : 'NO'
+  `\n  4. L'albero NON si riempie tutto prima del boss, ma arriva al\n` +
+    `     tetto dei punti a fine atto\n` +
+    `     spendibili prima del colpo decisivo: ${thorough.useful}/${maxPoints}\n` +
+    `     totali a fine atto: ${pointsAt(thorough.xp)}/${maxPoints} → ${
+      thorough.useful < maxPoints && pointsAt(thorough.xp) >= maxPoints ? 'OK' : 'NO, controllare'
     }`,
 );
 
