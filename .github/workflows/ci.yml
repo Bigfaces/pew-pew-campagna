@@ -1,0 +1,42 @@
+# CI: typecheck, test e build standalone a ogni push e pull request.
+# Nessun deploy qui: GitHub Pages serve già /docs da main.
+#
+# src/ui/pubblicato.test.ts verifica già, in pnpm run test, che
+# docs/index.html corrisponda ai sorgenti (impronta + confronto per
+# stringhe): non serve ripetere quel confronto qui.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: typecheck · test · build standalone
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm prima di setup-node: la cache "pnpm" di setup-node ha
+      # bisogno di trovare pnpm già sul PATH per calcolare la chiave.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Installa dipendenze (lockfile congelato)
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Test
+        run: pnpm run test
+
+      - name: Build standalone (arena-shooter)
+        run: pnpm --filter @workspace/arena-shooter run build:standalone
