@@ -1,0 +1,95 @@
+name: Segnalazione da chi ha giocato
+description: Bug, un punto dove ti sei annoiato o perso, un nemico che ti è sembrato ingiusto — qualunque cosa incontrata giocando la campagna.
+title: "[segnalazione] "
+labels:
+  - segnalazione-tester
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Grazie per il tempo speso a giocare. Più di «bello» o «brutto», le
+        cose più utili sono dove ti sei annoiato, dove ti sei perso, e fin
+        dove sei arrivato prima di smettere — anche «ho mollato al terzo
+        livello» è un dato, anzi è il dato più utile che ci sia.
+
+  - type: dropdown
+    id: tipo
+    attributes:
+      label: Che tipo di segnalazione è?
+      options:
+        - Qualcosa sembra rotto (bug)
+        - Un nemico mi è sembrato ingiusto, o non ho capito come si uccide
+        - Mi sono annoiato o mi sono perso
+        - Non ho capito come si usa qualcosa (Trasponditore, Banco di Riconfigurazione)
+        - Altro
+    validations:
+      required: true
+
+  - type: input
+    id: dove
+    attributes:
+      label: Fin dove sei arrivato
+      description: Atto e livello (es. "Atto 2, il refrigerante"), o la schermata se non stavi giocando (menu, pausa, fine partita).
+      placeholder: "Atto 1 — attracco"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: modalita
+    attributes:
+      label: Modalità
+      options:
+        - TUTORIAL
+        - MEDIO
+        - ROGUELIKE
+        - Non ricordo / non pertinente
+    validations:
+      required: false
+
+  - type: textarea
+    id: cosa
+    attributes:
+      label: Cosa è successo
+      description: >
+        Cosa ti aspettavi e cosa hai visto invece. Per un bug, i passi per
+        farlo ricomparire aiutano molto più di una descrizione generale.
+      placeholder: |
+        Es.: "Ho lanciato il Trasponditore contro il MARTELLO da davanti,
+        invece che di lato, e il nemico non si è girato — mi aspettavo si
+        scoprisse il fianco."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: banco-trasponditore
+    attributes:
+      label: Hai usato il Trasponditore e il Banco di Riconfigurazione?
+      description: O li hai ignorati perché non era chiaro a cosa servissero?
+      options:
+        - Sì, entrambi
+        - Solo il Trasponditore
+        - Solo il Banco di Riconfigurazione
+        - No, nessuno dei due — non era chiaro a cosa servissero
+        - No, per un altro motivo
+        - Non pertinente a questa segnalazione
+    validations:
+      required: false
+
+  - type: input
+    id: contesto
+    attributes:
+      label: Browser e dispositivo
+      description: Browser e sistema operativo; se giocavi da telefono o desktop.
+      placeholder: "Chrome su Windows 11, desktop"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: come
+    attributes:
+      label: Come hai giocato
+      options:
+        - label: Dal link GitHub Pages
+        - label: Da docs/index.html (doppio click)
+        - label: Da AVVIA.cmd
+        - label: Da terminale (pnpm run dev)
