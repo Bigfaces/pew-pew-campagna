@@ -155,9 +155,11 @@ che contano:
 - **La simulazione è pura e avanza a tick fissi di 60 Hz.** Non dipende dal DOM,
   quindi gira nei test, e non dipende dall'orologio, quindi si comporta identica
   su un monitor a 60 Hz e a 240 Hz. Il renderer va libero e interpola.
-- **L'input è l'unico modo di influenzare un'entità.** Tastiera e IA dei nemici
-  producono la stessa struttura di intenzione, applicata dalle stesse funzioni:
-  la simulazione non distingue un nemico scriptato da un giocatore.
+- **Il controller parla alla simulazione solo con l'input.** Tastiera, mouse e
+  comandi a schermo diventano un `CampaignInput` che `CampaignWorld.step()`
+  applica; il controller non tocca mai lo stato del mondo da sé. I nemici
+  hanno una propria intenzione (`EnemyIntent`, in `sim/campaign/enemyAi.ts`),
+  calcolata dentro lo stesso tick.
 
 Il bilanciamento non si discute a parole: il banco headless della campagna
 (`balance:campaign`) stampa le invarianti dell'albero delle abilità, il ritmo
