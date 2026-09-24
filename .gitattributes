@@ -7,6 +7,7 @@
 *.cmd text eol=crlf
 *.bat text eol=crlf
 
-# Il file giocabile è un artefatto di build: va confrontato come testo ma non
-# ha senso leggerne il diff (è minificato su una riga sola).
-giocabile/*.html -diff
+# docs/index.html è la build pubblicata (GitHub Pages e doppio click
+# offline): un artefatto di build minificato su una riga sola, va
+# confrontato come testo ma non ha senso leggerne il diff.
+docs/index.html -diff
