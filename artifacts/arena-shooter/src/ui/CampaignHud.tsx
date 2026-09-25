@@ -380,6 +380,15 @@ export function CampaignPauseScreen({
   onReset: () => void;
 }): React.ReactElement {
   const owned = snap.unlockedNodes.length;
+  // Un solo click su AZZERA cancellava il profilo — core, nodi
+  // e xp, tutto — senza nessuna conferma. Stesso schema a due tempi di
+  // ShopCard qui sotto (RENDI UN NODO → conferma/ANNULLA): il primo
+  // click chiede, il secondo esegue. Stato locale, non condiviso con
+  // nient'altro nella schermata: CampaignPauseScreen si smonta quando
+  // si esce dalla pausa (App.tsx la disegna solo con `phase ===
+  // 'paused'`), quindi la conferma non sopravvive mai a un RIPRENDI —
+  // non serve resettarla a mano.
+  const [confermaAzzeramento, setConfermaAzzeramento] = useState(false);
   return (
     <div className="overlay">
       <div className="panel" style={{ maxWidth: 560 }}>
@@ -427,14 +436,34 @@ export function CampaignPauseScreen({
         <button className="btn secondary" type="button" onClick={onQuit}>
           ABBANDONA LA MISSIONE
         </button>
-        <button
-          className="btn secondary"
-          type="button"
-          onClick={onReset}
-          style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
-        >
-          AZZERA LA PROGRESSIONE
-        </button>
+        {confermaAzzeramento ? (
+          <>
+            <button
+              className="btn secondary"
+              type="button"
+              onClick={onReset}
+              style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
+            >
+              CONFERMA — PERDI TUTTO
+            </button>
+            <button
+              className="btn secondary"
+              type="button"
+              onClick={() => setConfermaAzzeramento(false)}
+            >
+              ANNULLA
+            </button>
+          </>
+        ) : (
+          <button
+            className="btn secondary"
+            type="button"
+            onClick={() => setConfermaAzzeramento(true)}
+            style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
+          >
+            AZZERA LA PROGRESSIONE
+          </button>
+        )}
       </div>
     </div>
   );

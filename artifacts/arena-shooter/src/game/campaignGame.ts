@@ -351,6 +351,14 @@ export class CampaignGame {
     // released, so the scope has to be dropped explicitly or it would
     // still be up on resume.
     this.adsHeld = false;
+    // Stessa disciplina di adsHeld qui sopra, per lo
+    // stesso motivo — un tasto tenuto giù non genera keyup se il focus
+    // lascia la finestra mentre è premuto (onBlur qui sotto copre il
+    // caso comune, ma pause() può scattare anche da altre strade —
+    // ESC, visibilitychange, perdita del pointer lock — ed è più
+    // sicuro non contare su un solo percorso per un tasto che
+    // altrimenti resta "incollato" al ritorno).
+    this.keys.clear();
     if (document.pointerLockElement === this.canvas) document.exitPointerLock();
     this.pushHud(true);
   }
@@ -360,6 +368,17 @@ export class CampaignGame {
     this.phase = 'playing';
     this.accumulator = 0;
     this.lastFrame = performance.now();
+    // iOS (e non solo) sospende l'AudioContext quando il
+    // browser va in background — un tab nascosta chiama già pause()
+    // (vedi onVisibility), ma il ritorno passava sempre da qui, e
+    // init() era chiamato solo da start(). Senza questo il gioco
+    // restava muto per il resto della sessione dopo la prima volta in
+    // background: RIPRENDI è un gesto dell'utente, quindi è il posto
+    // giusto per far ripartire un contesto sospeso. Entrambi i metodi
+    // sono idempotenti (vedi il commento su init() in engine.ts e
+    // campaignVoice.ts): se il contesto è già attivo non fanno niente.
+    this.audio.init();
+    this.voice.init();
     this.requestPointerLock();
     this.pushHud(true);
   }
@@ -402,6 +421,11 @@ export class CampaignGame {
     this.phase = 'playing';
     this.accumulator = 0;
     this.lastFrame = performance.now();
+    // Stesso motivo di resume(): HO CAPITO è un gesto
+    // dell'utente quanto RIPRENDI, e deve poter riattivare un
+    // AudioContext sospeso allo stesso modo.
+    this.audio.init();
+    this.voice.init();
     this.requestPointerLock();
     this.pushHud(true);
   }
@@ -625,6 +649,17 @@ export class CampaignGame {
     this.pendingNextLevel = null;
     this.actBreakActCompleted = null;
     this.phase = 'playing';
+    // Stesso motivo di resume(): PROSEGUI è il gesto che
+    // rimette in moto il gioco dopo la schermata d'atto (puntatore
+    // rilasciato, come una pausa — vedi beginActBreak), quindi è qui
+    // che va rifatto lo stesso controllo, non dentro finishLevel(): il
+    // passaggio di livello a metà atto (handleEvents, 'levelCompleted')
+    // non è mai raggiungibile mentre l'audio è sospeso in background —
+    // una tab nascosta durante il gioco passa sempre da pause(), che
+    // resume() già riattiva — quindi solo questo punto d'ingresso ne
+    // ha davvero bisogno.
+    this.audio.init();
+    this.voice.init();
     this.finishLevel(next);
   }
 
@@ -696,6 +731,12 @@ export class CampaignGame {
     this.phase = 'playing';
     this.accumulator = 0;
     this.lastFrame = performance.now();
+    // AZZERA LA PROGRESSIONE porta `phase` a 'playing' senza
+    // passare da resume() — è un altro punto in cui un gesto
+    // dell'utente rimette in moto il gioco, quindi la stessa esigenza
+    // di riattivare un AudioContext sospeso vale anche qui.
+    this.audio.init();
+    this.voice.init();
     this.pushHud(true);
   }
 
@@ -812,6 +853,22 @@ export class CampaignGame {
     if (document.hidden && this.phase === 'playing') this.pause();
   };
 
+  /** `visibilitychange` (onVisibility qui sopra) copre
+   *  solo il caso in cui la tab diventa nascosta. Cliccare su
+   *  un'altra finestra del sistema operativo senza che la tab del
+   *  gioco cambi visibilità — il caso segnalato: si tiene W e si clicca
+   *  altrove — sposta il focus senza toccare `document.hidden`, e la
+   *  tastiera smette di generare keyup per il tasto tenuto: senza
+   *  questo, `this.keys` resta con 'w' dentro per sempre e il
+   *  personaggio continua a camminare da solo, tasto "incollato" anche
+   *  al rientro del focus. Un `blur` sulla finestra, non sul canvas: il
+   *  focus da rilevare è quello dell'intera pagina, non di un elemento
+   *  che qui non lo riceve nemmeno (il puntatore è agganciato, non la
+   *  tastiera). */
+  private onBlur = (): void => {
+    this.keys.clear();
+  };
+
   private onResize = (): void => this.resize();
 
   private bindEvents(): void {
@@ -819,6 +876,7 @@ export class CampaignGame {
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('mousemove', this.onMouseMove);
     window.addEventListener('resize', this.onResize);
+    window.addEventListener('blur', this.onBlur);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     document.addEventListener('visibilitychange', this.onVisibility);
     this.canvas.addEventListener('mousedown', this.onMouseDown);
@@ -838,6 +896,7 @@ export class CampaignGame {
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('mousemove', this.onMouseMove);
     window.removeEventListener('resize', this.onResize);
+    window.removeEventListener('blur', this.onBlur);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.canvas.removeEventListener('mousedown', this.onMouseDown);
@@ -1245,6 +1304,27 @@ export class CampaignGame {
           // it must be re-synced or the view keeps facing whatever
           // direction killed the player, ignoring the teleport.
           this.yaw = this.world.state.player.angle;
+          // La caduta nel vuoto ha da sempre il suo banner ("SEI
+          // CADUTO" qui sotto); morire per mano di un nemico o di una
+          // torretta non ne aveva nessuno — solo audio e scosse dello
+          // schermo. Stesso schema di 'SEI CADUTO': dove si riparte lo
+          // dice già `checkpoint.room`, che world.ts ha già aggiornato
+          // a questo punto per ogni modalità che arriva qui (Tutorial:
+          // l'ultima stanza raggiunta; Medio: killPlayer lo riporta
+          // allo spawn *prima* di leggerlo — vedi il commento lì).
+          // Roguelike non arriva qui sotto: 'actRestart' viaggia sempre
+          // insieme a 'playerDied' nello stesso tick (vedi il commento
+          // sul tipo in types.ts) e il suo banner più sotto
+          // ("ATTO … DA CAPO") dice già la stessa cosa con un dettaglio
+          // in più — un secondo banner qui sarebbe solo un lampo
+          // sovrascritto subito dopo, mai visto per davvero.
+          if (!events.some((e) => e.type === 'actRestart')) {
+            this.raise(
+              'SEI MORTO',
+              `si riparte da ${roomName(this.world.level, this.world.state.checkpoint.room)}`,
+              '#ff6b6b',
+            );
+          }
           break;
         // Roguelike: sempre insieme a 'playerDied', gestito qui sopra
         // per l'audio/fx della morte in sé. Questo evento in più dice
