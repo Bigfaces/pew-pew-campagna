@@ -40,10 +40,20 @@ const ON_ROOM: Record<string, string> = {
   molo: 'Molo di attracco. Ti stavo aspettando qui. È l’unica stanza da cui non si esce.',
 };
 
-/** Prima morte per ciascuna causa: ripetere la stessa battuta a ogni
- *  tentativo la trasformerebbe in rumore. */
-const ON_FIRST_DEATH: Record<string, string> = {
-  drone: 'Contaminante neutralizzato. — Correzione: contaminante di nuovo in piedi.',
+/** Prima morte: ripetere la stessa battuta a ogni tentativo la
+ *  trasformerebbe in rumore.
+ *
+ *  Tipizzata sulla causa vera dell'evento, non su una stringa
+ *  qualunque. Le chiavi erano 'drone' e 'boss' da quando 'drone' era
+ *  una causa di morte; con i nemici mobili le cause sono diventate
+ *  turret/enemy/boss, e la prima battuta non e' piu' scattata per
+ *  nessuno senza che il compilatore potesse dirlo. Adesso una causa
+ *  rinominata non compila finche' non ha la sua riga. */
+type DeathCause = Extract<CampaignEvent, { type: 'playerDied' }>['cause'];
+const PRIMA_MORTE = 'Contaminante neutralizzato. — Correzione: contaminante di nuovo in piedi.';
+const ON_FIRST_DEATH: Record<DeathCause, string> = {
+  turret: PRIMA_MORTE,
+  enemy: PRIMA_MORTE,
   boss: 'La Sentinella pesa quattro tonnellate. Tu no. Continua pure a scoprirlo.',
 };
 
@@ -110,7 +120,9 @@ export class ArbiterVoice {
         // battuta commenta l'atto, non il ripristino.
         return ev.inverted ? this.once('gravityFlipped', ON_FIRST['gravityFlipped']) : null;
       case 'playerDied':
-        return this.once(`death:${ev.cause}`, ON_FIRST_DEATH[ev.cause]);
+        // Torretta e nemico dicono la stessa battuta, quindi hanno anche
+        // la stessa chiave: detta una volta, non una per causa.
+        return this.once(ev.cause === 'boss' ? 'death:boss' : 'death', ON_FIRST_DEATH[ev.cause]);
       case 'shieldPickup':
         // Con la Piastra Aggiuntiva la barriera regge due colpi: la
         // battuta legge il numero dall'evento invece di affermare

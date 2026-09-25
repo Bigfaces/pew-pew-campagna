@@ -14,7 +14,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ALL_LEVELS } from '../sim/campaign/levels';
-import { ACT_BREAKS, ARBITER_LAST_WORDS } from './arbiter';
+import { ACT_BREAKS, ARBITER_LAST_WORDS, ArbiterVoice } from './arbiter';
 
 /** Il sottotitolo dei livelli sta in un riquadro largo 620px: oltre le
  *  ~120 battute diventa scomodo, e il limite duro che il test impone
@@ -99,5 +99,29 @@ describe('narrazione — niente copia-incolla', () => {
     ARBITER_LAST_WORDS.forEach((line, i) => check(`ARBITER_LAST_WORDS[${i}]`, line));
 
     expect(dupes, dupes.join('\n')).toEqual([]);
+  });
+});
+
+describe('ARBITER — la prima morte', () => {
+  // Le chiavi della battuta erano rimaste 'drone' e 'boss' dopo che le
+  // cause di morte erano diventate turret/enemy/boss: la prima morte per
+  // mano di un nemico o di una torretta non ha mai avuto la sua riga.
+  it('commenta la prima morte per un nemico, e poi tace', () => {
+    const voce = new ArbiterVoice();
+    const morte = { type: 'playerDied', cause: 'enemy' } as const;
+    expect(voce.lineFor([morte], 0)?.text).toMatch(/Contaminante/);
+    expect(voce.lineFor([morte], 1000)).toBeNull();
+  });
+
+  it('torretta e nemico condividono la battuta: non la ripete cambiando causa', () => {
+    const voce = new ArbiterVoice();
+    expect(voce.lineFor([{ type: 'playerDied', cause: 'turret' }], 0)).not.toBeNull();
+    expect(voce.lineFor([{ type: 'playerDied', cause: 'enemy' }], 1000)).toBeNull();
+  });
+
+  it('la prima morte per mano del boss ha una battuta sua', () => {
+    const voce = new ArbiterVoice();
+    voce.lineFor([{ type: 'playerDied', cause: 'enemy' }], 0);
+    expect(voce.lineFor([{ type: 'playerDied', cause: 'boss' }], 1000)?.text).toMatch(/Sentinella/);
   });
 });
