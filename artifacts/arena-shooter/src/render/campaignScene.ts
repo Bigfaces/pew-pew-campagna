@@ -27,6 +27,7 @@ import { angleDelta } from '../sim/raycast';
 import { ENEMY_COLOR, getSprites } from './enemySprites';
 import { drawTintedFrame, frameRect, spriteBox } from './spriteBaker';
 import { campCastRay, type GetTileFn } from '../sim/campaign/raycast';
+import type { ParticleSystem } from './particles';
 import type { BossKind, LevelDef, TilePos, TurretDef } from '../sim/campaign/levelTypes';
 import type {
   BossPhase,
@@ -1068,6 +1069,105 @@ function drawFloorTile(
   else ritagliato(ctx, vp, fx, tratti, disegna);
 }
 
+// ================================================================
+// PARTICELLE — lampi, scintille, schegge
+// ================================================================
+// Stesso contratto di ogni altro billboard (projectPoint di
+// render/camera.ts, protetto da sempre contro un punto dietro la
+// camera o fuori campo — vedi il commento lì sopra e la storia del
+// rombo da duecento milioni di pixel in docs/GDD.md §17.1), ma NON
+// passa da `push`/`colonneVisibili`/`ritagliato`: quelle costruiscono
+// un array di "tratti" e una closure per ogni oggetto messo in scena,
+// il prezzo giusto per la manciata di nemici e raccoglibili di un
+// livello ma non per un pool di 900 particelle lette ad ogni
+// fotogramma — è esattamente l'allocazione ad ogni sparo che il
+// commento in testa a particles.ts elenca come il difetto del
+// prototipo. Il ciclo qui sotto non alloca né array né funzioni: legge
+// il depth buffer sulla sola colonna centrale della particella, che
+// per un puntino di pochi pixel è la stessa risposta che darebbe il
+// ventaglio completo — l'occlusione parziale ai bordi conta per uno
+// sprite largo quanto un nemico, non per una scintilla.
+// ================================================================
+
+/** Disegna ogni particella viva del pool, occlusa contro il depth
+ *  buffer dei muri già tracciato per le colonne di schermo. */
+function drawParticles(
+  ctx: CanvasRenderingContext2D,
+  vp: Viewport,
+  fx: CameraFx,
+  cam: CameraView,
+  depth: Float32Array,
+  particles: ParticleSystem,
+): void {
+  const pool = particles.all;
+  ctx.save();
+  for (let i = 0; i < pool.length; i++) {
+    const p = pool[i]!;
+    if (!p.active) continue;
+
+    const dist = Math.hypot(p.x - cam.x, p.y - cam.y);
+    // Stesso pavimento di margineBillboard qui sopra, ma inline: con
+    // fino a 900 particelle attive l'oggetto che margineBillboard
+    // restituirebbe ad ogni chiamata sarebbe un'allocazione per
+    // particella per fotogramma, esattamente ciò che il pool fisso di
+    // ParticleSystem esiste per evitare.
+    const semiWorld = Math.max(p.size, 2);
+    const margine = Math.atan2(semiWorld, Math.max(1, dist));
+    const proj = projectPoint(vp, fx, cam.x, cam.y, cam.angle, p.x, p.y, margine, semiWorld);
+    if (!proj.visible) continue;
+
+    const col = Math.floor((proj.screenX - fx.shakeX - fx.bobX) / SLICE_W);
+    if (col < 0 || col >= vp.numRays || depth[col]! < proj.perp - 2) continue;
+
+    const lifeFrac = p.maxLife > 0 ? Math.max(0, Math.min(1, p.life / p.maxLife)) : 0;
+    if (lifeFrac <= 0) continue;
+
+    // Raggio a schermo: scala in prospettiva come ogni altro billboard,
+    // ma con un tetto. Il lampo alla canna nasce a una manciata di
+    // unità dall'occhio — perp piccolo — e sotto l'ottica vp.projDist
+    // (quindi tileH) è moltiplicato dallo zoom (vedi ADS_ZOOM):
+    // senza questo tetto un lampo così vicino riempirebbe l'intero
+    // mirino proprio nell'istante in cui si sta mirando, il contrario
+    // di quello per cui l'ottica esiste.
+    //
+    // 0,1 e non un valore più largo: misurato sparando contro un muro
+    // a distanza ravvicinata (un corridoio stretto, non solo sotto
+    // l'ottica), il fumo di bulletImpact — il componente più grande
+    // del modulo, size 3–6 — arrivava a un disco pieno da 250px di
+    // diametro su un fotogramma di 720px: tecnicamente un numero
+    // finito, ma di fatto la stessa tinta piatta che copre lo schermo
+    // di cui parla la storia in docs/GDD.md §17.1, solo con un tetto
+    // più alto invece di nessun tetto. Un decimo dell'altezza resta un
+    // lampo o una nube leggibili da vicino senza mai dominare
+    // l'inquadratura.
+    const r = Math.min(p.size * (proj.tileH / TILE), vp.height * 0.1);
+    if (r < 0.4) continue;
+
+    const cy = heightToScreenY(vp, fx, proj.perp, p.z);
+
+    // Le particelle "glow" scaldano verso il bianco morendo (vedi il
+    // commento sul campo in particles.ts): un lampo o una scintilla
+    // che si spegne passa per il bianco prima di sparire, invece di
+    // affievolire la propria tinta e basta.
+    let cr = p.r;
+    let cg = p.g;
+    let cb = p.b;
+    if (p.glow) {
+      const toWhite = 1 - lifeFrac;
+      cr += (255 - cr) * toWhite;
+      cg += (255 - cg) * toWhite;
+      cb += (255 - cb) * toWhite;
+    }
+
+    ctx.globalAlpha = lifeFrac;
+    ctx.fillStyle = `rgb(${cr | 0},${cg | 0},${cb | 0})`;
+    ctx.beginPath();
+    ctx.arc(proj.screenX, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawExitMarker(
   ctx: CanvasRenderingContext2D,
   screenX: number,
@@ -1107,6 +1207,10 @@ export function renderCampaignScenery(
   hasGraze: boolean,
   enraged: boolean,
   nowMs: number,
+  /** Opzionale: i vecchi punti di chiamata (e gran parte dei test) non
+   *  hanno particelle da disegnare, quindi qui è comodo restare senza
+   *  invece di far passare un pool vuoto ovunque. */
+  particles?: ParticleSystem,
 ): void {
   // --- decalcomanie sul pavimento, sotto tutto il resto ---
   for (const zone of level.gasZones) {
@@ -1347,6 +1451,10 @@ export function renderCampaignScenery(
 
   list.sort((a, b) => b.dist - a.dist);
   for (const b of list) b.draw();
+
+  // Passata a parte, non nella lista sopra: vedi il commento di testa a
+  // drawParticles sul perché non passano da `push`.
+  if (particles) drawParticles(ctx, vp, fx, cam, depth, particles);
 }
 
 /** Il buio. Non è un velo uniforme: resta un alone attorno a chi

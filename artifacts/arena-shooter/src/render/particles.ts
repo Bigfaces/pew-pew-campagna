@@ -189,22 +189,68 @@ export class ParticleSystem {
     });
   }
 
-  blood(x: number, y: number): void {
+  /** Scintille dove un colpo morde una macchina.
+   *
+   *  Era `blood()`, tinta di rosso: KESSLER-9 non ha bersagli organici,
+   *  i nemici della campagna sono tutti macchine (GDD.md sezione 4), e
+   *  quello che un proiettile stacca da una carrozzeria è metallo
+   *  incandescente, non sangue. L'arco di velocità e vita che serviva
+   *  già andava bene — cambiava solo la tavolozza — quindi questo resta
+   *  un ricolore della stessa emissione invece di un metodo nuovo da
+   *  tenere sincronizzato con quello vecchio.
+   *
+   *  `weakSpot` sceglie sia il colore sia quanto: bianco-blu elettrico e
+   *  quasi il doppio delle particelle sul punto debole (la stessa
+   *  lettura del suo anello a schermo, vedi drawEnemyWeakSpot in
+   *  campaignScene.ts), arancio-metallo e una manciata in meno sul
+   *  corpo — il colpo che *vale* sei volte l'altro (enemyHit in
+   *  world.ts) deve anche *sembrare* di più, o la lezione del punto
+   *  debole resta solo scritta nella HUD. */
+  sparks(x: number, y: number, weakSpot: boolean): void {
     this.emit(x, y, TILE * 0.55, {
-      count: 22,
-      speed: [20, 95],
+      count: weakSpot ? 26 : 15,
+      speed: [24, 100],
       spread: Math.PI * 2,
       angle: 0,
-      life: [0.4, 1.0],
-      size: [2, 4.5],
+      life: [0.3, 0.75],
+      size: [1.6, 4],
+      colors: weakSpot
+        ? [
+            [255, 255, 255],
+            [190, 230, 255],
+            [120, 200, 255],
+          ]
+        : [
+            [255, 176, 80],
+            [255, 130, 40],
+            [220, 90, 30],
+          ],
+      gravity: 320,
+      drag: 0.32,
+      glow: weakSpot,
+      upBias: 24,
+    });
+  }
+
+  /** Il tonfo di un colpo assorbito dalla piastra frontale del
+   *  Guardiano (enemyHit con damage 0, world.ts): non è un danno, è un
+   *  rimbalzo, e deve leggersi più piccolo e più freddo dei due sopra —
+   *  poche schegge grigie senza incandescenza, non una scintilla che
+   *  promette un colpo andato a segno. */
+  plateDeflect(x: number, y: number): void {
+    this.emit(x, y, TILE * 0.55, {
+      count: 7,
+      speed: [16, 55],
+      spread: Math.PI * 2,
+      angle: 0,
+      life: [0.2, 0.45],
+      size: [1.4, 2.8],
       colors: [
-        [172, 26, 26],
-        [126, 18, 18],
-        [206, 52, 44],
+        [200, 205, 214],
+        [150, 156, 168],
       ],
-      gravity: 340,
-      drag: 0.35,
-      upBias: 30,
+      gravity: 260,
+      drag: 0.4,
     });
   }
 

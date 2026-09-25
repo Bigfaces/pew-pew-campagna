@@ -10,7 +10,7 @@
 import { AudioEngine } from '../audio/engine';
 import { CampaignVoice } from '../audio/campaignVoice';
 import { VULNERABILITY_LABEL, WEAK_SPOT_LABEL, archetypeOf } from '../sim/campaign/enemies';
-import { campHasLOS } from '../sim/campaign/raycast';
+import { campCastRay, campHasLOS } from '../sim/campaign/raycast';
 import { angleDelta } from '../sim/raycast';
 import {
   campMinimapBox,
@@ -23,6 +23,7 @@ import {
 import { CameraFx, computeViewport, type Viewport } from '../render/camera';
 import { renderBanner, renderDamageOverlay, renderScope, type Banner } from '../render/overlay';
 import { renderBackdrop } from '../render/backdrop';
+import { ParticleSystem } from '../render/particles';
 import { buildBackdrops, getTextures } from '../render/textures';
 import {
   ADS_SENS_MULT,
@@ -207,6 +208,14 @@ export class CampaignGame {
    *  posizione (vedi CampaignProfile). */
   private world = CampaignGame.buildWorld(loadCampaignProfile());
   private fx = new CameraFx();
+  /** Lampi, scintille, schegge: vedi render/particles.ts. Aggiornato ad
+   *  ogni fotogramma renderizzato (tempo reale, non tick di
+   *  simulazione — sono cosmetiche, non devono retroagire sul mondo),
+   *  svuotato ad ogni cambio di mondo (finishLevel/restartAct/
+   *  resetProfile) perché una particella che sopravvive al livello che
+   *  l'ha generata punterebbe a coordinate che non vogliono più dire
+   *  niente. */
+  private particles = new ParticleSystem();
   audio = new AudioEngine();
   /** La voce della campagna. È un'istanza separata, con il suo
    *  AudioContext, non un'estensione di AudioEngine: quello è
@@ -587,6 +596,10 @@ export class CampaignGame {
     saveCampaignProfile(carried);
     this.world = new CampaignWorld(levelById(next), carried);
     this.syncToWorld();
+    // Il livello appena chiuso non esiste più: una particella nata lì
+    // (una scintilla lasciata a mezz'aria dall'ultimo colpo) punterebbe
+    // a coordinate di una mappa che non è più quella disegnata.
+    this.particles.clear();
     this.raise(
       `LIVELLO ${this.world.level.ordinal} — ${this.world.level.name}`,
       'settore successivo',
@@ -674,6 +687,10 @@ export class CampaignGame {
     saveCampaignProfile(carried);
     this.world = new CampaignWorld(target, carried);
     this.syncToWorld();
+    // Stesso motivo di finishLevel: si torna al primo livello
+    // dell'atto, e le particelle del mondo appena finito non hanno più
+    // senso in quello nuovo.
+    this.particles.clear();
     this.raise(
       `ATTO ${this.world.level.act} DA CAPO`,
       'personaggio e core raccolti restano tuoi',
@@ -717,6 +734,10 @@ export class CampaignGame {
     this.pendingNextLevel = null;
     this.actBreakActCompleted = null;
     this.fx.reset();
+    // Stesso motivo di finishLevel/restartAct: si riparte da un mondo
+    // nuovo di zecca, niente scintille del personaggio appena buttato
+    // via deve restare a schermo.
+    this.particles.clear();
     this.phase = 'playing';
     this.accumulator = 0;
     this.lastFrame = performance.now();
@@ -1015,6 +1036,56 @@ export class CampaignGame {
     return input;
   }
 
+  /** Lampo alla canna e, se il colpo non ha incontrato nulla che generi
+   *  un evento, scintille dove si è fermato contro un muro.
+   *
+   *  Il lampo si vede sempre — colpo a segno o mancato, è la propria
+   *  arma che ha sparato. Il muro invece è un'informazione che la sim
+   *  non dà: `fireWeapon()` (world.ts) emette un evento solo quando il
+   *  colpo incontra un nemico, una torretta o il boss — un colpo a
+   *  vuoto non lascia traccia, a differenza di quasi tutto il resto
+   *  della simulazione. L'unico modo di sapere dove si è fermato è
+   *  ripetere lo stesso raycast puro che la sim usa per i muri
+   *  (campCastRay, sola lettura — mai la logica che decide i danni),
+   *  lungo la stessa direzione di mira, e disegnare lì solo se nessuno
+   *  degli eventi di questo tick dice che il colpo ha preso un
+   *  bersaglio invece.
+   *
+   *  Un caso resta scoperto di proposito: il colpo che centra il boss
+   *  ma cade su un lato non colpibile (hitBoss in world.ts non emette
+   *  `bossHit` quando il danno è zero) sembra, da qui, indistinguibile
+   *  da un colpo a vuoto — la scintilla finisce sul muro dietro il
+   *  boss invece che sulla sua corazza. Il raycast puro conosce solo i
+   *  muri, non le sagome delle entità, ed estenderlo a conoscerle
+   *  vorrebbe dire duplicare qui la stessa regola che `fireWeapon`
+   *  applica già: un prezzo più alto del difetto cosmetico che evita. */
+  private spawnShotParticles(aimAngle: number, events: readonly CampaignEvent[]): void {
+    const p = this.world.state.player;
+    this.particles.muzzle(p.x, p.y, aimAngle);
+
+    const hitTarget = events.some(
+      (e) => e.type === 'enemyHit' || e.type === 'turretDown' || e.type === 'bossHit',
+    );
+    if (hitTarget) return;
+
+    // Tetto finito sulla portata: campCastRay con maxDist=Infinity, se
+    // il colpo esce dalla mappa senza incontrare un muro, restituisce
+    // `x`/`y` infiniti — lo stesso tipo di coordinata "fuori misura"
+    // che ha già fatto nero lo schermo altrove (GDD.md §17.1, §20).
+    // La diagonale del livello più grande basta e avanza.
+    const maxRange = Math.hypot(this.world.level.width, this.world.level.height) * TILE;
+    const wall = campCastRay(
+      this.world.getTile,
+      p.x,
+      p.y,
+      aimAngle,
+      maxRange,
+      this.world.level.width,
+      this.world.level.height,
+    );
+    this.particles.bulletImpact(wall.x, wall.y, aimAngle);
+  }
+
   // ---- events --------------------------------------------------------
 
   private handleEvents(events: readonly CampaignEvent[]): void {
@@ -1035,6 +1106,14 @@ export class CampaignGame {
           // raccoglibili: il suono qui, la riga in coda al metodo.
           this.audio.pickup(this.world.state.player.x, this.world.state.player.y);
           this.pickupLine = { text: pickupNotice(ev, XP_CORE), at: performance.now() };
+          // Tinta del nucleo a schermo (drawCore in campaignScene.ts,
+          // '#5eead4'): lo stesso oggetto, lo stesso colore, un istante
+          // dopo che è sparito dal mondo.
+          this.particles.pickup(
+            this.world.state.player.x,
+            this.world.state.player.y,
+            [94, 234, 212],
+          );
           break;
         case 'xpGained':
           break;
@@ -1057,6 +1136,12 @@ export class CampaignGame {
         case 'shieldRefilled':
           this.audio.pickup(this.world.state.player.x, this.world.state.player.y);
           this.pickupLine = { text: pickupNotice(ev, XP_CORE), at: performance.now() };
+          // Tinta dello scudo a schermo (drawShield, '#44ccff').
+          this.particles.pickup(
+            this.world.state.player.x,
+            this.world.state.player.y,
+            [68, 204, 255],
+          );
           break;
         case 'beaconPickup':
           // Ha una voce sua apposta (CampaignVoice.beaconPickup): non
@@ -1065,6 +1150,14 @@ export class CampaignGame {
           // sopra.
           this.voice.beaconPickup();
           this.pickupLine = { text: pickupNotice(ev, XP_CORE), at: performance.now() };
+          // Tinta del Trasponditore a schermo (BEACON_COLOR in
+          // campaignScene.ts, '#ff4fd8'): stessa anomalia magenta che
+          // non appartiene a nient'altro disegnato in campagna.
+          this.particles.pickup(
+            this.world.state.player.x,
+            this.world.state.player.y,
+            [255, 79, 216],
+          );
           break;
         case 'beaconThrown':
           // Posizionato dove atterra l'esca, non da dove parte: vedi
@@ -1097,6 +1190,7 @@ export class CampaignGame {
           break;
         case 'shieldBreak':
           this.audio.shieldBreak(this.world.state.player.x, this.world.state.player.y);
+          this.particles.shieldShatter(this.world.state.player.x, this.world.state.player.y);
           break;
         case 'shieldReactive':
           // Piastra Reattiva: la sim manda questo evento insieme a
@@ -1133,26 +1227,38 @@ export class CampaignGame {
           break;
         }
         case 'enemyHit': {
+          // Posizione una volta sola, condivisa dai due rami sotto: la
+          // piastra assorbita e il colpo che passa sono la stessa
+          // domanda — "dove sta il nemico che ho appena colpito" — con
+          // due risposte diverse.
+          const e = this.world.state.enemies.find((x) => x.id === ev.id);
+          const at: [number, number] = e
+            ? [e.x, e.y]
+            : [this.world.state.player.x, this.world.state.player.y];
+
           if (ev.damage <= 0) {
             // Colpo assorbito dalla piastra: un tonfo, non un segno di
             // colpo andato a segno. Sono due cose diverse e devono
             // suonare diverse, o la lezione del Guardiano non arriva.
             this.voice.plateAbsorbed(this.world.state.player.x, this.world.state.player.y);
             this.raise('PIASTRA FRONTALE', 'il colpo non passa', '#c9d2e0');
+            // Poche schegge grigie, non una scintilla: è un rimbalzo,
+            // non un danno, e deve sembrarlo anche senza leggere il
+            // banner (plateDeflect in render/particles.ts).
+            this.particles.plateDeflect(at[0], at[1]);
             break;
           }
-          {
-            // Punto debole contro corpo: è la meccanica centrale dei
-            // nemici, e finora suonavano identici. Il colpo giusto
-            // vale sei volte l'altro — deve sentirsi, non solo
-            // leggersi nella HUD.
-            const e = this.world.state.enemies.find((x) => x.id === ev.id);
-            const at: [number, number] = e
-              ? [e.x, e.y]
-              : [this.world.state.player.x, this.world.state.player.y];
-            if (ev.weakSpot) this.voice.enemyHitWeakSpot(at[0], at[1]);
-            else this.voice.enemyHitBody(at[0], at[1]);
-          }
+          // Punto debole contro corpo: è la meccanica centrale dei
+          // nemici, e finora suonavano identici. Il colpo giusto
+          // vale sei volte l'altro — deve sentirsi, non solo
+          // leggersi nella HUD.
+          if (ev.weakSpot) this.voice.enemyHitWeakSpot(at[0], at[1]);
+          else this.voice.enemyHitBody(at[0], at[1]);
+          // Stessa distinzione in scintille: bianco-blu elettrico e più
+          // fitte sul punto debole, arancio-metallo e più rade sul
+          // corpo (sparks in render/particles.ts) — il colpo che vale
+          // di più deve anche sembrare di più.
+          this.particles.sparks(at[0], at[1], ev.weakSpot !== null);
           this.audio.hitMarker();
           if (ev.weakSpot || ev.vulnerability) {
             // Il colpo giusto si annuncia. Dire *perché* ha fatto di
@@ -1170,12 +1276,23 @@ export class CampaignGame {
         }
         case 'enemyDown': {
           const e = this.world.state.enemies.find((x) => x.id === ev.id);
-          if (e) this.audio.kill(e.x, e.y);
+          if (e) {
+            this.audio.kill(e.x, e.y);
+            // La scintilla più grande delle due: la macchina si spegne
+            // per sempre, deve leggersi come il momento più netto della
+            // sequenza colpo→uccisione, non come un altro colpo uguale.
+            this.particles.sparks(e.x, e.y, true);
+          }
           break;
         }
         case 'turretDown': {
           const def = this.world.level.turrets.find((t) => t.id === ev.id);
-          if (def) this.audio.kill((def.tx + 0.5) * TILE, (def.ty + 0.5) * TILE);
+          if (def) {
+            const tx = (def.tx + 0.5) * TILE;
+            const ty = (def.ty + 0.5) * TILE;
+            this.audio.kill(tx, ty);
+            this.particles.sparks(tx, ty, true);
+          }
           break;
         }
         case 'floorCollapsed':
@@ -1279,10 +1396,17 @@ export class CampaignGame {
           });
           break;
         }
-        case 'bossHit':
+        case 'bossHit': {
           this.audio.hitMarker();
           this.fx.shake(10);
+          // 'bossHit' non porta coordinate proprie (a differenza di
+          // 'enemyHit'/'turretDown'): il boss è unico per livello,
+          // quindi la posizione si legge dal mondo, come già fa
+          // 'enemyLured' qui sopra per i nemici normali.
+          const boss = this.world.state.boss;
+          if (boss) this.particles.sparks(boss.x, boss.y, true);
           break;
+        }
         case 'bossDefeated': {
           this.audio.matchEnd(true);
           // Il nome è dato dal livello, non da un boss in particolare:
@@ -1414,6 +1538,7 @@ export class CampaignGame {
       // Non posizionato, come boltCycle()/scope()/death() qui sotto:
       // è la propria arma, non un suono del mondo da localizzare.
       this.audio.rifle();
+      this.spawnShotParticles(input.aimAngle, events);
     }
     this.handleEvents(events);
 
@@ -1472,6 +1597,11 @@ export class CampaignGame {
         this.keys.has('arrowup') ||
         this.keys.has('arrowdown'));
     this.fx.update(frameDt, moving, 0.72);
+    // Tempo reale, non tick di simulazione (vedi il commento su update()
+    // in render/particles.ts): stesso trattamento di fx qui sopra, e per
+    // lo stesso motivo — sono cosmesi, non devono rallentare o accelerare
+    // con MAX_TICKS_PER_FRAME.
+    this.particles.update(frameDt);
 
     const ready = this.world.state.player.weaponCooldown <= 0;
     if (ready && !this.wasReady) this.audio.boltCycle();
@@ -1527,6 +1657,7 @@ export class CampaignGame {
       hasGrazeDamage(world.state.unlockedNodes),
       world.enraged,
       now,
+      this.particles,
     );
 
     // I veli vanno sopra il mondo e sotto l'interfaccia: accecano
