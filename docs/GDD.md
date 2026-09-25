@@ -2363,3 +2363,76 @@ smesso di essere muto.
 nessun errore, `npx vite build --config vite.config.standalone.ts` seguito
 dalla copia di `dist/standalone/index.html` sopra `docs/index.html`, md5
 dei due file confrontato e identico.
+
+## 23. La revisione completa del 24 settembre
+
+Prima revisione dell'intero progetto invece che di un difetto alla volta:
+cinque letture indipendenti — simulazione, controller e rendering, design
+della campagna, repository e build, un playtest automatico nel browser —
+ciascuna tenuta a *dimostrare* quello che segnalava, con un test o una
+riproduzione, prima di chiamarlo difetto. Quello che resta aperto, e le
+decisioni che spettano al proprietario, sono in [ROADMAP.md](ROADMAP.md).
+
+### 23.1 Cosa ha trovato che nessun test vedeva
+
+- **Lo sparo del giocatore era muto.** `AudioEngine.rifle()` esisteva dal
+  fork e nessuno l'ha mai chiamato: a colpo mancato non si sentiva niente
+  fino al click dell'otturatore, 1,4 s dopo. È lo stesso difetto di §22.4 —
+  costruito e non collegato — sul suono più importante del gioco.
+- **Sette eventi della simulazione non avevano un gestore**, quattro dei
+  quali con la voce già scritta e provata: lancio, scadenza e adescamento
+  dell'esca, Piastra Reattiva. §22.4 aveva collegato la raccolta
+  dell'esca e basta; il resto del Trasponditore è rimasto muto fino a qui.
+- **L'ottica poteva lanciare un'eccezione** chiudendo «PRIMO CONTATTO» o
+  riprendendo dalla pausa: un delta di frame negativo (il timestamp del
+  rAF può precedere il `performance.now()` scritto alla ripresa) spingeva
+  l'apertura dell'ottica oltre 1 e il raggio sotto zero. Nel 30-40% delle
+  prove; in sviluppo copriva lo schermo con l'errore di Vite.
+- **ARCHIVIO, il primo livello ad anello, rompeva due presunzioni lineari.**
+  La ricarica delle piastre, l'XP e la battuta di stanza scattavano solo
+  superando il massimo raggiunto *in ordine*: chi girava nord → est → sud e
+  tornava da ovest entrava in una stanza mai vista senza ricaricare niente.
+  E morendo in una stanza *precedente* al checkpoint, quella stanza restava
+  fuori dal reset — la stessa classe di difetto di §16.4, riaperta dalla
+  geometria.
+- **Si poteva rifarmare XP morendo.** §9 dice «morire non deve poter
+  rifarmare esperienza», ma la regola copriva core e stanze: nemici e
+  torrette, rimessi in piedi da ogni respawn o riavvio d'atto, ripagavano
+  all'infinito. Il tetto di quattordici punti di §12, misurato con tanta
+  cura, in Tutorial non esisteva.
+- **ARBITER non commentava più la prima morte** da quando le cause erano
+  diventate `turret`/`enemy`/`boss`: la tabella cercava ancora `drone`.
+
+### 23.2 Cosa ha trovato fuori dal codice
+
+`pnpm install --frozen-lockfile` falliva su ogni checkout pulito dal giorno
+in cui l'Arena è stata tolta (§19): il lockfile elencava ancora sei
+dipendenze di `api-server`. Non se n'era accorto nessuno perché non c'era
+una CI, e adesso c'è (`.github/workflows/ci.yml`: install congelato,
+typecheck, test, build del file singolo). `replit.md`, che il README
+indicava come spiegazione dell'architettura, descriveva ancora «Arena
+Sniper» per intero, e il README stesso diceva che nemici e giocatore
+passano dalla stessa struttura di input — vero per l'Arena, non per la
+campagna.
+
+### 23.3 Due guardie nuove, sulla classe e non sul caso
+
+Come §21, ogni correzione porta una guardia che prende la *forma* del
+difetto invece del difetto di quel giorno:
+
+- `game/coperturaEventi.test.ts` legge l'unione `CampaignEvent` e pretende
+  che ogni tipo abbia un `case` nel controller, o compaia in un elenco di
+  esclusioni volute *con il motivo*. È l'altra metà di
+  `eventiRaccolta.test.ts` (§19.5): quello trova i rami morti, questo i
+  rami mancanti.
+- `ON_FIRST_DEATH` di ARBITER è ora tipizzato sulla causa di morte vera:
+  una causa rinominata non compila finché non ha la sua battuta.
+
+### 23.4 Cosa insegna
+
+Quasi tutto quello che questa revisione ha trovato era *scritto e non
+collegato*: un metodo audio, quattro voci, un modulo di particelle, una
+chiave di tabella. La suite era verde per ciascun pezzo, perché provava i
+pezzi, e nessun test provava il cavo fra l'uno e l'altro. Le due guardie di
+§23.3 servono a questo: rendere visibile a una suite headless un cavo che
+manca.

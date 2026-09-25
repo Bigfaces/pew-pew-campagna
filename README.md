@@ -128,7 +128,8 @@ browser da cui giochi.
 - **Trabocchetti** ambientali e core da raccogliere fuori dal percorso.
 
 Il piano completo, con le misure dietro a ogni scelta di bilanciamento, è in
-[docs/GDD.md](docs/GDD.md).
+[docs/GDD.md](docs/GDD.md). Cosa resta da fare, e le decisioni ancora aperte,
+è in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ---
 
