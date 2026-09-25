@@ -31,7 +31,7 @@ import {
 } from './constants';
 import { LEVEL_ARCHIVIO, LEVEL_NIDO, LEVEL_PLANCIA, levelById } from './levels';
 import { roomAt } from './levelTypes';
-import { centre } from './testSupport';
+import { centre, markRoomReached } from './testSupport';
 import { emptyCampaignInput, type CampaignInput } from './types';
 import { CampaignWorld } from './world';
 
@@ -352,5 +352,34 @@ describe('ARBITER', () => {
     expect(world.state.boss!.phase).toBe('modules');
     expect(world.state.boss!.damageTaken).toBe(0);
     expect(world.state.boss!.stageDamage).toBe(0);
+  });
+
+  it('morire in caccia per mano sua porta il proprio kind, non quello della Sentinella', () => {
+    // La caccia di ARBITER gira la stessa macchina della Sentinella
+    // (updateSentinella) e uccide allo stesso modo — una carica non
+    // schivata — ma il boss non è la Sentinella: la battuta di
+    // ui/arbiter.ts nomina quello giusto solo se l'evento porta quale.
+    const world = hunting();
+    // updateBoss non gira finché il checkpoint non dichiara di essere
+    // arrivati alla sua stanza (vedi enterBossRoom in testSupport.ts):
+    // senza, la carica non muoverebbe mai il boss e non lo farebbe mai
+    // collidere col giocatore.
+    markRoomReached(world, LEVEL_NIDO.boss!.room);
+    // Dotazione nuda (vedi testSupport.ts): con le piastre di base la
+    // carica verrebbe assorbita invece di uccidere.
+    world.state.player.shieldCharges = 0;
+    const boss = world.state.boss!;
+    boss.chargeDirX = -1;
+    boss.chargeDirY = 0;
+    boss.x = world.state.player.x + 10;
+    boss.y = world.state.player.y;
+    world.state.player.respawnInvulnerableMs = 0;
+
+    const events = world.step(input());
+    const morte = events.find((e) => e.type === 'playerDied');
+    expect(morte?.cause).toBe('boss');
+    if (morte?.type === 'playerDied' && morte.cause === 'boss') {
+      expect(morte.bossKind).toBe('arbiter');
+    }
   });
 });

@@ -122,6 +122,51 @@ describe('ARBITER — la prima morte', () => {
   it('la prima morte per mano del boss ha una battuta sua', () => {
     const voce = new ArbiterVoice();
     voce.lineFor([{ type: 'playerDied', cause: 'enemy' }], 0);
-    expect(voce.lineFor([{ type: 'playerDied', cause: 'boss' }], 1000)?.text).toMatch(/Sentinella/);
+    expect(
+      voce.lineFor([{ type: 'playerDied', cause: 'boss', bossKind: 'sentinella' }], 1000)?.text,
+    ).toMatch(/Sentinella/);
+  });
+
+  // Prima la causa 'boss' aveva un'unica battuta, e nominava sempre la
+  // Sentinella — anche perdendo contro il Custode o contro ARBITER
+  // stesso. I tre test seguenti pinnano la correzione: ogni boss ha la
+  // sua battuta *e* la sua chiave di "già detta", perché morire prima
+  // per mano di uno non deve spegnere la battuta di un altro.
+  it('la prima morte contro il Custode ha una battuta sua, non quella della Sentinella', () => {
+    const voce = new ArbiterVoice();
+    const text = voce.lineFor(
+      [{ type: 'playerDied', cause: 'boss', bossKind: 'custode' }],
+      0,
+    )?.text;
+    expect(text).toMatch(/Custode/);
+    expect(text).not.toMatch(/Sentinella/);
+  });
+
+  it('la prima morte contro ARBITER parla di sé, non di un altro boss', () => {
+    const voce = new ArbiterVoice();
+    const text = voce.lineFor(
+      [{ type: 'playerDied', cause: 'boss', bossKind: 'arbiter' }],
+      0,
+    )?.text;
+    // In prima persona ("io"), non la battuta di uno degli altri due.
+    expect(text).toMatch(/\bio\b/i);
+    expect(text).not.toMatch(/^La Sentinella|^Il Custode/);
+  });
+
+  it('ogni boss tiene la propria chiave di "già detta": morire prima contro uno non zittisce gli altri', () => {
+    const voce = new ArbiterVoice();
+    expect(
+      voce.lineFor([{ type: 'playerDied', cause: 'boss', bossKind: 'sentinella' }], 0),
+    ).not.toBeNull();
+    expect(
+      voce.lineFor([{ type: 'playerDied', cause: 'boss', bossKind: 'custode' }], 1000),
+    ).not.toBeNull();
+    expect(
+      voce.lineFor([{ type: 'playerDied', cause: 'boss', bossKind: 'arbiter' }], 2000),
+    ).not.toBeNull();
+    // Ma lo stesso boss una seconda volta sì: è ancora "la prima morte".
+    expect(
+      voce.lineFor([{ type: 'playerDied', cause: 'boss', bossKind: 'sentinella' }], 3000),
+    ).toBeNull();
   });
 });

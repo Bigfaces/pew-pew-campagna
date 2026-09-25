@@ -2157,6 +2157,19 @@ export class CampaignWorld {
     }
   }
 
+  /** Costruisce l'evento 'playerDied' vero per `cause`: solo la causa
+   *  'boss' porta anche quale (vedi il tipo in types.ts), e solo lei
+   *  ha bisogno di leggere `this.level.boss` — chiamata con
+   *  cause:'boss' significa che il colpo mortale è appena arrivato da
+   *  lui, quindi è sempre definito qui. Un metodo a sé invece di due
+   *  literal object scritti a mano nei due punti di killPlayer (il
+   *  ramo Roguelike e quello normale) evita che la seconda causa di
+   *  morte per boss aggiunta un giorno dimentichi uno dei due punti. */
+  private playerDiedEvent(cause: 'turret' | 'boss' | 'enemy'): CampaignEvent {
+    if (cause === 'boss') return { type: 'playerDied', cause, bossKind: this.level.boss!.kind };
+    return { type: 'playerDied', cause };
+  }
+
   private killPlayer(cause: 'turret' | 'boss' | 'enemy'): void {
     // Un'esca rimasta per terra dopo un respawn sarebbe un fantasma: il
     // giocatore è altrove, ma il richiamo (e l'evento) resterebbero
@@ -2178,7 +2191,7 @@ export class CampaignWorld {
       // CampaignProfile — perché altrimenti morire diventerebbe un
       // modo per rifarmare esperienza sugli stessi core).
       this.state.outcome = 'actRestart';
-      this.events.push({ type: 'playerDied', cause });
+      this.events.push(this.playerDiedEvent(cause));
       this.events.push({ type: 'actRestart' });
       return;
     }
@@ -2322,6 +2335,6 @@ export class CampaignWorld {
     // la pena tornare a prenderlo.
     for (const s of this.state.shields) s.collected = false;
 
-    this.events.push({ type: 'playerDied', cause });
+    this.events.push(this.playerDiedEvent(cause));
   }
 }

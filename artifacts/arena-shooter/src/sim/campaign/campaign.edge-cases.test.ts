@@ -470,7 +470,15 @@ describe('CampaignWorld — morte resetta solo il pericolo della propria stanza'
     world.state.player.respawnInvulnerableMs = 0;
 
     const events = world.step(input());
-    expect(events.some((e) => e.type === 'playerDied' && e.cause === 'boss')).toBe(true);
+    const morte = events.find((e) => e.type === 'playerDied');
+    expect(morte?.cause).toBe('boss');
+    // La battuta di ARBITER (ui/arbiter.ts) nomina il boss giusto solo
+    // se l'evento porta quale: senza, "morte per boss" sarebbe rimasto
+    // un dato generico e la Sentinella sarebbe stata l'unico nome
+    // possibile, giusto o sbagliato che fosse.
+    if (morte?.type === 'playerDied' && morte.cause === 'boss') {
+      expect(morte.bossKind).toBe('sentinella');
+    }
 
     expect(world.state.boss!.phase).toBe('guard');
     expect(world.state.boss!.damageTaken).toBe(0);

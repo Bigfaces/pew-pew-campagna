@@ -14,6 +14,7 @@
 // fermandosi a leggere.
 // ================================================================
 
+import type { BossKind } from '../sim/campaign/levelTypes';
 import type { CampaignEvent } from '../sim/campaign/types';
 
 export interface ArbiterLine {
@@ -46,13 +47,32 @@ const ON_ROOM: Record<string, string> = {
  *  una causa di morte; con i nemici mobili le cause sono diventate
  *  turret/enemy/boss, e la prima battuta non e' piu' scattata per
  *  nessuno senza che il compilatore potesse dirlo. Adesso una causa
- *  rinominata non compila finche' non ha la sua riga. */
+ *  rinominata non compila finche' non ha la sua riga.
+ *
+ *  Due mappe, non una, per lo stesso principio applicato due volte:
+ *  torretta e nemico restano la stessa battuta (PRIMA_MORTE), ma i
+ *  tre boss no. Prima la morte per mano di un boss diceva sempre "La
+ *  Sentinella", anche contro il Custode o contro ARBITER stesso — il
+ *  difetto era proprio questo, una causa con un solo testo per tre
+ *  nemici diversi. ON_FIRST_BOSS_DEATH è quindi tipizzata su BossKind
+ *  invece che ripetuta dentro ON_FIRST_DEATH: un boss nuovo non
+ *  compila finché non ha la sua riga, stessa garanzia di sopra. */
 type DeathCause = Extract<CampaignEvent, { type: 'playerDied' }>['cause'];
 const PRIMA_MORTE = 'Contaminante neutralizzato. — Correzione: contaminante di nuovo in piedi.';
-const ON_FIRST_DEATH: Record<DeathCause, string> = {
+const ON_FIRST_DEATH: Record<Exclude<DeathCause, 'boss'>, string> = {
   turret: PRIMA_MORTE,
   enemy: PRIMA_MORTE,
-  boss: 'La Sentinella pesa quattro tonnellate. Tu no. Continua pure a scoprirlo.',
+};
+const ON_FIRST_BOSS_DEATH: Record<BossKind, string> = {
+  sentinella: 'La Sentinella pesa quattro tonnellate. Tu no. Continua pure a scoprirlo.',
+  // Atto II: la derisione è la stessa della Sentinella, ma la lezione
+  // è opposta — qui non serve muoversi per morire, basta essere nel
+  // posto sbagliato quando le luci si spengono.
+  custode: 'Il Custode non insegue nessuno. Con te non ne aveva bisogno.',
+  // Atto III: da qui ARBITER non parla più di un altro boss, parla di
+  // sé. Gli altri due boss erano macchine della stazione che guidava
+  // lui (GDD.md sezione 2); questo è il suo corpo, e lo dice.
+  arbiter: 'Sentinella, Custode: li guidavo io. Adesso non c’è più niente in mezzo.',
 };
 
 const ON_FIRST: Record<string, string> = {
@@ -111,8 +131,13 @@ export class ArbiterVoice {
         return ev.inverted ? this.once('gravityFlipped', ON_FIRST['gravityFlipped']) : null;
       case 'playerDied':
         // Torretta e nemico dicono la stessa battuta, quindi hanno anche
-        // la stessa chiave: detta una volta, non una per causa.
-        return this.once(ev.cause === 'boss' ? 'death:boss' : 'death', ON_FIRST_DEATH[ev.cause]);
+        // la stessa chiave: detta una volta, non una per causa. I tre
+        // boss no: ciascuno ha la sua battuta (ON_FIRST_BOSS_DEATH) e la
+        // sua chiave di "già detta", altrimenti morire prima contro la
+        // Sentinella spegnerebbe per sempre anche la battuta del Custode.
+        return ev.cause === 'boss'
+          ? this.once(`death:boss:${ev.bossKind}`, ON_FIRST_BOSS_DEATH[ev.bossKind])
+          : this.once('death', ON_FIRST_DEATH[ev.cause]);
       case 'shieldPickup':
         // Con la Piastra Aggiuntiva la barriera regge due colpi: la
         // battuta legge il numero dall'evento invece di affermare

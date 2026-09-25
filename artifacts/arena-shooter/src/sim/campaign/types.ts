@@ -14,6 +14,7 @@
 // ================================================================
 
 import type { EnemyKind, Vulnerability, WeakSpot } from './enemies';
+import type { BossKind } from './levelTypes';
 
 export type RoomId = string;
 
@@ -575,7 +576,17 @@ export type CampaignEvent =
   | { type: 'nodeRefunded'; id: string }
   | { type: 'purchaseRefused'; id: string; reason: 'punti' | 'atto' | 'gia-preso' | 'sconosciuto' }
   | { type: 'levelCompleted'; levelId: string; next: string | null }
-  | { type: 'playerDied'; cause: 'turret' | 'boss' | 'enemy' }
+  | { type: 'playerDied'; cause: 'turret' | 'enemy' }
+  /** Come sopra, ma per mano di un boss: porta anche quale
+   *  (`this.level.boss.kind`, vedi CampaignWorld.killPlayer). Un
+   *  ramo separato invece di un `bossKind?` opzionale sul ramo
+   *  sopra — la prima morte per mano di un boss ha una battuta
+   *  diversa per ciascuno (ui/arbiter.ts, ON_FIRST_BOSS_DEATH): senza
+   *  questo ramo "il boss quale" sarebbe stato un valore che il
+   *  compilatore lascia dimenticare, esattamente il difetto per cui
+   *  la Sentinella veniva nominata anche morendo contro il Custode o
+   *  ARBITER stesso. */
+  | { type: 'playerDied'; cause: 'boss'; bossKind: BossKind }
   /** Solo Roguelike: la morte non chiude il livello, chiude l'atto.
    *  Sempre insieme a 'playerDied' nello stesso tick — questo è
    *  l'evento in più che dice al controller di non fare il respawn
