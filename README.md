@@ -146,8 +146,6 @@ artifacts/arena-shooter/src/
   game/          game loop a fixed timestep della campagna
   ui/            schermate React (menu, HUD, pausa, fine partita)
   stats/         profilo di campagna, con fallback su localStorage
-artifacts/api-server/   API rimasta dai tempi dell'Arena; il client non la contatta più
-lib/                    schema DB, spec OpenAPI, tipi condivisi
 ```
 
 Le scelte architetturali non ovvie sono spiegate in [replit.md](replit.md). Le due
@@ -206,6 +204,4 @@ oggi contiene solo `angleDelta`, condivisa con la campagna.
 ## Stack
 
 pnpm workspaces · Node.js 24 · TypeScript 5.9 · Vite 7 · React 19 (solo per i
-menu) · canvas 2D per il mondo · Vitest. `artifacts/api-server` (Express 5,
-PostgreSQL + Drizzle) resta nel repository ma il client non lo contatta più:
-serviva il signaling e la classifica dell'Arena.
+menu) · canvas 2D per il mondo · Vitest.

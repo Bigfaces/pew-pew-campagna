@@ -226,17 +226,9 @@ artifacts/arena-shooter/src/
   game/          game loop a fixed timestep della campagna
   ui/            schermate React (menu, HUD, pausa, fine partita)
   stats/         profilo di campagna, con fallback su localStorage
-
-artifacts/api-server/src/
-  routes/health.ts   /api/healthz — l'unico endpoint rimasto
 ```
 
 Le manopole comuni al fucile (velocità, cooldown, zoom dell'ottica) stanno in
 `sim/constants.ts`. Le manopole della campagna stanno in
 `sim/campaign/constants.ts`, e la mappa che si gioca davvero è in
 `sim/campaign/levels.ts`.
-
-`artifacts/api-server` (Express, PostgreSQL + Drizzle in `lib/db`) resta nel
-repository come ossatura per una futura classifica della campagna (modalità
-roguelike), ma il gioco non lo contatta: la campagna è single-player e i
-progressi vivono solo nel browser da cui giochi.

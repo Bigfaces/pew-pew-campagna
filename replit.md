@@ -28,10 +28,8 @@ tecnica: il raycaster su canvas 2D e il motore audio sintetizzato.
   Trasponditore misurata sull'IA nemica, lo spazio delle build e il costo di
   ogni oggetto del Banco
 - `pnpm run test` — tutta la suite, headless
-- `pnpm run typecheck` — typecheck di tutti i pacchetti del workspace (prima
-  `typecheck:libs`, perché `lib/*` deve emettere i suoi `.d.ts`)
-- `pnpm run build` — typecheck + build ricorsiva di tutto il workspace,
-  incluso `artifacts/api-server`, che il gioco non contatta più (vedi sotto)
+- `pnpm run typecheck` — typecheck del gioco, unico pacchetto del workspace
+- `pnpm run build` — typecheck + build del gioco
 
 Ambiente, letto da `vite.config.ts`:
 
@@ -47,9 +45,6 @@ vive nel `localStorage` del browser, non su un server.
 
 pnpm workspaces · Node.js 22 o più recente (consigliato 24) · TypeScript 5.9
 · Vite 7 · React 19 (solo per i menu) · canvas 2D per il mondo · Vitest.
-`artifacts/api-server` (Express 5, PostgreSQL + Drizzle) resta nel
-repository ma il client non lo contatta più — vedi "Cosa resta dell'Arena"
-più sotto.
 
 ## Dove vive il codice
 
@@ -107,24 +102,3 @@ Tutto il gameplay sta in `artifacts/arena-shooter/src`:
   Niente server, quindi niente account e niente sincronizzazione fra
   dispositivi; un salvataggio che fallisce (navigazione privata) non blocca
   la partita, semplicemente non sopravvive alla sessione.
-
-## Cosa resta dell'Arena
-
-`artifacts/api-server` e i pacchetti `lib/*` sono sopravvissuti alla
-rimozione dell'Arena (docs/GDD.md §19) ma il client di gioco non li contatta
-più per nessuna ragione:
-
-- `artifacts/api-server` (Express 5, CORS, log strutturati con pino) espone
-  oggi solo `/api/healthz`. Serviva il signaling WebRTC e la classifica
-  dell'Arena, entrambi tolti insieme a lei.
-- `lib/db` tiene un'impalcatura di connessione a PostgreSQL via Drizzle
-  (`getDb`/`isDatabaseConfigured`) con uno schema volutamente vuoto —
-  pronta per un'eventuale classifica della modalità Roguelike, ma oggi
-  `artifacts/api-server` non la importa nemmeno più nel proprio
-  `package.json`.
-- `lib/api-zod` e `lib/api-spec` restano come tipi condivisi e spec OpenAPI
-  per quella stessa API, anch'essi fuori dal percorso che il client di
-  gioco percorre.
-
-Nessuno di questi pacchetti impedisce di giocare: sono candidati a un giro
-di pulizia successivo, non qualcosa che serva toccare per giocare.

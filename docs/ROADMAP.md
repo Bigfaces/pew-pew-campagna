@@ -17,7 +17,6 @@ repository in modi che vale la pena scegliere, non dedurre.
 
 | # | Domanda | Raccomandazione | Perché |
 | --- | --- | --- | --- |
-| D1 | `artifacts/api-server`, `lib/db`, `lib/api-spec`, `lib/api-zod`: tenerli, archiviarli o toglierli? | **Toglierli**, lasciando un tag git sull'ultimo commit che li contiene | Il client non li contatta più dall'uscita dell'Arena (§19). `api-server` espone solo `/api/healthz`. `lib/api-spec` porta `orval`, che da solo fa 23 delle 35 vulnerabilità di `pnpm audit`, comprese tutte e 11 le critiche; altre 2 (`qs`) arrivano da `api-server`. Se un giorno serve una classifica per la Roguelike, il tag li restituisce. |
 | D2 | `render/particles.ts` (297 righe, mai importato da nessuno dal giorno del fork): collegarlo o toglierlo? | **Collegarlo** | Lo sparo ha il suono da questo giro ma nessun segno visivo: niente lampo alla canna, niente scintille sul muro. Il modulo ha già `muzzle()`, `bulletImpact()`, `blood()`, `shieldShatter()`. |
 | D3 | XP dei colpi al boss: oggi ogni colpo paga (`XP_BOSS_HIT_SOLID/GRAZE`) anche dopo una morte che rimette il boss in piedi. | **Pagarli una sola volta per fase** | È l'ultimo varco per rifarmare XP morendo apposta: nemici e torrette sono stati chiusi in questo giro (§9, «morire non deve poter rifarmare esperienza»). |
 | D4 | ARBITER diventa «alterato» dopo 2 colpi su 3 della fase di caccia: la soglia è quella della Sentinella (`BOSS_ENRAGE_AT = 1,5`), riusata senza commento. | **Soglia propria**, su `stageDamage` | Non è chiaro se sia voluto; se lo è, basta un commento. |
@@ -80,10 +79,11 @@ Non rompe niente oggi, ma rende ogni correzione futura più cara.
   `ui/TouchControls.tsx` (la matematica del joystick è pura),
   `render/camera.ts` (i casi limite di `projectPoint`, cuore della
   correzione di §17.1).
-- **Le altre vulnerabilità di `pnpm audit`**, tolte quelle di D1: nove nella
-  catena di build e test del gioco (`vitest`, `postcss`, `nanoid`,
-  `browserslist`, `baseline-browser-mapping`) e una in `esbuild`. Sono tutte dipendenze di sviluppo e
-  nessuna finisce nel file pubblicato, ma vanno aggiornate.
+- **Le vulnerabilità restanti di `pnpm audit`** (10, nessuna critica): nove
+  nella catena di build e test del gioco (`vitest`, `postcss`, `nanoid`,
+  `browserslist`, `baseline-browser-mapping`) e una in `esbuild`. Sono tutte
+  dipendenze di sviluppo e nessuna finisce nel file pubblicato, ma vanno
+  aggiornate.
 - `tsconfig.base.json` spegne `strictFunctionTypes` e `noImplicitOverride`
   senza dire perché.
 
@@ -104,8 +104,8 @@ Ognuno si chiude da solo e lascia il gioco pubblicabile.
 3. **Il colpo si deve vedere, oltre che sentire.** D2 (particelle), più
    l'onboarding del Trasponditore e il «PRIMO CONTATTO» un po' più tardi
    (difetti 2 e 3).
-4. **Pulizia.** D1 (residui dell'Arena), D6 (Prettier nella CI), i metodi
-   audio morti, i minori del punto 7.
+4. **Pulizia.** D6 (Prettier nella CI), i metodi audio morti, i minori del
+   punto 7.
 5. **Refactoring** di `world.ts` e `campaignGame.ts`, con i test mancanti
    scritti *prima* di spostare il codice, così provano che niente è cambiato.
 6. **Contenuti**, solo dopo il playtest umano: D3, D4, D5.
