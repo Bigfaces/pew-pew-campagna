@@ -1010,9 +1010,30 @@ export class CampaignGame {
           this.voice.beaconPickup();
           this.pickupLine = { text: pickupNotice(ev, XP_CORE), at: performance.now() };
           break;
+        case 'beaconThrown':
+          // Posizionato dove atterra l'esca, non da dove parte: vedi
+          // il commento su beaconThrown() in campaignVoice.ts — l'evento
+          // porta già le coordinate di atterraggio.
+          this.voice.beaconThrown(ev.x, ev.y);
+          break;
+        case 'beaconExpired':
+          // Non posizionato di proposito (vedi il commento sul metodo):
+          // è la fine di uno stato dell'arma del giocatore, non un
+          // evento nel mondo da localizzare.
+          this.voice.beaconExpired();
+          break;
         case 'enemySighted':
           this.maybeShowLegend();
           break;
+        case 'enemyLured': {
+          // Posizionato sul nemico che si volta, non sull'esca: vedi il
+          // commento su enemyLured() in campaignVoice.ts — è la
+          // macchina che si fa ingannare, e deve suonare da dove sta
+          // la macchina.
+          const e = this.world.state.enemies.find((x) => x.id === ev.id);
+          if (e) this.voice.enemyLured(e.x, e.y);
+          break;
+        }
         case 'dashStarted':
           // Aveva in prestito il suono del respawn dell'Arena, con un
           // commento che lo ammetteva. Adesso ha il suo.
@@ -1020,6 +1041,15 @@ export class CampaignGame {
           break;
         case 'shieldBreak':
           this.audio.shieldBreak(this.world.state.player.x, this.world.state.player.y);
+          break;
+        case 'shieldReactive':
+          // Piastra Reattiva: la sim manda questo evento insieme a
+          // 'shieldBreak' nello stesso tick quando il nodo è innestato
+          // (vedi shieldRefundsShot in world.ts) — 'shieldBreak' qui
+          // sopra suona già il colpo assorbito, questo aggiunge lo
+          // scatto del fucile che torna pronto all'istante. Stessa
+          // posizione di 'shieldBreak': è la stessa piastra.
+          this.voice.shieldReactive(this.world.state.player.x, this.world.state.player.y);
           break;
         case 'enemyAttack': {
           // Il colpo si sente da dove parte: in una stanza con più
@@ -1105,6 +1135,18 @@ export class CampaignGame {
           this.voice.gasHazard();
           this.raise('CONTAMINANTE', 'niente scanner, niente ottica', '#9bff8c');
           break;
+        // 'gasCleared' non ha un case, e non e' una dimenticanza: a
+        // differenza della gravita' ("suona in entrambi i versi",
+        // GDD.md sezione "Voce audio" — il ripristino e' un cambio di
+        // regole tanto quanto il flip, quindi ha voce anche lui, vedi
+        // 'gravityFlipped' qui sotto) non c'e' nel GDD nessun'analoga
+        // intenzione scritta per l'uscita dal gas. L'ingresso ha una
+        // voce dedicata (gasHazard) perche' e' un pericolo nuovo da
+        // annunciare; l'uscita si legge gia' da soli (scanner e ottica
+        // che tornano, HUD che smette di segnare 'blinded') e non e'
+        // richiesto un suono in piu'. Il caso e' elencato con questo
+        // stesso motivo nell'elenco di esclusioni volute di
+        // coperturaEventi.test.ts.
         case 'fellIntoChasm':
           this.audio.death();
           this.fx.shake(22);
@@ -1118,6 +1160,13 @@ export class CampaignGame {
           this.voice.blackout();
           this.raise('BLACKOUT DI SETTORE', 'lo scanner regge', '#7788aa');
           break;
+        // 'blackoutCleared' non ha un case, stesso motivo di
+        // 'gasCleared' qui sopra: nessun'intenzione scritta nel GDD per
+        // un suono di ripristino del buio (a differenza della
+        // gravita', l'unica coppia entrata/uscita per cui il GDD lo
+        // chiede esplicitamente), e il ritorno della vista si legge
+        // gia' da solo. Elencato con questo motivo in
+        // coperturaEventi.test.ts.
         case 'gravityFlipped':
           // Suona in entrambi i versi. Il ripristino è un cambio di
           // regole tanto quanto l'inversione, e sentirlo solo a
@@ -1129,6 +1178,14 @@ export class CampaignGame {
         case 'bossExposed':
           this.voice.bossVulnerableOpen();
           break;
+        // 'bossEnraged' non ha un case: ha gia' un segno a schermo (la
+        // HUD colora ed etichetta 'ALTERATO'/'ALTERATA', vedi
+        // CampaignHudSnapshot.bossEnraged e CampaignHud.tsx; ARBITER ha
+        // anche una battuta dedicata, vedi ON_FIRST in ui/arbiter.ts) e
+        // nessun suono per questo evento e' previsto da nessuna parte
+        // nel GDD o nei commenti del modulo voce — a differenza della
+        // gravita', qui non c'e' un'analoga intenzione scritta.
+        // Elencato con questo motivo in coperturaEventi.test.ts.
         case 'bossStage':
           this.voice.bossPhaseChange(ev.stage);
           this.fx.shake(14);
