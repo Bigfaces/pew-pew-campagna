@@ -33,10 +33,8 @@ export const ARBITER_LINE_MS = 5200;
 export const PICKUP_LINE_MS = 2800;
 
 const ON_ROOM: Record<string, string> = {
-  corridoio:
-    'Paratia sei aperta. Registro l’anomalia: qualcosa qui dentro respira ancora.',
-  magazzino:
-    'Magazzino otto. Inventario aggiornato: tredici casse, un drone, un contaminante.',
+  corridoio: 'Paratia sei aperta. Registro l’anomalia: qualcosa qui dentro respira ancora.',
+  magazzino: 'Magazzino otto. Inventario aggiornato: tredici casse, un drone, un contaminante.',
   molo: 'Molo di attracco. Ti stavo aspettando qui. È l’unica stanza da cui non si esce.',
 };
 
@@ -63,12 +61,9 @@ const ON_FIRST: Record<string, string> = {
   turretDown: 'Unità di difesa fuori servizio. Ne ho altre undici. Avevo.',
   shieldRefilled: 'La tua barriera si è ricaricata da sola. Qualcuno ti ha equipaggiato bene.',
   dashStarted: 'Accelerazione anomala. Il tuo scheletro non è tarato per quello.',
-  nodeUnlocked:
-    'Stai riscrivendo te stesso con i miei ricambi. Trovo la cosa quasi elegante.',
-  bossEnraged:
-    'Le hai fatto male. Interessante. Ora smette di trattarti come un contaminante.',
-  floorCollapsed:
-    'Quel ponte lo avevo segnalato come non sicuro. Nel registro. Che leggo solo io.',
+  nodeUnlocked: 'Stai riscrivendo te stesso con i miei ricambi. Trovo la cosa quasi elegante.',
+  bossEnraged: 'Le hai fatto male. Interessante. Ora smette di trattarti come un contaminante.',
+  floorCollapsed: 'Quel ponte lo avevo segnalato come non sicuro. Nel registro. Che leggo solo io.',
   gasEntered:
     'Contaminante in sospensione. I tuoi sensori sono ciechi. I miei no, ma non li condivido.',
   levelCompleted: 'Settore sigillato alle tue spalle. Non che avessi intenzione di tornarci.',
@@ -80,18 +75,13 @@ const ON_FIRST: Record<string, string> = {
   // annotava, adesso commenta.
   fellIntoChasm:
     'Il camminamento non c’è più da sei anni. Mi chiedevo se lo avresti notato prima o dopo.',
-  blackoutEntered:
-    'Luci di settore spente. Tranquillo: io ti vedo lo stesso.',
-  gravityFlipped:
-    'Su e giù erano una convenzione. L’ho revocata. Dimmi come procede.',
-  bossExposed:
-    'Il Custode si è aperto. Dura poco. Come quasi tutto, qui.',
+  blackoutEntered: 'Luci di settore spente. Tranquillo: io ti vedo lo stesso.',
+  gravityFlipped: 'Su e giù erano una convenzione. L’ho revocata. Dimmi come procede.',
+  bossExposed: 'Il Custode si è aperto. Dura poco. Come quasi tutto, qui.',
   // Atto III. ARBITER non commenta più quello che fai: commenta se
   // stesso. È l'ultima cosa rimasta da catalogare.
-  bossStage:
-    'Una fase è finita. Ne ho altre due. Poi non avrò più niente da mostrarti.',
-  bossCoreSealed:
-    'Richiuso. Non era distrazione, era un intervallo. Ricominciamo dal principio.',
+  bossStage: 'Una fase è finita. Ne ho altre due. Poi non avrò più niente da mostrarti.',
+  bossCoreSealed: 'Richiuso. Non era distrazione, era un intervallo. Ricominciamo dal principio.',
 };
 
 /** Traduce gli eventi della simulazione in una battuta, se ce n'è una

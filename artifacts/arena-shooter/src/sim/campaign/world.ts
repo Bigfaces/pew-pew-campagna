@@ -331,7 +331,11 @@ export class CampaignWorld {
    *  personaggio esistente ha già fissato la sua nel profilo, e
    *  lasciare che il menu la cambi a metà campagna renderebbe le
    *  regole di morte incoerenti con quanto già giocato. */
-  constructor(level: LevelDef, profile?: CampaignProfile, difficulty: CampaignDifficulty = 'tutorial') {
+  constructor(
+    level: LevelDef,
+    profile?: CampaignProfile,
+    difficulty: CampaignDifficulty = 'tutorial',
+  ) {
     this.level = level;
     const xp = profile?.xp ?? 0;
     const playerLevel = levelForXp(xp);
@@ -474,8 +478,7 @@ export class CampaignWorld {
             ...centreOf(level.boss.tx, level.boss.ty),
             angle: Math.PI,
             phase: initialBossPhase(level.boss.kind),
-            phaseTimer:
-              level.boss.kind === 'custode' ? CUSTODE_MANIPULATION_MS : BOSS_GUARD_MS,
+            phaseTimer: level.boss.kind === 'custode' ? CUSTODE_MANIPULATION_MS : BOSS_GUARD_MS,
             damageTaken: 0,
             chargeDirX: 0,
             chargeDirY: 0,
@@ -523,10 +526,7 @@ export class CampaignWorld {
   get darkness(): number {
     const boss = this.state.boss;
     const fromBoss = boss !== null && boss.phase === 'blackout' ? 1 : 0;
-    return Math.max(
-      fromBoss,
-      Math.min(1, this.state.player.darkMs / BLACKOUT_LINGER_MS),
-    );
+    return Math.max(fromBoss, Math.min(1, this.state.player.darkMs / BLACKOUT_LINGER_MS));
   }
 
   /** Il mondo è capovolto. */
@@ -824,8 +824,10 @@ export class CampaignWorld {
     // invertire la rotta a metà (vedi NODE_DASH_STEER_RATE).
     if (p.dashTimer > 0) {
       p.dashTimer = Math.max(0, p.dashTimer - TICK_MS);
-      const steerRate = movementStatsFor(this.state.unlockedNodes, this.state.purchases)
-        .dashSteerRate;
+      const steerRate = movementStatsFor(
+        this.state.unlockedNodes,
+        this.state.purchases,
+      ).dashSteerRate;
       if (steerRate > 0 && (input.forward !== 0 || input.strafe !== 0)) {
         // Stessa costruzione della direzione desiderata di
         // startDashIfRequested: quella in cui si sta spingendo, in
@@ -868,8 +870,7 @@ export class CampaignWorld {
     // vista è capovolta, quindi "destra" è dall'altra parte. Il nodo
     // Ancoraggio toglie proprio questo, e lascia solo il ribaltamento
     // visivo.
-    const mirror =
-      p.gravityFlipped && !resistsGravityFlip(this.state.unlockedNodes) ? -1 : 1;
+    const mirror = p.gravityFlipped && !resistsGravityFlip(this.state.unlockedNodes) ? -1 : 1;
     let vx = fx * forward + rx * strafe * mirror * STRAFE_MULT;
     let vy = fy * forward + ry * strafe * mirror * STRAFE_MULT;
 
@@ -1012,11 +1013,7 @@ export class CampaignWorld {
    *  un nemico è una cosa che il livello ha il diritto di dire, e ci
    *  sono due o tre secondi per rispondere. Rinascere in vista di un
    *  nemico no: quei secondi li hai già spesi. */
-  private puntoSicuroVicino(
-    x: number,
-    y: number,
-    room: string,
-  ): { x: number; y: number } {
+  private puntoSicuroVicino(x: number, y: number, room: string): { x: number; y: number } {
     if (this.isSafeToRespawn(x, y)) return { x, y };
 
     const tx0 = Math.floor(x / TILE);
@@ -1114,9 +1111,7 @@ export class CampaignWorld {
   private updateGas(): void {
     const p = this.state.player;
     const { tx, ty } = this.playerTile();
-    const inGas = this.level.gasZones.some((z) =>
-      z.tiles.some((t) => t.tx === tx && t.ty === ty),
-    );
+    const inGas = this.level.gasZones.some((z) => z.tiles.some((t) => t.tx === tx && t.ty === ty));
 
     const wasBlind = p.empMs > 0;
     if (inGas) {
@@ -1137,9 +1132,7 @@ export class CampaignWorld {
   private updateBlackout(): void {
     const p = this.state.player;
     const { tx, ty } = this.playerTile();
-    const zone = this.level.blackouts.find((z) =>
-      z.tiles.some((t) => t.tx === tx && t.ty === ty),
-    );
+    const zone = this.level.blackouts.find((z) => z.tiles.some((t) => t.tx === tx && t.ty === ty));
 
     const wasDark = p.darkMs > 0;
     if (zone) p.darkMs = zone.lingerMs;
@@ -1682,15 +1675,7 @@ export class CampaignWorld {
       const def = this.turretDef(t.id);
       const { x, y } = centreOf(def.tx, def.ty);
 
-      const los = campHasLOS(
-        this.getTile,
-        x,
-        y,
-        p.x,
-        p.y,
-        this.level.width,
-        this.level.height,
-      );
+      const los = campHasLOS(this.getTile, x, y, p.x, p.y, this.level.width, this.level.height);
 
       if (!los) t.reactionTimer = def.reactionMs;
       else if (t.reactionTimer > 0) {
@@ -1824,9 +1809,7 @@ export class CampaignWorld {
     boss.phaseTimer -= TICK_MS;
     if (boss.phaseTimer > 0) return;
 
-    const manipulation = this.enraged
-      ? CUSTODE_MANIPULATION_ENRAGED_MS
-      : CUSTODE_MANIPULATION_MS;
+    const manipulation = this.enraged ? CUSTODE_MANIPULATION_ENRAGED_MS : CUSTODE_MANIPULATION_MS;
 
     switch (boss.phase) {
       case 'blackout':

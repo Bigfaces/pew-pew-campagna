@@ -67,7 +67,7 @@ describe('Banco — forma degli innesti', () => {
     expect(shopItemCost('sconto-amici')).toBe(Infinity);
   });
 
-  it('gli innesti si dividono fra i due intervalli d\'atto, e nessuno resta fuori', () => {
+  it("gli innesti si dividono fra i due intervalli d'atto, e nessuno resta fuori", () => {
     const a1 = shopItemsForAct(1);
     const a2 = shopItemsForAct(2);
     expect(a1.length).toBeGreaterThan(0);
@@ -91,7 +91,7 @@ describe('Banco — quanto costa, e a chi lo toglie', () => {
     expect(pointsSpent([], ['innesto-che-non-esiste-piu'])).toBe(0);
   });
 
-  it('comprare tutto il Banco lascia comunque dei punti per l\'albero', () => {
+  it("comprare tutto il Banco lascia comunque dei punti per l'albero", () => {
     // Se un giorno il Banco costasse più dei punti disponibili,
     // esisterebbero build impossibili da completare in nessun modo.
     const punti = LEVEL_XP_THRESHOLDS.length - 1;
@@ -173,7 +173,9 @@ describe('Banco — come si compongono gli effetti', () => {
 
   it('e ogni innesto migliora davvero qualcosa', () => {
     expect(weaponStatsFor([], ['otturatore-spinto']).cooldownMs).toBeLessThan(BULLET_COOLDOWN);
-    expect(beaconStatsFor([], ['eco-ampio']).lureTiles).toBeGreaterThan(beaconStatsFor([]).lureTiles);
+    expect(beaconStatsFor([], ['eco-ampio']).lureTiles).toBeGreaterThan(
+      beaconStatsFor([]).lureTiles,
+    );
     expect(movementStatsFor([], ['zavorra-alleggerita']).speedMult).toBeGreaterThan(1);
     expect(beaconStatsFor([], ['doppio-innesco']).chargesStart).toBeGreaterThan(
       beaconStatsFor([]).chargesStart,
@@ -216,7 +218,7 @@ describe('Banco — rendere un nodo in cambio di un innesto', () => {
     expect(refundableNodes(con)).toContain('scatto-angolare');
   });
 
-  it('lo stesso nodo torna rendibile quando il figlio non c\'è più', () => {
+  it("lo stesso nodo torna rendibile quando il figlio non c'è più", () => {
     expect(canRefundNode(['scatto'], 'scatto')).toBe(true);
   });
 
@@ -234,14 +236,21 @@ describe('Banco — rendere un nodo in cambio di un innesto', () => {
     // qualsiasi fra quelli leciti e si controlla che nessun superstite
     // sia rimasto orfano.
     const costruita = [
-      'scatto', 'scatto-angolare', 'slancio', 'piastra-aggiuntiva',
-      'piastra-reattiva', 'scanner-di-settore', 'lettura-termica',
+      'scatto',
+      'scatto-angolare',
+      'slancio',
+      'piastra-aggiuntiva',
+      'piastra-reattiva',
+      'scanner-di-settore',
+      'lettura-termica',
     ];
     for (const reso of refundableNodes(costruita)) {
       const dopo = costruita.filter((n) => n !== reso);
       for (const superstite of dopo) {
         const padre = ALL_SKILL_NODES.find((n) => n.id === superstite)?.requires;
-        expect(padre === undefined || dopo.includes(padre), `${superstite} è rimasto orfano`).toBe(true);
+        expect(padre === undefined || dopo.includes(padre), `${superstite} è rimasto orfano`).toBe(
+          true,
+        );
       }
     }
   });

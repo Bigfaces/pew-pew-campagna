@@ -35,7 +35,9 @@ function corpoTick(): string {
   const src = sorgenteCampaignGame();
   const marcatore = 'private tick(): void {';
   const inizio = src.indexOf(marcatore);
-  expect(inizio, '"private tick(): void {" non si trova più in campaignGame.ts').toBeGreaterThan(-1);
+  expect(inizio, '"private tick(): void {" non si trova più in campaignGame.ts').toBeGreaterThan(
+    -1,
+  );
 
   const primaGraffa = inizio + marcatore.length - 1;
   let profondita = 0;
@@ -54,12 +56,15 @@ describe('tick() — lo sparo del giocatore suona', () => {
 
   it('legge il cooldown prima di world.step, e chiama audio.rifle() dopo', () => {
     const indiceStep = corpo.indexOf('this.world.step(');
-    expect(indiceStep, 'tick() non chiama più this.world.step(...) così com\'è scritto').toBeGreaterThan(-1);
+    expect(
+      indiceStep,
+      "tick() non chiama più this.world.step(...) così com'è scritto",
+    ).toBeGreaterThan(-1);
 
     const primaDelloStep = corpo.slice(0, indiceStep);
     expect(
       primaDelloStep,
-      'tick() deve leggere weaponCooldown prima di world.step(), per sapere se l\'arma era pronta',
+      "tick() deve leggere weaponCooldown prima di world.step(), per sapere se l'arma era pronta",
     ).toMatch(/weaponCooldown/);
 
     const dopoLoStep = corpo.slice(indiceStep);

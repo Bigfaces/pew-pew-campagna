@@ -1,0 +1,4 @@
+# Build e artefatti: non si formattano, si rigenerano.
+dist
+docs/index.html
+pnpm-lock.yaml

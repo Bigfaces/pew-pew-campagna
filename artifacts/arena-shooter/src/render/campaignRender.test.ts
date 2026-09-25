@@ -412,7 +412,7 @@ describe('Trasponditore', () => {
     );
   });
 
-  it('non altera lo sfondo dietro l\'esca: nessun composito diverso da source-over', () => {
+  it("non altera lo sfondo dietro l'esca: nessun composito diverso da source-over", () => {
     // La trappola già pagata (vedi drawTintedFrame in spriteBaker.ts):
     // `source-atop` compone contro l'intera tela, non contro l'ultimo
     // disegno. Il mock qui non tiene un vero framebuffer, quindi non può
@@ -430,9 +430,7 @@ describe('Trasponditore', () => {
       y: p.y,
       ms: BEACON_LIFETIME_MS,
     };
-    world.state.beaconPickups = [
-      { id: 'c', x: p.x + TILE * 2, y: p.y + TILE, collected: false },
-    ];
+    world.state.beaconPickups = [{ id: 'c', x: p.x + TILE * 2, y: p.y + TILE, collected: false }];
 
     const composites: string[] = [];
     const c = ctx as unknown as { globalCompositeOperation: string };
@@ -595,7 +593,10 @@ describe('proiezione — nessuna posizione della mappa fa esplodere uno sprite',
   // semicampo orizzontale, e il difetto viveva proprio nello spazio fra
   // il semicampo e i 90 gradi. Su un telefono in verticale non si
   // vedeva affatto — per questo non l'avevo mai visto io.
-  for (const [w, h] of [[1920, 1080], [2560, 1080]] as const) {
+  for (const [w, h] of [
+    [1920, 1080],
+    [2560, 1080],
+  ] as const) {
     it(`${w}x${h}: nessuno sprite supera una schermata e mezza`, () => {
       const vp = computeViewport(w, h, 1);
       const fx = new CameraFx();
@@ -730,7 +731,8 @@ describe('decalcomanie a pavimento', () => {
     // per projectPoint (|rel| >= 90°), eppure la maggior parte del
     // poligono resta davanti all'occhio e dovrebbe restare a schermo —
     // è esattamente "la nube di gas sparisce entrandoci dentro".
-    const tx = 10, ty = 10;
+    const tx = 10,
+      ty = 10;
     const cx = tx * TILE + TILE / 2;
     const cy = ty * TILE + TILE / 2;
     const cam = { x: cx - 0.3 * TILE, y: cy, angle: 0 };

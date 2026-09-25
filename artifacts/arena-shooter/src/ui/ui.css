@@ -18,7 +18,7 @@
   --accent-dim: #1d3f78;
   --danger: #ff5f56;
   --good: #46d17f;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 
 .app {
@@ -48,11 +48,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  background: radial-gradient(
-    ellipse at center,
-    rgba(6, 8, 14, 0.82) 0%,
-    rgba(4, 5, 9, 0.96) 100%
-  );
+  background: radial-gradient(ellipse at center, rgba(6, 8, 14, 0.82) 0%, rgba(4, 5, 9, 0.96) 100%);
   backdrop-filter: blur(3px);
   animation: fade-in 160ms ease-out;
 }

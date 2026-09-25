@@ -53,12 +53,7 @@ export interface Viewport {
  *  projection quantity is already derived from projDist and follows for
  *  free. The ray *count* is untouched, so the depth buffer keeps its
  *  size and scoping costs nothing extra to render. */
-export function computeViewport(
-  width: number,
-  height: number,
-  dpr: number,
-  zoom = 1,
-): Viewport {
+export function computeViewport(width: number, height: number, dpr: number, zoom = 1): Viewport {
   const projDist = (height / 2 / Math.tan(FOV_V / 2)) * zoom;
   const halfFovH = Math.atan(width / 2 / projDist);
   return {
@@ -187,12 +182,7 @@ export class CameraFx {
  *  camera — the only option in a column-based raycaster — which is
  *  why MAX_PITCH keeps it well short of straight up or down. */
 export function horizonY(vp: Viewport, fx: CameraFx): number {
-  return (
-    vp.height / 2 +
-    fx.pitch * MAX_PITCH * vp.height +
-    fx.bobY +
-    fx.shakeY
-  );
+  return vp.height / 2 + fx.pitch * MAX_PITCH * vp.height + fx.bobY + fx.shakeY;
 }
 
 /** Signed shortest angle from `from` to `to`, in (-PI, PI]. */
@@ -269,11 +259,6 @@ export function projectPoint(
 }
 
 /** Screen Y of a point `z` world units above the floor at `perp`. */
-export function heightToScreenY(
-  vp: Viewport,
-  fx: CameraFx,
-  perp: number,
-  z: number,
-): number {
+export function heightToScreenY(vp: Viewport, fx: CameraFx, perp: number, z: number): number {
   return horizonY(vp, fx) + ((EYE_HEIGHT - z) / perp) * vp.projDist;
 }

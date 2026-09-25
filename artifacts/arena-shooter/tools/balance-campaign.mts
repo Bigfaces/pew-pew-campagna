@@ -347,9 +347,9 @@ custodeCycle(
   CUSTODE_EXPOSED_ENRAGED_MS,
 );
 console.log(
-  "\n  Qui la seconda fase deve fare il *contrario* di quella della\n" +
+  '\n  Qui la seconda fase deve fare il *contrario* di quella della\n' +
     '  Sentinella: non stringere il ritmo aprendo di più, ma stringere la\n' +
-    "  finestra. La Sentinella alterata diventa più aggressiva, il Custode\n" +
+    '  finestra. La Sentinella alterata diventa più aggressiva, il Custode\n' +
     '  più avaro — due idee diverse di seconda fase, non la stessa due volte.',
 );
 
@@ -379,7 +379,9 @@ function shotsInWindow(cooldownMs: number): number {
 
 console.log('\n\n══ Trasponditore ══');
 console.log(`  finestra                  ${(BEACON_LIFETIME_MS / 1000).toFixed(1)} s`);
-console.log(`  colpi in finestra         ${shotsInWindow(BULLET_COOLDOWN)} (arma base, ${BULLET_COOLDOWN} ms)`);
+console.log(
+  `  colpi in finestra         ${shotsInWindow(BULLET_COOLDOWN)} (arma base, ${BULLET_COOLDOWN} ms)`,
+);
 console.log(
   `                            ${shotsInWindow(NODE_OTTURATORE_COOLDOWN_MS)} con Otturatore Rapido (${NODE_OTTURATORE_COOLDOWN_MS} ms)`,
 );
@@ -434,12 +436,34 @@ console.log(
 function benchEnemy(kind: (typeof ALL_ENEMY_KINDS)[number], x: number, y: number): EnemyState {
   const a = archetypeOf(kind);
   return {
-    id: 'banco', kind, alive: true, x, y, angle: Math.PI, hp: a.hp,
-    ai: 'patrol', reactionTimer: a.reactionMs, attackCooldown: 0,
-    ventMs: 0, revealMs: 0, chargeMs: 0, chargeDirX: 0, chargeDirY: 0,
-    postX: x, postY: y, patrolX: null, patrolY: null, goalX: null, goalY: null,
-    patrolTimer: 0, lastSeenX: null, lastSeenY: null,
-    still: false, closing: false, lured: false, hardened: false,
+    id: 'banco',
+    kind,
+    alive: true,
+    x,
+    y,
+    angle: Math.PI,
+    hp: a.hp,
+    ai: 'patrol',
+    reactionTimer: a.reactionMs,
+    attackCooldown: 0,
+    ventMs: 0,
+    revealMs: 0,
+    chargeMs: 0,
+    chargeDirX: 0,
+    chargeDirY: 0,
+    postX: x,
+    postY: y,
+    patrolX: null,
+    patrolY: null,
+    goalX: null,
+    goalY: null,
+    patrolTimer: 0,
+    lastSeenX: null,
+    lastSeenY: null,
+    still: false,
+    closing: false,
+    lured: false,
+    hardened: false,
   } as EnemyState;
 }
 
@@ -499,13 +523,19 @@ function rearWindow(
   let rearAndVuln = 0;
   for (let t = 0; t < ticks; t++) {
     const intent = updateEnemyAi(e, {
-      getTile: openRoom, mapW: 64, mapH: 64,
-      playerX: px, playerY: py, playerTargetable: true,
+      getTile: openRoom,
+      mapW: 64,
+      mapH: 64,
+      playerX: px,
+      playerY: py,
+      playerTargetable: true,
       // `tiles` sovrascrive il raggio di richiamo di default: è il
       // canale che l'IA offre apposta per Eco Ampio (vedi
       // EnemyAiCtx['lure'] in enemyAi.ts). Senza, misurerei l'esca
       // allargata con il raggio di quella base.
-      lure: { x: bx, y: by, tiles: beacon.lureTiles }, leash: null, dtMs: TICK_MS,
+      lure: { x: bx, y: by, tiles: beacon.lureTiles },
+      leash: null,
+      dtMs: TICK_MS,
     });
     e.angle = intent.angle;
     e.lured = intent.lured;
@@ -532,7 +562,7 @@ const REAR_KINDS = ALL_ENEMY_KINDS.filter((k) => archetypeOf(k).weakSpot === 're
 console.log(
   `  Archetipi con il punto debole dietro: ${REAR_KINDS.length} su ${ALL_ENEMY_KINDS.length}` +
     ` (${REAR_KINDS.map((k) => archetypeOf(k).name).join(', ')}).\n` +
-    "  Sugli altri il Trasponditore non apre un moltiplicatore: toglie\n" +
+    '  Sugli altri il Trasponditore non apre un moltiplicatore: toglie\n' +
     '  un nemico dal fuoco, che è un altro mestiere.\n',
 );
 
@@ -720,7 +750,8 @@ function righeInnesto(item: ShopItemDef): RigaInnesto[] {
     });
   };
   for (const campo of campi) {
-    const stessaMisura = primaSenza[campo] === primaCon[campo] && dopoSenza[campo] === dopoCon[campo];
+    const stessaMisura =
+      primaSenza[campo] === primaCon[campo] && dopoSenza[campo] === dopoCon[campo];
     if (stessaMisura) {
       segna(campo, 'unica', primaSenza[campo]!, dopoSenza[campo]!);
     } else {
@@ -735,7 +766,7 @@ function righeInnesto(item: ShopItemDef): RigaInnesto[] {
 
 console.log('\n\n══ Banco di Riconfigurazione ══');
 console.log(
-  '  Fra un atto e l\'altro, sei innesti da comprare con i punti abilità\n' +
+  "  Fra un atto e l'altro, sei innesti da comprare con i punti abilità\n" +
     "  — la stessa valuta dell'albero. Non c'è una moneta propria: l'XP è\n" +
     '  già impegnata (vedi la nota nel commento di LEVEL_XP_THRESHOLDS), e\n' +
     "  il punto abilità è l'unica cosa scarsa di questo gioco.\n",
@@ -768,8 +799,12 @@ console.log(
 let banchiOk = true;
 for (const item of SHOP_ITEMS) {
   const righe = righeInnesto(item);
-  const migliora = [...new Set(righe.filter((r) => r.migliora).map((r) => CAMPO_LABEL[r.campo] ?? r.campo))];
-  const peggiora = [...new Set(righe.filter((r) => !r.migliora).map((r) => CAMPO_LABEL[r.campo] ?? r.campo))];
+  const migliora = [
+    ...new Set(righe.filter((r) => r.migliora).map((r) => CAMPO_LABEL[r.campo] ?? r.campo)),
+  ];
+  const peggiora = [
+    ...new Set(righe.filter((r) => !r.migliora).map((r) => CAMPO_LABEL[r.campo] ?? r.campo)),
+  ];
   const ok = migliora.length > 0 && peggiora.length > 0;
   banchiOk &&= ok;
   console.log(`\n  ${item.name}: ${ok ? 'OK — non è guadagno puro' : 'ROTTO — è guadagno puro'}`);
@@ -936,7 +971,7 @@ console.log(
 // Innesco) — quindi il soffitto va ricalcolato con il Banco in tavola,
 // non solo con l'arma base.
 
-console.log("\n\n── 4. Il soffitto contro la ricarica più corta ──");
+console.log('\n\n── 4. Il soffitto contro la ricarica più corta ──');
 
 /** La ricarica più corta raggiungibile: si prova ogni sottoinsieme dei
  *  sei innesti, con e senza il nodo Otturatore Rapido, e si tiene il
@@ -994,7 +1029,9 @@ function finestraPiuLunga(): { ms: number; kind: string; combo: string; theta: n
             migliore = {
               ms,
               kind: archetypeOf(kind).name,
-              combo: combo.length ? combo.map((id) => shopItemById(id)?.name ?? id).join(' + ') : '(esca base)',
+              combo: combo.length
+                ? combo.map((id) => shopItemById(id)?.name ?? id).join(' + ')
+                : '(esca base)',
               theta,
             };
           }
@@ -1018,7 +1055,7 @@ console.log(
 );
 console.log(
   '\n  Se un giorno questo margine si stringesse fino a passare sotto zero,\n' +
-    "  vorrebbe dire che un innesto ha reso possibile chiudere un nemico\n" +
+    '  vorrebbe dire che un innesto ha reso possibile chiudere un nemico\n' +
     "  col solo Trasponditore — l'esca sarebbe diventata l'interruttore\n" +
-    "  che BEACON_LIFETIME_MS esiste per impedire.",
+    '  che BEACON_LIFETIME_MS esiste per impedire.',
 );

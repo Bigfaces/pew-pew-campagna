@@ -11,13 +11,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import {
-  canPurchase,
-  pointsAfter,
-  purchasedItems,
-  shopOffer,
-  paymentFor,
-} from './campaignShop';
+import { canPurchase, pointsAfter, purchasedItems, shopOffer, paymentFor } from './campaignShop';
 
 describe('shopOffer — cosa mostra il Banco a ciascun varco', () => {
   it('dopo l’Atto I offre i tre innesti di quell’atto, nessuno posseduto, tutti alla portata di 3 punti', () => {
@@ -36,11 +30,7 @@ describe('shopOffer — cosa mostra il Banco a ciascun varco', () => {
 
   it('dopo l’Atto II offre i tre innesti di quell’atto, non quelli dell’Atto I', () => {
     const rows = shopOffer(2, [], 3);
-    expect(rows.map((r) => r.item.id)).toEqual([
-      'doppio-innesco',
-      'scatto-teso',
-      'piastra-fusa',
-    ]);
+    expect(rows.map((r) => r.item.id)).toEqual(['doppio-innesco', 'scatto-teso', 'piastra-fusa']);
   });
 
   it('dopo l’Atto III l’offerta è vuota: non c’è un varco dopo ARBITER (buco noto, GDD sezione 13)', () => {
@@ -185,7 +175,10 @@ describe('paymentFor — come si paga, non se si può', () => {
 
   it('gli altri tre rifiuti non hanno una seconda via: non è il prezzo a mancare', () => {
     const albero = ['scatto', 'passo-lungo'];
-    expect(paymentFor('non-esiste', 1, [], 0, albero)).toEqual({ kind: 'no', reason: 'sconosciuto' });
+    expect(paymentFor('non-esiste', 1, [], 0, albero)).toEqual({
+      kind: 'no',
+      reason: 'sconosciuto',
+    });
     expect(paymentFor('doppio-innesco', 1, [], 0, albero)).toEqual({ kind: 'no', reason: 'atto' });
     expect(paymentFor('eco-ampio', 1, ['eco-ampio'], 0, albero)).toEqual({
       kind: 'no',

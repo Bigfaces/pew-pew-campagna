@@ -9,11 +9,7 @@
 
 import { AudioEngine } from '../audio/engine';
 import { CampaignVoice } from '../audio/campaignVoice';
-import {
-  VULNERABILITY_LABEL,
-  WEAK_SPOT_LABEL,
-  archetypeOf,
-} from '../sim/campaign/enemies';
+import { VULNERABILITY_LABEL, WEAK_SPOT_LABEL, archetypeOf } from '../sim/campaign/enemies';
 import { campHasLOS } from '../sim/campaign/raycast';
 import { angleDelta } from '../sim/raycast';
 import {
@@ -25,12 +21,7 @@ import {
   renderGasVeil,
 } from '../render/campaignScene';
 import { CameraFx, computeViewport, type Viewport } from '../render/camera';
-import {
-  renderBanner,
-  renderDamageOverlay,
-  renderScope,
-  type Banner,
-} from '../render/overlay';
+import { renderBanner, renderDamageOverlay, renderScope, type Banner } from '../render/overlay';
 import { renderBackdrop } from '../render/backdrop';
 import { buildBackdrops, getTextures } from '../render/textures';
 import {
@@ -673,9 +664,7 @@ export class CampaignGame {
    *  in cui si è appena morti. */
   private restartAct(): void {
     const profile = this.world.toProfile();
-    const firstOfAct = ALL_LEVELS.find(
-      (l) => l.act === this.world.level.act && l.ordinal === 1,
-    );
+    const firstOfAct = ALL_LEVELS.find((l) => l.act === this.world.level.act && l.ordinal === 1);
     // Non dovrebbe mai mancare — ogni atto ha un primo livello — ma se
     // levels.ts cambiasse forma un mondo introvabile è meglio di un
     // crash silenzioso: si resta sul livello attuale.
@@ -742,9 +731,7 @@ export class CampaignGame {
 
   requestPointerLock(): void {
     try {
-      const p = this.canvas.requestPointerLock() as unknown as
-        | Promise<void>
-        | undefined;
+      const p = this.canvas.requestPointerLock() as unknown as Promise<void> | undefined;
       void p?.catch?.(() => {
         // Blocked (sandboxed iframe); Q/E keyboard turning still works.
       });
@@ -963,7 +950,17 @@ export class CampaignGame {
       if (a.cloaks && e.revealMs <= 0) continue;
       const off = Math.abs(angleDelta(this.yaw, Math.atan2(e.y - p.y, e.x - p.x)));
       if (off > 0.18) continue;
-      if (!campHasLOS(this.world.getTile, p.x, p.y, e.x, e.y, this.world.level.width, this.world.level.height)) {
+      if (
+        !campHasLOS(
+          this.world.getTile,
+          p.x,
+          p.y,
+          e.x,
+          e.y,
+          this.world.level.width,
+          this.world.level.height,
+        )
+      ) {
         continue;
       }
       if (!best || off < best.off) best = { e, off };
@@ -1161,7 +1158,10 @@ export class CampaignGame {
             // Il colpo giusto si annuncia. Dire *perché* ha fatto di
             // più è ciò che trasforma un numero fortunato in una cosa
             // ripetibile.
-            const why = [ev.weakSpot ? WEAK_SPOT_LABEL[ev.weakSpot] : null, ev.vulnerability ? VULNERABILITY_LABEL[ev.vulnerability] : null]
+            const why = [
+              ev.weakSpot ? WEAK_SPOT_LABEL[ev.weakSpot] : null,
+              ev.vulnerability ? VULNERABILITY_LABEL[ev.vulnerability] : null,
+            ]
               .filter(Boolean)
               .join(' · ');
             this.raise(`×${ev.damage}`, why, '#ffd166');
@@ -1653,9 +1653,7 @@ export class CampaignGame {
           ? this.arbiterLine.text
           : null),
       pickup:
-        this.pickupLine && now - this.pickupLine.at < PICKUP_LINE_MS
-          ? this.pickupLine.text
-          : null,
+        this.pickupLine && now - this.pickupLine.at < PICKUP_LINE_MS ? this.pickupLine.text : null,
       bossEnraged: this.world.enraged && s.boss?.phase !== 'defeated',
       unlockedNodes: s.unlockedNodes,
       // La porta più urgente fra quelle armate: un livello può averne

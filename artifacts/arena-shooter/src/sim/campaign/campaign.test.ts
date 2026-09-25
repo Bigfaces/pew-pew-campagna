@@ -31,16 +31,8 @@ import {
   XP_ROOM_ENTER,
   levelForXp,
 } from './constants';
-import {
-  CAMPAIGN_PROFILE_VERSION,
-  emptyCampaignInput,
-  type CampaignInput,
-} from './types';
-import {
-  hasGrazeDamage,
-  pointsSpent,
-  weaponStatsFor,
-} from './skills';
+import { CAMPAIGN_PROFILE_VERSION, emptyCampaignInput, type CampaignInput } from './types';
+import { hasGrazeDamage, pointsSpent, weaponStatsFor } from './skills';
 import {
   attracco,
   bossHome,
@@ -171,10 +163,7 @@ describe('esperienza e livelli', () => {
    *  *specializzare* presto — riempire un ramo intero già entro la
    *  fine del primo atto. */
   it('affords a full branch by the end of the first act, exploring everything', () => {
-    const throughActOne = ACT_ONE.reduce(
-      (sum, l) => sum + levelXp(l, true) + bossXp(l),
-      0,
-    );
+    const throughActOne = ACT_ONE.reduce((sum, l) => sum + levelXp(l, true) + bossXp(l), 0);
     const points = levelForXp(throughActOne) - 1;
     const biggestBranch = Math.max(...SKILL_TREE.map((b) => b.nodes.length));
     expect(points).toBeGreaterThanOrEqual(biggestBranch);
@@ -202,10 +191,7 @@ describe('esperienza e livelli', () => {
    *  larga in alto per chi cerca: chiedere a entrambi lo stesso ritmo
    *  vorrebbe dire rinunciare al divario. */
   it('leaves the tree much emptier for a player who rushes', () => {
-    const thorough = ALL_LEVELS.reduce(
-      (sum, l) => sum + levelXp(l, true) + bossXp(l),
-      0,
-    );
+    const thorough = ALL_LEVELS.reduce((sum, l) => sum + levelXp(l, true) + bossXp(l), 0);
     const rushed = ALL_LEVELS.reduce((sum, l) => sum + levelXp(l, false) + bossXp(l), 0);
     expect(levelForXp(rushed) - 1).toBeLessThan(levelForXp(thorough) - 1);
     // E chi esplora arriva in fondo avendo potuto comprare tutto
@@ -654,10 +640,7 @@ describe('CampaignWorld — Sentinella del Molo', () => {
     world.state.player.x = 16.5 * TILE;
     world.state.player.y = 5.5 * TILE;
     world.state.player.weaponCooldown = 0;
-    const aimAngle = Math.atan2(
-      boss.y - world.state.player.y,
-      boss.x - world.state.player.x,
-    );
+    const aimAngle = Math.atan2(boss.y - world.state.player.y, boss.x - world.state.player.x);
 
     const events = world.step(input({ aimAngle, fire: true }));
     expect(events.some((e) => e.type === 'bossHit')).toBe(true);
@@ -713,10 +696,7 @@ describe('CampaignWorld — Sentinella del Molo', () => {
       world.state.player.x = boss.x - 40;
       world.state.player.y = boss.y;
       world.state.player.weaponCooldown = 0;
-      const aimAngle = Math.atan2(
-        boss.y - world.state.player.y,
-        boss.x - world.state.player.x,
-      );
+      const aimAngle = Math.atan2(boss.y - world.state.player.y, boss.x - world.state.player.x);
       return world.step(input({ aimAngle, fire: true }));
     };
 

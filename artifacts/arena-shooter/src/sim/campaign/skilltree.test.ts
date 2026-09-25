@@ -37,7 +37,16 @@ import {
 } from './skills';
 import { LEVEL_ATTRACCO } from './levels';
 import { roomAt } from './levelTypes';
-import { attracco, bossHome, centre, markRoomReached, markRoomVisited, molo, nudo, shieldOf } from './testSupport';
+import {
+  attracco,
+  bossHome,
+  centre,
+  markRoomReached,
+  markRoomVisited,
+  molo,
+  nudo,
+  shieldOf,
+} from './testSupport';
 import { emptyCampaignInput, type CampaignInput } from './types';
 import { CampaignWorld } from './world';
 
@@ -203,9 +212,9 @@ describe('Mobilità — Scatto', () => {
     // Dopo il cooldown invece sì.
     const remaining = Math.ceil(world.state.player.dashCooldown / TICK_MS) + 1;
     for (let i = 0; i < remaining; i++) world.step();
-    expect(world.step(input({ forward: 1, dash: true })).some((e) => e.type === 'dashStarted')).toBe(
-      true,
-    );
+    expect(
+      world.step(input({ forward: 1, dash: true })).some((e) => e.type === 'dashStarted'),
+    ).toBe(true);
   });
 
   it('non attraversa i muri', () => {
@@ -419,8 +428,7 @@ describe('Sopravvivenza', () => {
     // Una raffica simultanea: nello stesso tick, altri due colpi.
     colpisci();
     colpisci();
-    expect(p.shieldCharges, 'la salva simultanea ha bruciato piu di una piastra')
-      .toBe(before - 1);
+    expect(p.shieldCharges, 'la salva simultanea ha bruciato piu di una piastra').toBe(before - 1);
 
     // Passata la finestra, il colpo successivo si paga.
     for (let i = 0; i < Math.ceil(SHIELD_BREAK_INVULN_MS / TICK_MS) + 1; i++) world.step();

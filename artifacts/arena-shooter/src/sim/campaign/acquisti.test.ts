@@ -401,15 +401,19 @@ describe('tryPurchase — rendere un nodo al posto del punto', () => {
 
   it('non si rende un nodo da cui dipende un nodo posseduto', () => {
     // Renderlo lascerebbe `scatto-angolare` senza padre.
-    const w = quiet(attracco({ ...profileWith([]), xp: 180, unlockedNodes: ['scatto', 'scatto-angolare'] }));
+    const w = quiet(
+      attracco({ ...profileWith([]), xp: 180, unlockedNodes: ['scatto', 'scatto-angolare'] }),
+    );
     expect(w.availableSkillPoints).toBe(0);
     expect(w.tryPurchase('eco-ampio', 'scatto')).toBe(false);
     expect(w.state.unlockedNodes).toContain('scatto');
     expect(w.state.purchases).toHaveLength(0);
   });
 
-  it('il figlio invece si rende, e allora l\'acquisto passa', () => {
-    const w = quiet(attracco({ ...profileWith([]), xp: 180, unlockedNodes: ['scatto', 'scatto-angolare'] }));
+  it("il figlio invece si rende, e allora l'acquisto passa", () => {
+    const w = quiet(
+      attracco({ ...profileWith([]), xp: 180, unlockedNodes: ['scatto', 'scatto-angolare'] }),
+    );
     expect(w.tryPurchase('eco-ampio', 'scatto-angolare')).toBe(true);
     expect(w.state.unlockedNodes).toEqual(['scatto']);
   });
@@ -430,7 +434,7 @@ describe('tryPurchase — rendere un nodo al posto del punto', () => {
     expect(w.state.unlockedNodes).toEqual(['scatto']);
   });
 
-  it("rendere non aggira gli altri rifiuti: un doppione resta un doppione", () => {
+  it('rendere non aggira gli altri rifiuti: un doppione resta un doppione', () => {
     const w = quiet(attracco({ ...profileWith(['eco-ampio']), xp: 60, unlockedNodes: ['scatto'] }));
     expect(w.tryPurchase('eco-ampio', 'scatto')).toBe(false);
     expect(w.state.unlockedNodes).toContain('scatto');

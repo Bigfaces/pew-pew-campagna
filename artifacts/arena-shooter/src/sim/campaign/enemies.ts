@@ -427,9 +427,7 @@ export const ENEMY_ARCHETYPES: Readonly<Record<EnemyKind, EnemyArchetype>> = {
   },
 };
 
-export const ALL_ENEMY_KINDS: readonly EnemyKind[] = Object.keys(
-  ENEMY_ARCHETYPES,
-) as EnemyKind[];
+export const ALL_ENEMY_KINDS: readonly EnemyKind[] = Object.keys(ENEMY_ARCHETYPES) as EnemyKind[];
 
 export function archetypeOf(kind: EnemyKind): EnemyArchetype {
   return ENEMY_ARCHETYPES[kind];

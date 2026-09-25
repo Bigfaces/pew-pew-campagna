@@ -1,12 +1,6 @@
 import { useState } from 'react';
 
-import {
-  ADS_SENS_MULT,
-  clampSensitivity,
-  SENS_MAX,
-  SENS_MIN,
-  SENS_STEP,
-} from '../sim/constants';
+import { ADS_SENS_MULT, clampSensitivity, SENS_MAX, SENS_MIN, SENS_STEP } from '../sim/constants';
 import {
   loadCampaignDifficultyChoice,
   loadLegendEnabled,
@@ -24,9 +18,11 @@ const CAMPAIGN_DIFF_LABEL: Record<CampaignDifficulty, string> = {
 };
 
 const CAMPAIGN_DIFF_NOTE: Record<CampaignDifficulty, string> = {
-  tutorial: 'Morire riporta alla stanza raggiunta: si resettano solo i nemici e i trabocchetti lì dentro.',
+  tutorial:
+    'Morire riporta alla stanza raggiunta: si resettano solo i nemici e i trabocchetti lì dentro.',
   medio: 'Morire riporta allo spawn del livello: si resetta tutto il livello, non solo la stanza.',
-  roguelike: 'Morire fa ripartire l’intero atto dal primo livello. Personaggio e core raccolti restano tuoi.',
+  roguelike:
+    'Morire fa ripartire l’intero atto dal primo livello. Personaggio e core raccolti restano tuoi.',
 };
 
 /** Look sensitivity, shown as a multiplier because the underlying
@@ -41,9 +37,7 @@ function SensitivityField({
 }): React.ReactElement {
   return (
     <div className="field">
-      <label htmlFor="sens">
-        SENSIBILITÀ MOUSE — {value.toFixed(2)}×
-      </label>
+      <label htmlFor="sens">SENSIBILITÀ MOUSE — {value.toFixed(2)}×</label>
       <input
         id="sens"
         type="range"
@@ -55,8 +49,7 @@ function SensitivityField({
       />
       <p className="hint">
         Non tocca la rotazione con Q / E. L’ottica la riduce comunque al{' '}
-        {Math.round(ADS_SENS_MULT * 100)}%: mirare col cannocchiale resta lento
-        per scelta.
+        {Math.round(ADS_SENS_MULT * 100)}%: mirare col cannocchiale resta lento per scelta.
       </p>
     </div>
   );
@@ -84,10 +77,9 @@ function LegendToggleField({
         </button>
       </div>
       <p className="hint">
-        Spiega il punto debole (×3 danno) e le piastre alla prima comparsa di
-        un nemico, una sola volta. Riaccenderla dopo averla spenta la fa
-        ricomparire al prossimo nemico avvistato, come se non l'avessi mai
-        vista.
+        Spiega il punto debole (×3 danno) e le piastre alla prima comparsa di un nemico, una sola
+        volta. Riaccenderla dopo averla spenta la fa ricomparire al prossimo nemico avvistato, come
+        se non l'avessi mai vista.
       </p>
     </div>
   );
@@ -157,17 +149,13 @@ export function Menu({
           }}
         />
 
-        <button
-          className="btn"
-          type="button"
-          onClick={() => onCampaign({ sensitivity })}
-        >
+        <button className="btn" type="button" onClick={() => onCampaign({ sensitivity })}>
           ▶ INIZIA LA CAMPAGNA (BETA)
         </button>
 
         <p className="muted-note">
-          I progressi si salvano in questo browser, non su un server: restano
-          sul computer da cui giochi.
+          I progressi si salvano in questo browser, non su un server: restano sul computer da cui
+          giochi.
         </p>
       </div>
     </div>

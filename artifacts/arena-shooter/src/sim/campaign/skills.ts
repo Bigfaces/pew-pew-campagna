@@ -130,12 +130,9 @@ export function movementStatsFor(
     hasDash,
     dashCooldownMs: DASH_COOLDOWN_MS,
     dashSpeed:
-      hasDash && unlocked.includes('slancio')
-        ? DASH_SPEED * NODE_SLANCIO_SPEED_MULT
-        : DASH_SPEED,
+      hasDash && unlocked.includes('slancio') ? DASH_SPEED * NODE_SLANCIO_SPEED_MULT : DASH_SPEED,
     dashInvulnerable: hasDash && unlocked.includes('scatto-evasivo'),
-    dashSteerRate:
-      hasDash && unlocked.includes('scatto-angolare') ? NODE_DASH_STEER_RATE : 0,
+    dashSteerRate: hasDash && unlocked.includes('scatto-angolare') ? NODE_DASH_STEER_RATE : 0,
   };
   // Banco. I due moltiplicatori sul passo si moltiplicano fra loro —
   // 1.15 × 0.88 ≈ 1.01 — quindi chi compra Zavorra e Scatto Teso
@@ -272,7 +269,6 @@ export function hasMinimap(unlocked: readonly string[]): boolean {
 export function hasContacts(unlocked: readonly string[]): boolean {
   return unlocked.includes('lettura-termica') && hasMinimap(unlocked);
 }
-
 
 // ---- Albero ----
 

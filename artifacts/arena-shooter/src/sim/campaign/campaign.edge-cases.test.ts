@@ -47,7 +47,6 @@ function idleTicks(world: CampaignWorld, n: number): void {
 // Checkpoint: forward-only
 // --------------------------------------------------------------------
 
-
 // --------------------------------------------------------------------
 // Checkpoint: mai dentro una linea di tiro
 // --------------------------------------------------------------------
@@ -231,8 +230,10 @@ describe('CampaignWorld — un checkpoint è un posto sicuro', () => {
     // La premessa che conta: il checkpoint, in quel momento, è un
     // brutto posto. Senza questo la prova passerebbe per caso.
     const sicuro = (x: number, y: number): boolean =>
-      (world as unknown as { isSafeToRespawn: (x: number, y: number) => boolean })
-        .isSafeToRespawn(x, y);
+      (world as unknown as { isSafeToRespawn: (x: number, y: number) => boolean }).isSafeToRespawn(
+        x,
+        y,
+      );
     expect(sicuro(cp.x, cp.y), 'premessa: il checkpoint doveva essere sotto tiro').toBe(false);
 
     // Quindi non ci si rinasce dentro, e il posto nuovo è al riparo.
@@ -263,8 +264,9 @@ describe('CampaignWorld — un checkpoint è un posto sicuro', () => {
       // nell'istante esatto in cui si torna toccabili, perché quella è
       // la firma del ciclo — non una morte, un metronomo.
       const piuBreve = Math.min(...vite);
-      expect(piuBreve, `${id}: vita più breve ${(piuBreve / 1000).toFixed(2)}s`)
-        .toBeGreaterThan(RESPAWN_GRACE_MS.tutorial + 300);
+      expect(piuBreve, `${id}: vita più breve ${(piuBreve / 1000).toFixed(2)}s`).toBeGreaterThan(
+        RESPAWN_GRACE_MS.tutorial + 300,
+      );
     }
   });
 
@@ -608,7 +610,7 @@ function fireAtBossAngle(
   return hit && hit.type === 'bossHit' ? hit.damage : 0;
 }
 
-describe('Sentinella del Molo — confine esatto dell\'arco vulnerabile', () => {
+describe("Sentinella del Molo — confine esatto dell'arco vulnerabile", () => {
   it('appena dentro i 60° dal retro: danno pieno, anche senza il nodo', () => {
     expect(fireAtBossAngle(bossChargeWorld(), 59)).toBe(1);
   });
@@ -632,7 +634,7 @@ describe('Sentinella del Molo — confine esatto dell\'arco vulnerabile', () => 
     expect(fireAtBossAngle(bossChargeWorld(), 180, ['danno-di-striscio'])).toBe(0);
   });
 
-  it('nessun danno se la fase non è charge/recover, indipendentemente dall\'angolo', () => {
+  it("nessun danno se la fase non è charge/recover, indipendentemente dall'angolo", () => {
     const world = bossChargeWorld();
     world.state.boss!.phase = 'guard';
     world.state.boss!.phaseTimer = 10_000; // non far scadere la fase durante il tick

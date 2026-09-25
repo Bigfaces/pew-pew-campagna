@@ -7,7 +7,9 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --if-present run typecheck",
-    "test": "pnpm -r --if-present run test"
+    "test": "pnpm -r --if-present run test",
+    "format": "prettier --write \"artifacts/arena-shooter/**/*.{ts,tsx,mts,css}\"",
+    "format:check": "prettier --check \"artifacts/arena-shooter/**/*.{ts,tsx,mts,css}\""
   },
   "private": true,
   "devDependencies": {

@@ -19,7 +19,12 @@ import { describe, expect, it } from 'vitest';
 
 import { TICK_MS, TILE } from '../constants';
 import { ARBITER_CORE_HITS, ARBITER_HITS_TO_DEFEAT } from './constants';
-import { COLLAPSE_HOLD_MS, GAS_LINGER_MS, SHIELD_CHARGES_BASE, TURRET_COOLDOWN_MS } from './constants';
+import {
+  COLLAPSE_HOLD_MS,
+  GAS_LINGER_MS,
+  SHIELD_CHARGES_BASE,
+  TURRET_COOLDOWN_MS,
+} from './constants';
 import {
   CLOSE_RANGE_TILES,
   CORE_BAND_CENTRE,
@@ -225,7 +230,6 @@ describe('campagna — struttura delle mappe', () => {
           for (const t of f.tiles) at(t, `pavimento ${f.id}`);
         }
       });
-
     });
   }
 
@@ -568,11 +572,7 @@ interface BotRun {
  *  davvero e il nodo Scatto è rimasto una scorciatoia invece di
  *  diventare un requisito. Senza questo, il bot cadeva nel vuoto e ci
  *  ricadeva in eterno — zero morti e zero progressi. */
-function stepToward(
-  world: CampaignWorld,
-  level: LevelDef,
-  goal: TilePos,
-): number | null {
+function stepToward(world: CampaignWorld, level: LevelDef, goal: TilePos): number | null {
   const voids = new Set<string>();
   for (const c of level.chasms) {
     for (const t of c.tiles) voids.add(`${t.tx},${t.ty}`);
@@ -812,10 +812,8 @@ function botCross(
           // fare a un giocatore: al Crogiolo si spara da lontano, al
           // Ronzino da vicino. Un bot che ingaggia tutti alla stessa
           // distanza misurerebbe un gioco diverso da quello scritto.
-          const wantMin =
-            a.vulnerability === 'distante' ? LONG_RANGE_TILES + 0.5 : 2.5;
-          const wantMax =
-            a.vulnerability === 'ravvicinato' ? CLOSE_RANGE_TILES - 0.5 : Infinity;
+          const wantMin = a.vulnerability === 'distante' ? LONG_RANGE_TILES + 0.5 : 2.5;
+          const wantMax = a.vulnerability === 'ravvicinato' ? CLOSE_RANGE_TILES - 0.5 : Infinity;
           if (target.d < wantMin * TILE) forward = -1;
           else if (target.d > wantMax * TILE) forward = 1;
         }

@@ -48,10 +48,7 @@ describe('nemici — piazzamenti', () => {
     describe(level.id, () => {
       it('ogni nemico sta su un tile calpestabile', () => {
         for (const e of level.enemies) {
-          expect(
-            tileAt(level, e.tx, e.ty),
-            `${e.id} su un tile murato (${e.tx},${e.ty})`,
-          ).toBe(0);
+          expect(tileAt(level, e.tx, e.ty), `${e.id} su un tile murato (${e.tx},${e.ty})`).toBe(0);
         }
       });
 
@@ -269,7 +266,7 @@ describe('nemici — modello dei danni', () => {
 describe('nemici — regole particolari, nel mondo', () => {
   const refrigerante = ALL_LEVELS.find((lv) => lv.id === 'refrigerante')!;
 
-  it("un Archivista vivo irrobustisce chi gli sta vicino", () => {
+  it('un Archivista vivo irrobustisce chi gli sta vicino', () => {
     const nido = ALL_LEVELS.find((lv) => lv.id === 'nido')!;
     const w = new CampaignWorld(nido);
     const arch = w.state.enemies.find((x) => x.kind === 'archivista')!;
@@ -497,7 +494,9 @@ describe('IA dei nemici', () => {
     expect(partway).toBeLessThan(archetypeOf('vedetta').reactionMs);
 
     // Un muro fra i due.
-    const blocked = openCtx({ getTile: (tx, ty) => (tx === 7 ? 1 : tx <= 0 || ty <= 0 || tx >= 20 || ty >= 20 ? 1 : 0) });
+    const blocked = openCtx({
+      getTile: (tx, ty) => (tx === 7 ? 1 : tx <= 0 || ty <= 0 || tx >= 20 || ty >= 20 ? 1 : 0),
+    });
     updateEnemyAi(e, blocked);
     expect(e.ai).toBe('search');
     expect(e.reactionTimer).toBe(archetypeOf('vedetta').reactionMs);

@@ -186,16 +186,9 @@ export function getTextures(): TextureSet {
 }
 
 /** Pick the shaded variant for a tile type at a given darkness 0..1. */
-export function shadedTile(
-  tex: TextureSet,
-  tile: number,
-  darkness: number,
-): HTMLCanvasElement {
+export function shadedTile(tex: TextureSet, tile: number, darkness: number): HTMLCanvasElement {
   const set = tile === T_COVER ? tex.crate : tex.wall;
-  const idx = Math.max(
-    0,
-    Math.min(SHADE_LEVELS - 1, Math.round(darkness * (SHADE_LEVELS - 1))),
-  );
+  const idx = Math.max(0, Math.min(SHADE_LEVELS - 1, Math.round(darkness * (SHADE_LEVELS - 1))));
   return set[idx]!;
 }
 
@@ -205,11 +198,7 @@ export function shadedTile(
  *  is far too slow in JS at full resolution. A cached vertical
  *  gradient plus horizon banding gives the same depth read for two
  *  drawImage calls per frame. */
-export function buildBackdrops(
-  tex: TextureSet,
-  width: number,
-  height: number,
-): void {
+export function buildBackdrops(tex: TextureSet, width: number, height: number): void {
   const halfH = Math.max(1, Math.ceil(height));
 
   const sky = createCanvas(1, halfH);

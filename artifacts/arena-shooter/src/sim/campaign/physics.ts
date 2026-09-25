@@ -22,12 +22,7 @@ export interface Circle {
 
 /** True when a circle overlaps any solid tile. Same eight-probe
  *  approach as the Arena's circleHitsTile. */
-export function campCircleHitsTile(
-  isSolid: IsSolidFn,
-  x: number,
-  y: number,
-  r: number,
-): boolean {
+export function campCircleHitsTile(isSolid: IsSolidFn, x: number, y: number, r: number): boolean {
   const d = r * 0.71;
   return (
     isSolid(Math.floor((x - r) / TILE), Math.floor(y / TILE)) ||

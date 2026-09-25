@@ -32,6 +32,9 @@ jobs:
       - name: Installa dipendenze (lockfile congelato)
         run: pnpm install --frozen-lockfile
 
+      - name: Formattazione (Prettier)
+        run: pnpm run format:check
+
       - name: Typecheck
         run: pnpm run typecheck
 

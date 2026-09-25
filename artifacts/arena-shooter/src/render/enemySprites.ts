@@ -88,7 +88,16 @@ function biped(o: BipedOpts): Box[] {
   const hip = o.squat ? 0.26 : 0.34;
   const boxes: Box[] = [
     // Gambe, in controfase.
-    { x: 0, y: -g * 0.55, z: hip / 2, sx: 0.05, sy: 0.05, sz: hip / 2, color: p.dark, part: 'legA' },
+    {
+      x: 0,
+      y: -g * 0.55,
+      z: hip / 2,
+      sx: 0.05,
+      sy: 0.05,
+      sz: hip / 2,
+      color: p.dark,
+      part: 'legA',
+    },
     { x: 0, y: g * 0.55, z: hip / 2, sx: 0.05, sy: 0.05, sz: hip / 2, color: p.dark, part: 'legB' },
     // Torace.
     {
@@ -476,7 +485,16 @@ export const BOSS_BODIES: Record<BossKind, BodyPlan> = {
       // e adesso è una cosa che si vede girandole attorno invece di
       // una regola da imparare morendo.
       { x: -0.24, y: 0, z: 0.56, sx: 0.05, sy: 0.12, sz: 0.12, color: '#ffd166', part: 'core' },
-      { x: 0.24, y: 0, z: 0.5, sx: 0.06, sy: 0.18, sz: 0.2, color: shade(BOSS_COLOR.sentinella, 0.6), part: 'core' },
+      {
+        x: 0.24,
+        y: 0,
+        z: 0.5,
+        sx: 0.06,
+        sy: 0.18,
+        sz: 0.2,
+        color: shade(BOSS_COLOR.sentinella, 0.6),
+        part: 'core',
+      },
     ],
     stride: 0.11,
     bob: 0.02,
@@ -488,7 +506,16 @@ export const BOSS_BODIES: Record<BossKind, BodyPlan> = {
       { x: 0, y: 0, z: 0.28, sx: 0.2, sy: 0.2, sz: 0.28, color: shade(BOSS_COLOR.custode, 0.7) },
       { x: 0, y: 0, z: 0.66, sx: 0.16, sy: 0.16, sz: 0.2, color: BOSS_COLOR.custode, part: 'bob' },
       { x: 0.17, y: 0, z: 0.66, sx: 0.03, sy: 0.1, sz: 0.1, color: '#ffd166', part: 'bob' },
-      { x: 0, y: 0, z: 0.87, sx: 0.09, sy: 0.09, sz: 0.08, color: shade(BOSS_COLOR.custode, 1.2), part: 'bob' },
+      {
+        x: 0,
+        y: 0,
+        z: 0.87,
+        sx: 0.09,
+        sy: 0.09,
+        sz: 0.08,
+        color: shade(BOSS_COLOR.custode, 1.2),
+        part: 'bob',
+      },
       ...[0, 1, 2, 3, 4, 5].map((i): Box => {
         const ang = (i / 6) * Math.PI * 2;
         return {
@@ -511,7 +538,16 @@ export const BOSS_BODIES: Record<BossKind, BodyPlan> = {
       { x: 0, y: 0, z: 0.5, sx: 0.22, sy: 0.22, sz: 0.24, color: BOSS_COLOR.arbiter, part: 'bob' },
       { x: 0.22, y: 0, z: 0.5, sx: 0.05, sy: 0.12, sz: 0.12, color: '#ffe066', part: 'bob' },
       { x: 0, y: 0, z: 0.2, sx: 0.14, sy: 0.14, sz: 0.2, color: shade(BOSS_COLOR.arbiter, 0.6) },
-      { x: 0, y: 0, z: 0.84, sx: 0.12, sy: 0.12, sz: 0.11, color: shade(BOSS_COLOR.arbiter, 1.15), part: 'bob' },
+      {
+        x: 0,
+        y: 0,
+        z: 0.84,
+        sx: 0.12,
+        sy: 0.12,
+        sz: 0.11,
+        color: shade(BOSS_COLOR.arbiter, 1.15),
+        part: 'bob',
+      },
       // I quattro moduli in orbita. Sono anche quattro turret vere
       // nella simulazione: qui il corpo dice quello che la prima fase
       // chiede, cioè che vanno tolti prima del resto.

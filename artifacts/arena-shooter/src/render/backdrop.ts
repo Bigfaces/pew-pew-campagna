@@ -14,11 +14,7 @@ import { horizonY } from './camera';
 import { getTextures } from './textures';
 
 /** Ceiling and floor, drawn as two stretched gradient strips. */
-export function renderBackdrop(
-  ctx: CanvasRenderingContext2D,
-  vp: Viewport,
-  fx: CameraFx,
-): void {
+export function renderBackdrop(ctx: CanvasRenderingContext2D, vp: Viewport, fx: CameraFx): void {
   const tex = getTextures();
   const hy = horizonY(vp, fx);
 
@@ -31,16 +27,6 @@ export function renderBackdrop(
     ctx.drawImage(tex.sky, 0, 0, 1, tex.sky.height, 0, 0, vp.width, hy);
   }
   if (tex.ground && hy < vp.height) {
-    ctx.drawImage(
-      tex.ground,
-      0,
-      0,
-      1,
-      tex.ground.height,
-      0,
-      hy,
-      vp.width,
-      vp.height - hy,
-    );
+    ctx.drawImage(tex.ground, 0, 0, 1, tex.ground.height, 0, hy, vp.width, vp.height - hy);
   }
 }

@@ -68,22 +68,18 @@ describe('passerelle sospese', () => {
     // attraversare: renderebbe lo Scatto facoltativo dove invece è il
     // punto.
     expect(tryCross(atChasm('ponte-stretta', []), 'ponte-stretta', false)).toBe(true);
-    expect(
-      tryCross(atChasm('ponte-stretta', ['passo-lungo']), 'ponte-stretta', false),
-    ).toBe(true);
+    expect(tryCross(atChasm('ponte-stretta', ['passo-lungo']), 'ponte-stretta', false)).toBe(true);
   });
 
   it('la passerella stretta si passa in scatto', () => {
-    expect(tryCross(atChasm('ponte-stretta', ['scatto']), 'ponte-stretta', true)).toBe(
-      false,
-    );
+    expect(tryCross(atChasm('ponte-stretta', ['scatto']), 'ponte-stretta', true)).toBe(false);
   });
 
   it('quella larga no: serve anche lo Slancio', () => {
     expect(tryCross(atChasm('ponte-larga', ['scatto']), 'ponte-larga', true)).toBe(true);
-    expect(
-      tryCross(atChasm('ponte-larga', ['scatto', 'slancio']), 'ponte-larga', true),
-    ).toBe(false);
+    expect(tryCross(atChasm('ponte-larga', ['scatto', 'slancio']), 'ponte-larga', true)).toBe(
+      false,
+    );
   });
 
   it('Slancio alza la velocità dello scatto, non la durata', () => {
@@ -97,10 +93,7 @@ describe('passerelle sospese', () => {
 
   it('cadere non è morire: è un costo di tempo', () => {
     const world = atChasm('ponte-stretta', []);
-    const landing = centre(
-      LEVEL_ANELLO.chasms[0]!.landing.tx,
-      LEVEL_ANELLO.chasms[0]!.landing.ty,
-    );
+    const landing = centre(LEVEL_ANELLO.chasms[0]!.landing.tx, LEVEL_ANELLO.chasms[0]!.landing.ty);
     let died = false;
     let fell = false;
     for (let i = 0; i < 400 && !fell; i++) {
@@ -244,14 +237,7 @@ describe('Custode del Reattore', () => {
     // Ogni finestra è sempre preceduta dal preavviso, e le due
     // manipolazioni si alternano: senza alternanza sarebbe un solo
     // pattern ripetuto, cioè il difetto che la Sentinella aveva.
-    expect(seen.slice(0, 6)).toEqual([
-      'tell',
-      'exposed',
-      'invert',
-      'tell',
-      'exposed',
-      'blackout',
-    ]);
+    expect(seen.slice(0, 6)).toEqual(['tell', 'exposed', 'invert', 'tell', 'exposed', 'blackout']);
   });
 
   it('spegne le luci mentre manipola e capovolge la stanza nell’altra fase', () => {

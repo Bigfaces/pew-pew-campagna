@@ -709,7 +709,7 @@ export const SHOP_ITEMS: readonly ShopItemDef[] = [
     act: 2,
     name: 'Piastra Fusa',
     gives: 'Una carica di scudo in più.',
-    takes: 'La ricarica dell\'arma è più lunga di 150 ms.',
+    takes: "La ricarica dell'arma è più lunga di 150 ms.",
     cost: SHOP_ITEM_COST,
   },
 ];
@@ -815,7 +815,6 @@ export const NODE_SLANCIO_SPEED_MULT = 1.5;
  *  renderebbe lo scatto una corsa sterzabile invece di uno strappo da
  *  puntare prima. */
 export const NODE_DASH_STEER_RATE = 0.1;
-
 
 // ---- Boss: Sentinella del Molo ----
 // Dove sta lo dice il livello (levels.ts); qui c'è solo com'è fatta.

@@ -52,17 +52,9 @@ export function campCastRay(
   const deltaY = Math.abs(dy) < 1e-9 ? Infinity : Math.abs(TILE / dy);
 
   let sideX =
-    Math.abs(dx) < 1e-9
-      ? Infinity
-      : dx > 0
-        ? ((tx + 1) * TILE - ox) / dx
-        : (ox - tx * TILE) / -dx;
+    Math.abs(dx) < 1e-9 ? Infinity : dx > 0 ? ((tx + 1) * TILE - ox) / dx : (ox - tx * TILE) / -dx;
   let sideY =
-    Math.abs(dy) < 1e-9
-      ? Infinity
-      : dy > 0
-        ? ((ty + 1) * TILE - oy) / dy
-        : (oy - ty * TILE) / -dy;
+    Math.abs(dy) < 1e-9 ? Infinity : dy > 0 ? ((ty + 1) * TILE - oy) / dy : (oy - ty * TILE) / -dy;
 
   let dist = 0;
   let side: 'x' | 'y' = 'x';

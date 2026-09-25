@@ -129,17 +129,7 @@ export function renderCampaignWalls(
     const slice = shadedTile(tex, hit.tile, darkness);
     const sx = Math.min(TEX_SIZE - 1, Math.floor(hit.wallX * TEX_SIZE));
 
-    ctx.drawImage(
-      slice,
-      sx,
-      0,
-      1,
-      TEX_SIZE,
-      i * SLICE_W + shakeX,
-      top,
-      SLICE_W + 1,
-      wallH,
-    );
+    ctx.drawImage(slice, sx, 0, 1, TEX_SIZE, i * SLICE_W + shakeX, top, SLICE_W + 1, wallH);
   }
 }
 
@@ -247,12 +237,7 @@ function drawBeacon(
   // leggibile.
   ctx.globalAlpha = (0.3 + pulse * 0.35) * fade;
   ctx.fillStyle = BEACON_COLOR;
-  ctx.fillRect(
-    screenX - Math.max(1, tileH * 0.03),
-    floorY - h,
-    Math.max(2, tileH * 0.06),
-    h,
-  );
+  ctx.fillRect(screenX - Math.max(1, tileH * 0.03), floorY - h, Math.max(2, tileH * 0.06), h);
 
   // Due anelli concentrici a terra, non uno: un anello solo pulsa,
   // due che si susseguono danno l'idea di un'onda che si espande, ed è
@@ -457,7 +442,15 @@ function drawEnemy(
     ctx.globalAlpha = (0.12 + ready * 0.4) * (cloaked ? 0.4 : 1) * veil;
     ctx.fillStyle = '#ff3b3b';
     ctx.beginPath();
-    ctx.ellipse(screenX, floorY - base - h * 0.5, w * (1.1 - ready * 0.35), h * 0.62, 0, 0, Math.PI * 2);
+    ctx.ellipse(
+      screenX,
+      floorY - base - h * 0.5,
+      w * (1.1 - ready * 0.35),
+      h * 0.62,
+      0,
+      0,
+      Math.PI * 2,
+    );
     ctx.fill();
     ctx.restore();
   }
@@ -722,15 +715,7 @@ function drawArbiter(
       const spin = nowMs * 0.0016 + (i * Math.PI * 2) / Math.max(1, modulesAlive);
       ctx.globalAlpha = 0.8;
       ctx.beginPath();
-      ctx.ellipse(
-        screenX,
-        top + h * 0.5,
-        w * (1.1 + i * 0.22),
-        w * 0.3,
-        spin,
-        0,
-        Math.PI * 2,
-      );
+      ctx.ellipse(screenX, top + h * 0.5, w * (1.1 + i * 0.22), w * 0.3, spin, 0, Math.PI * 2);
       ctx.stroke();
     }
     ctx.restore();
@@ -961,7 +946,13 @@ interface PuntoCamera {
  *  vertice ritagliato ha ancora un grande scarto laterale. */
 const CAMERA_NEAR_EPS = 1;
 
-function puntoInCamera(camX: number, camY: number, camAngle: number, x: number, y: number): PuntoCamera {
+function puntoInCamera(
+  camX: number,
+  camY: number,
+  camAngle: number,
+  x: number,
+  y: number,
+): PuntoCamera {
   const dx = x - camX;
   const dy = y - camY;
   return {
@@ -1037,7 +1028,9 @@ function drawFloorTile(
     [x0, y0 + TILE],
   ] as const;
 
-  const angoliCamera = angoliMondo.map(([cx, cy]) => puntoInCamera(cam.x, cam.y, cam.angle, cx, cy));
+  const angoliCamera = angoliMondo.map(([cx, cy]) =>
+    puntoInCamera(cam.x, cam.y, cam.angle, cx, cy),
+  );
   const ritagliati = ritagliaPianoCamera(angoliCamera, CAMERA_NEAR_EPS);
   if (ritagliati.length < 3) return; // tutto dietro la camera: niente da disegnare
 
@@ -1134,7 +1127,7 @@ export function renderCampaignScenery(
   }
 
   for (const z of level.gravityZones) {
-    const pulse = 0.10 + Math.sin(nowMs * 0.002) * 0.04;
+    const pulse = 0.1 + Math.sin(nowMs * 0.002) * 0.04;
     for (const t of z.tiles) {
       drawFloorTile(ctx, vp, fx, cam, depth, t, `rgba(150, 110, 220, ${pulse})`, 2);
     }
@@ -1208,10 +1201,7 @@ export function renderCampaignScenery(
   ): void => {
     // Margine e pavimento di perp escono entrambi dalla taglia dello
     // sprite: vedi margineBillboard.
-    const { margine, semiMondo } = margineBillboard(
-      semiTile,
-      Math.hypot(x - cam.x, y - cam.y),
-    );
+    const { margine, semiMondo } = margineBillboard(semiTile, Math.hypot(x - cam.x, y - cam.y));
     const p = projectPoint(vp, fx, cam.x, cam.y, cam.angle, x, y, margine, semiMondo);
     if (!p.visible) return;
     const tratti = colonneVisibili(vp, fx, depth, p.screenX, p.perp, p.tileH * semiTile);
@@ -1220,44 +1210,67 @@ export function renderCampaignScenery(
     // Il caso normale — niente muro in mezzo — non paga né un save né
     // un clip: è la stragrande maggioranza dei fotogrammi.
     const intero = tratti.length === 1 && tratti[0]![0] === 0 && tratti[0]![1] === vp.numRays - 1;
-    list.push({ dist: p.perp, draw: intero ? disegna : () => ritagliato(ctx, vp, fx, tratti, disegna) });
+    list.push({
+      dist: p.perp,
+      draw: intero ? disegna : () => ritagliato(ctx, vp, fx, tratti, disegna),
+    });
   };
 
   for (const c of state.cores) {
     if (c.collected) continue;
-    push(c.x, c.y, (screenX, _y, tileH, perp) => {
-      const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + c.x) * TILE * 0.08;
-      const cy = heightToScreenY(vp, fx, perp, bobZ);
-      return () => drawCore(ctx, screenX, cy, tileH * 0.36, nowMs);
-    }, SEMI_TILE.nucleo);
+    push(
+      c.x,
+      c.y,
+      (screenX, _y, tileH, perp) => {
+        const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + c.x) * TILE * 0.08;
+        const cy = heightToScreenY(vp, fx, perp, bobZ);
+        return () => drawCore(ctx, screenX, cy, tileH * 0.36, nowMs);
+      },
+      SEMI_TILE.nucleo,
+    );
   }
 
   for (const sh of state.shields) {
     if (sh.collected) continue;
-    push(sh.x, sh.y, (screenX, _y, tileH, perp) => {
-      const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + sh.x) * TILE * 0.08;
-      const cy = heightToScreenY(vp, fx, perp, bobZ);
-      return () => drawShield(ctx, screenX, cy, tileH * 0.36, nowMs);
-    }, SEMI_TILE.scudo);
+    push(
+      sh.x,
+      sh.y,
+      (screenX, _y, tileH, perp) => {
+        const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + sh.x) * TILE * 0.08;
+        const cy = heightToScreenY(vp, fx, perp, bobZ);
+        return () => drawShield(ctx, screenX, cy, tileH * 0.36, nowMs);
+      },
+      SEMI_TILE.scudo,
+    );
   }
 
   for (const bp of state.beaconPickups) {
     if (bp.collected) continue;
-    push(bp.x, bp.y, (screenX, _y, tileH, perp) => {
-      const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + bp.x) * TILE * 0.08;
-      const cy = heightToScreenY(vp, fx, perp, bobZ);
-      return () => drawBeaconPickup(ctx, screenX, cy, tileH * 0.36, nowMs);
-    }, SEMI_TILE.trasponditore);
+    push(
+      bp.x,
+      bp.y,
+      (screenX, _y, tileH, perp) => {
+        const bobZ = TILE * 0.4 + Math.sin(nowMs * 0.003 + bp.x) * TILE * 0.08;
+        const cy = heightToScreenY(vp, fx, perp, bobZ);
+        return () => drawBeaconPickup(ctx, screenX, cy, tileH * 0.36, nowMs);
+      },
+      SEMI_TILE.trasponditore,
+    );
   }
 
   if (state.beacon.active) {
     const beacon = state.beacon;
     // A terra come l'uscita (drawExitMarker), non a mezz'aria come i
     // raccoglibili: è piantata, non fluttua.
-    push(beacon.x, beacon.y, (screenX, _y, tileH, perp) => {
-      const floorY = heightToScreenY(vp, fx, perp, 0);
-      return () => drawBeacon(ctx, screenX, floorY, tileH, beacon.ms, nowMs);
-    }, SEMI_TILE.esca);
+    push(
+      beacon.x,
+      beacon.y,
+      (screenX, _y, tileH, perp) => {
+        const floorY = heightToScreenY(vp, fx, perp, 0);
+        return () => drawBeacon(ctx, screenX, floorY, tileH, beacon.ms, nowMs);
+      },
+      SEMI_TILE.esca,
+    );
   }
 
   for (const t of state.turrets) {
@@ -1266,32 +1279,47 @@ export function renderCampaignScenery(
     if (!def) continue;
     const tx = (def.tx + 0.5) * TILE;
     const ty = (def.ty + 0.5) * TILE;
-    push(tx, ty, (screenX, _y, tileH, perp) => {
-      // Il drone fluttua a mezz'aria, la turret è imbullonata più in
-      // basso: la differenza di quota fa metà del lavoro di
-      // distinguerle a distanza.
-      const z = def.kind === 'drone' ? TILE * 0.55 : TILE * 0.42;
-      const cy = heightToScreenY(vp, fx, perp, z);
-      return () => drawTurret(ctx, screenX, cy, tileH * 0.3, t, def, nowMs);
-    }, SEMI_TILE.torretta);
+    push(
+      tx,
+      ty,
+      (screenX, _y, tileH, perp) => {
+        // Il drone fluttua a mezz'aria, la turret è imbullonata più in
+        // basso: la differenza di quota fa metà del lavoro di
+        // distinguerle a distanza.
+        const z = def.kind === 'drone' ? TILE * 0.55 : TILE * 0.42;
+        const cy = heightToScreenY(vp, fx, perp, z);
+        return () => drawTurret(ctx, screenX, cy, tileH * 0.3, t, def, nowMs);
+      },
+      SEMI_TILE.torretta,
+    );
   }
 
   if (level.exit) {
     const ex = (level.exit.tx + 0.5) * TILE;
     const ey = (level.exit.ty + 0.5) * TILE;
-    push(ex, ey, (screenX, _y, tileH, perp) => {
-      const floorY = heightToScreenY(vp, fx, perp, 0);
-      return () => drawExitMarker(ctx, screenX, floorY, tileH, nowMs);
-    }, SEMI_TILE.uscita);
+    push(
+      ex,
+      ey,
+      (screenX, _y, tileH, perp) => {
+        const floorY = heightToScreenY(vp, fx, perp, 0);
+        return () => drawExitMarker(ctx, screenX, floorY, tileH, nowMs);
+      },
+      SEMI_TILE.uscita,
+    );
   }
 
   for (const e of state.enemies) {
     if (!e.alive) continue;
     const a = archetypeOf(e.kind);
-    push(e.x, e.y, (screenX, _y, tileH, perp) => {
-      const floorY = heightToScreenY(vp, fx, perp, 0);
-      return () => drawEnemy(ctx, screenX, floorY, tileH, cam, e, a, nowMs);
-    }, a.height * 0.5);
+    push(
+      e.x,
+      e.y,
+      (screenX, _y, tileH, perp) => {
+        const floorY = heightToScreenY(vp, fx, perp, 0);
+        return () => drawEnemy(ctx, screenX, floorY, tileH, cam, e, a, nowMs);
+      },
+      a.height * 0.5,
+    );
   }
 
   const boss = state.boss;
@@ -1300,17 +1328,21 @@ export function renderCampaignScenery(
     const modulesAlive = (level.boss?.moduleTurretIds ?? []).filter((id) =>
       state.turrets.some((t) => t.id === id && t.alive),
     ).length;
-    push(boss.x, boss.y, (screenX, _y, tileH, perp) => {
-      const floorY = heightToScreenY(vp, fx, perp, 0);
-      if (kind === 'custode') {
-        return () => drawCustode(ctx, screenX, floorY, tileH, cam, boss, nowMs);
-      }
-      if (kind === 'arbiter') {
-        return () =>
-          drawArbiter(ctx, screenX, floorY, tileH, cam, boss, modulesAlive, nowMs);
-      }
-      return () => drawBoss(ctx, screenX, floorY, tileH, cam, boss, hasGraze, enraged, nowMs);
-    }, SEMI_TILE.boss);
+    push(
+      boss.x,
+      boss.y,
+      (screenX, _y, tileH, perp) => {
+        const floorY = heightToScreenY(vp, fx, perp, 0);
+        if (kind === 'custode') {
+          return () => drawCustode(ctx, screenX, floorY, tileH, cam, boss, nowMs);
+        }
+        if (kind === 'arbiter') {
+          return () => drawArbiter(ctx, screenX, floorY, tileH, cam, boss, modulesAlive, nowMs);
+        }
+        return () => drawBoss(ctx, screenX, floorY, tileH, cam, boss, hasGraze, enraged, nowMs);
+      },
+      SEMI_TILE.boss,
+    );
   }
 
   list.sort((a, b) => b.dist - a.dist);

@@ -606,12 +606,34 @@ describe('Trasponditore — raccoglibile', () => {
 function freshEnemy(kind: EnemyState['kind'], x: number, y: number): EnemyState {
   const a = archetypeOf(kind);
   return {
-    id: 'soffitto', kind, alive: true, x, y, angle: Math.PI, hp: a.hp,
-    ai: 'patrol', reactionTimer: a.reactionMs, attackCooldown: 0,
-    ventMs: 0, revealMs: 0, chargeMs: 0, chargeDirX: 0, chargeDirY: 0,
-    postX: x, postY: y, patrolX: null, patrolY: null, goalX: null, goalY: null,
-    patrolTimer: 0, lastSeenX: null, lastSeenY: null,
-    still: false, closing: false, lured: false, hardened: false,
+    id: 'soffitto',
+    kind,
+    alive: true,
+    x,
+    y,
+    angle: Math.PI,
+    hp: a.hp,
+    ai: 'patrol',
+    reactionTimer: a.reactionMs,
+    attackCooldown: 0,
+    ventMs: 0,
+    revealMs: 0,
+    chargeMs: 0,
+    chargeDirX: 0,
+    chargeDirY: 0,
+    postX: x,
+    postY: y,
+    patrolX: null,
+    patrolY: null,
+    goalX: null,
+    goalY: null,
+    patrolTimer: 0,
+    lastSeenX: null,
+    lastSeenY: null,
+    still: false,
+    closing: false,
+    lured: false,
+    hardened: false,
   } as EnemyState;
 }
 
@@ -646,9 +668,15 @@ function rearArcMs(
   if (Math.hypot(lure.x - e.x, lure.y - e.y) > beacon.lureTiles * TILE) return 0;
 
   const ctx: EnemyAiCtx = {
-    getTile: () => 0, mapW: 64, mapH: 64,
-    playerX: px, playerY: py, playerTargetable: true,
-    lure, leash: null, dtMs: TICK_MS,
+    getTile: () => 0,
+    mapW: 64,
+    mapH: 64,
+    playerX: px,
+    playerY: py,
+    playerTargetable: true,
+    lure,
+    leash: null,
+    dtMs: TICK_MS,
   };
   let ticks = 0;
   for (let t = 0; t < Math.round(beacon.lifetimeMs / TICK_MS); t++) {
@@ -755,7 +783,7 @@ describe("Trasponditore — il soffitto dell'arco posteriore", () => {
     },
   );
 
-  it('almeno un archetipo ha una finestra usabile: altrimenti l\'arma non apre niente', () => {
+  it("almeno un archetipo ha una finestra usabile: altrimenti l'arma non apre niente", () => {
     // Il gemello del soffitto. Senza questo, azzerare BEACON_LURE_TILES
     // renderebbe verdi tutti i test qui sopra.
     const usable = REAR_KINDS.filter((k) => bestRearArcMs(k) >= BULLET_COOLDOWN);

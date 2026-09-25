@@ -57,10 +57,7 @@ function classicScript(outDir: string): Plugin {
       const file = path.join(outDir, 'index.html');
       const html = readFileSync(file, 'utf8');
 
-      let patched = html.replace(
-        /<script([^>]*)\stype="module"([^>]*)>/g,
-        '<script$1$2>',
-      );
+      let patched = html.replace(/<script([^>]*)\stype="module"([^>]*)>/g, '<script$1$2>');
 
       // Lift the whole inlined script out of <head> and drop it in just
       // before </body>. Sliced by index rather than matched by regex:
@@ -79,10 +76,7 @@ function classicScript(outDir: string): Plugin {
       // Inline the favicon too, so the .html can be moved or emailed
       // on its own without leaving a broken reference behind.
       try {
-        const svg = readFileSync(
-          path.resolve(import.meta.dirname, 'public/favicon.svg'),
-          'utf8',
-        );
+        const svg = readFileSync(path.resolve(import.meta.dirname, 'public/favicon.svg'), 'utf8');
         const uri = `data:image/svg+xml,${encodeURIComponent(svg)}`;
         patched = patched.replace(/href="\.\/favicon\.svg"/g, `href="${uri}"`);
       } catch {
@@ -139,7 +133,7 @@ function classicScript(outDir: string): Plugin {
       if (!patched.includes(metaImpronta)) {
         throw new Error(
           'il meta impronta-sorgenti non è sopravvissuto nel file finale — ' +
-            'controllare l\'ordine dei plugin rispetto a vite-plugin-singlefile',
+            "controllare l'ordine dei plugin rispetto a vite-plugin-singlefile",
         );
       }
 

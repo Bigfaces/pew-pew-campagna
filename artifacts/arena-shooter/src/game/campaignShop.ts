@@ -94,7 +94,8 @@ export function shopOffer(
  *  perché questa funzione è la fonte di verità che la HUD interroga
  *  PRIMA di mandare l'acquisto alla simulazione: deve poter dire lo
  *  stesso "perché no" che la sim direbbe dopo, non un altro. */
-export type PurchaseCheck = { ok: true } | { ok: false; reason: 'punti' | 'atto' | 'gia-preso' | 'sconosciuto' };
+export type PurchaseCheck =
+  { ok: true } | { ok: false; reason: 'punti' | 'atto' | 'gia-preso' | 'sconosciuto' };
 
 /** Decide se `id` è comprabile adesso, al varco dopo `actCompleted`.
  *

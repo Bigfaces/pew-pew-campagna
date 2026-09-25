@@ -39,15 +39,14 @@ const CAMPAIGN_TYPES = path.resolve(process.cwd(), 'src/sim/campaign/types.ts');
  *  tolta insieme al motivo che non vale più. */
 const ESCLUSIONI_VOLUTE: Readonly<Record<string, string>> = {
   itemPurchased:
-    "azione di menu, non evento di un tick giocato: il riscontro arriva dal valore " +
-    "di ritorno di tryPurchase (vedi il commento in handleEvents e " +
+    'azione di menu, non evento di un tick giocato: il riscontro arriva dal valore ' +
+    'di ritorno di tryPurchase (vedi il commento in handleEvents e ' +
     'sim/campaign/acquisti.test.ts), non da qui.',
-  nodeRefunded:
-    'stesso motivo di itemPurchased: azione di menu, riscontro dal valore di ritorno.',
+  nodeRefunded: 'stesso motivo di itemPurchased: azione di menu, riscontro dal valore di ritorno.',
   purchaseRefused:
     'stesso motivo di itemPurchased: azione di menu, riscontro dal valore di ritorno.',
   gasCleared:
-    "nessun suono dedicato previsto: a differenza della gravità (GDD.md, sezione " +
+    'nessun suono dedicato previsto: a differenza della gravità (GDD.md, sezione ' +
     '"Voce audio" — "la gravità suona in entrambi i versi", il ripristino è un ' +
     "cambio di regole tanto quanto l'inversione) non c'è un'analoga intenzione " +
     "scritta per l'uscita dal gas — solo l'ingresso (gasEntered) ha voce.",
@@ -57,7 +56,7 @@ const ESCLUSIONI_VOLUTE: Readonly<Record<string, string>> = {
   bossEnraged:
     "nessun suono dedicato previsto: l'alterazione ha già un segno a schermo (HUD " +
     "e render/campaignScene.ts, colore ed etichetta 'ALTERATO'/'ALTERATA', più una " +
-    "battuta di ARBITER in ui/arbiter.ts) e niente nel GDD chiede anche un suono.",
+    'battuta di ARBITER in ui/arbiter.ts) e niente nel GDD chiede anche un suono.',
 };
 
 /** Estrae il corpo di un blocco delimitato da graffe a partire dalla
@@ -103,11 +102,17 @@ function tipiEvento(): string[] {
       break;
     }
   }
-  expect(end, 'fine dell\'unione CampaignEvent non trovata (nessun ";" a profondità 0)').toBeGreaterThan(-1);
+  expect(
+    end,
+    'fine dell\'unione CampaignEvent non trovata (nessun ";" a profondità 0)',
+  ).toBeGreaterThan(-1);
 
   const block = src.slice(start, end);
   const tipi = [...block.matchAll(/\btype:\s*'([a-zA-Z]+)'/g)].map((m) => m[1]!);
-  expect(tipi.length, 'nessun type estratto da CampaignEvent: il regex è da aggiornare').toBeGreaterThan(20);
+  expect(
+    tipi.length,
+    'nessun type estratto da CampaignEvent: il regex è da aggiornare',
+  ).toBeGreaterThan(20);
   return tipi;
 }
 

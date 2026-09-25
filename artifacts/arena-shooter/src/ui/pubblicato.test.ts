@@ -108,7 +108,9 @@ describe('docs/index.html — il file che riceve chi non compila', () => {
     // c'è un conteggio («TRASPONDITORE ×2») che nel sorgente è un
     // segnaposto e nel file compilato non compare mai come tale. Una
     // guardia sull'aggiornamento del file non deve fallire per questo.
-    const nome = pickupNotice(ev, XP_CORE).split(/[^A-ZÀ-Ü ]/)[0]!.trim();
+    const nome = pickupNotice(ev, XP_CORE)
+      .split(/[^A-ZÀ-Ü ]/)[0]!
+      .trim();
     expect(
       pubblicato().includes(nome),
       `il file pubblicato non nomina «${nome}» quando lo si raccoglie: ` +
@@ -129,7 +131,7 @@ describe('docs/index.html — il file che riceve chi non compila', () => {
   // schermo. Ricalcolata dal sorgente vero (stessa funzione che usa
   // vite.config.standalone.ts per inciderla nell'HTML) e pretesa
   // identica, byte per byte, dentro il file pubblicato.
-  it('porta l\'impronta esatta dei sorgenti — non solo le stringhe che sa nominare', () => {
+  it("porta l'impronta esatta dei sorgenti — non solo le stringhe che sa nominare", () => {
     const { hash, file } = calcolaImpronta();
     const atteso = `<meta name="impronta-sorgenti" content="${hash}">`;
     const trovato = pubblicato().includes(atteso);
@@ -150,7 +152,7 @@ describe('docs/index.html — il file che riceve chi non compila', () => {
         .sort((a, b) => b.mtime - a.mtime);
       aiuto =
         '\n\n(aiuto, non prova — su un clone fresco le date del filesystem non sono ' +
-        "affidabili e questo elenco può essere vuoto o fuorviante: sorgenti con data " +
+        'affidabili e questo elenco può essere vuoto o fuorviante: sorgenti con data ' +
         `di modifica più recente di ${PUBBLICATO}:\n` +
         (piuRecenti.length > 0
           ? piuRecenti.map((f) => `  ${f.relativo}`).join('\n')

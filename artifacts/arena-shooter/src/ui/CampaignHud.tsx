@@ -142,8 +142,8 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
             esattamente il modo in cui una stanza nuova finirebbe per
             chiamarsi `undefined`. */}
         <div className="hud-clock">
-          {ACT_LABEL[snap.levelAct] ?? snap.levelAct} · {snap.levelOrdinal}/
-          {snap.levelCount} · {snap.room}
+          {ACT_LABEL[snap.levelAct] ?? snap.levelAct} · {snap.levelOrdinal}/{snap.levelCount} ·{' '}
+          {snap.room}
         </div>
         {snap.door.armed && (
           <div className="hud-clock" data-urgent>
@@ -275,10 +275,7 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
           {snap.scanned.vulnerability !== '—' && (
             <>
               <span className="campaign-scan-sep">·</span>
-              <span
-                className="campaign-scan-vuln"
-                data-open={snap.scanned.windowOpen || undefined}
-              >
+              <span className="campaign-scan-vuln" data-open={snap.scanned.windowOpen || undefined}>
                 {snap.scanned.vulnerability}
               </span>
             </>
@@ -341,7 +338,7 @@ export const CAMPAIGN_CONTROLS: readonly (readonly [string, string])[] = [
   ['PIASTRE', 'Assorbono un colpo ciascuna. Tornano piene entrando in una stanza nuova'],
   ['CLICK DES.', 'Ottica — tieni premuto per mirare col cannocchiale'],
   ['MAIUSC', 'Scatto — dal nodo Scatto in poi, nella direzione in cui vai'],
-  ['F', 'Trasponditore — lancia un\'esca, se ne hai una carica'],
+  ['F', "Trasponditore — lancia un'esca, se ne hai una carica"],
   ['ESC', 'Pausa'],
   ['M', 'Muto'],
   // ESC chiude anche la schermata di avvistamento (vedi sopra), ma
@@ -401,11 +398,11 @@ export function CampaignPauseScreen({
           <label>PROGRESSIONE</label>
           <XpBar snap={snap} />
           <p className="hint">
-            Core raccolti: {snap.coresCollected} · Nodi: {owned}/{ALL_SKILL_NODES.length} ·
-            Punti disponibili: {snap.availableSkillPoints}
+            Core raccolti: {snap.coresCollected} · Nodi: {owned}/{ALL_SKILL_NODES.length} · Punti
+            disponibili: {snap.availableSkillPoints}
             <br />
-            La progressione resta salvata in questo browser; la posizione no —
-            uscire e rientrare rigioca il livello dall'Attracco.
+            La progressione resta salvata in questo browser; la posizione no — uscire e rientrare
+            rigioca il livello dall'Attracco.
           </p>
         </div>
 
@@ -491,21 +488,15 @@ const SIGHTING_EMPHASIS: ReadonlySet<string> = new Set(['PUNTO DEBOLE', 'PIASTRE
  *  una seconda copia diverge il giorno in cui la prima cambia, e
  *  comandi.test.ts / pubblicato.test.ts sorvegliano quella, non
  *  questa. */
-export function CampaignLegendScreen({
-  onClose,
-}: {
-  onClose: () => void;
-}): React.ReactElement {
-  const rows = SIGHTING_KEYS.map(
-    (k) => CAMPAIGN_CONTROLS.find(([key]) => key === k)!,
-  );
+export function CampaignLegendScreen({ onClose }: { onClose: () => void }): React.ReactElement {
+  const rows = SIGHTING_KEYS.map((k) => CAMPAIGN_CONTROLS.find(([key]) => key === k)!);
   return (
     <div className="overlay">
       <div className="panel" style={{ maxWidth: 480 }}>
         <p className="subtitle">PRIMO CONTATTO</p>
         <p className="hint" style={{ textAlign: 'center', marginTop: 0 }}>
-          Contatto ostile catalogato. Il registro sottostante esisteva già —
-          non lo leggevi, quindi te lo mostro.
+          Contatto ostile catalogato. Il registro sottostante esisteva già — non lo leggevi, quindi
+          te lo mostro.
         </p>
         <dl className="controls" style={{ marginTop: 20 }}>
           {rows.map(([k, v]) => {
@@ -679,16 +670,14 @@ export function CampaignActBreakScreen({
   return (
     <div className="overlay">
       <div className="panel">
-        <p className="subtitle">
-          FINE DELL’ATTO {ACT_LABEL[snap.actBreakActCompleted ?? 1]}
-        </p>
+        <p className="subtitle">FINE DELL’ATTO {ACT_LABEL[snap.actBreakActCompleted ?? 1]}</p>
         <ActBreakLines lines={brk?.lines ?? []} />
         {shopRows.length > 0 && (
           <div className="field shop-bench">
             <label>BANCO DI RICONFIGURAZIONE</label>
             <p className="hint" style={{ marginTop: 0 }}>
-              Non c'è hardware nuovo da comprare: si rilavora quello che hai già, e ogni
-              innesto dà e toglie insieme. Punti disponibili: {snap.availableSkillPoints}
+              Non c'è hardware nuovo da comprare: si rilavora quello che hai già, e ogni innesto dà
+              e toglie insieme. Punti disponibili: {snap.availableSkillPoints}
             </p>
             <div className="shop-grid">
               {shopRows.map((row) => (

@@ -133,26 +133,90 @@ export const ENEMY_RANGED_SHOT_BY_TIER: Readonly<Record<EnemyTier, VoiceSpec>> =
   1: {
     label: 'colpo nemico — fascia 1',
     layers: [
-      { kind: 'tone', wave: 'sawtooth', freqFrom: 520, freqTo: 190, delay: 0, duration: 0.11, gain: 0.32 },
-      { kind: 'noise', filterType: 'bandpass', freq: 2000, q: 3, delay: 0, duration: 0.05, gain: 0.22 },
+      {
+        kind: 'tone',
+        wave: 'sawtooth',
+        freqFrom: 520,
+        freqTo: 190,
+        delay: 0,
+        duration: 0.11,
+        gain: 0.32,
+      },
+      {
+        kind: 'noise',
+        filterType: 'bandpass',
+        freq: 2000,
+        q: 3,
+        delay: 0,
+        duration: 0.05,
+        gain: 0.22,
+      },
     ],
   },
   2: {
     label: 'colpo nemico — fascia 2',
     layers: [
-      { kind: 'tone', wave: 'sawtooth', freqFrom: 380, freqTo: 130, delay: 0, duration: 0.16, gain: 0.4 },
-      { kind: 'tone', wave: 'square', freqFrom: 150, freqTo: 90, delay: 0, duration: 0.14, gain: 0.16 },
-      { kind: 'noise', filterType: 'bandpass', freq: 1400, q: 2.2, delay: 0, duration: 0.06, gain: 0.28 },
+      {
+        kind: 'tone',
+        wave: 'sawtooth',
+        freqFrom: 380,
+        freqTo: 130,
+        delay: 0,
+        duration: 0.16,
+        gain: 0.4,
+      },
+      {
+        kind: 'tone',
+        wave: 'square',
+        freqFrom: 150,
+        freqTo: 90,
+        delay: 0,
+        duration: 0.14,
+        gain: 0.16,
+      },
+      {
+        kind: 'noise',
+        filterType: 'bandpass',
+        freq: 1400,
+        q: 2.2,
+        delay: 0,
+        duration: 0.06,
+        gain: 0.28,
+      },
     ],
   },
   3: {
     label: 'colpo nemico — fascia 3',
     layers: [
-      { kind: 'tone', wave: 'sawtooth', freqFrom: 262, freqTo: 70, delay: 0, duration: 0.24, gain: 0.48 },
+      {
+        kind: 'tone',
+        wave: 'sawtooth',
+        freqFrom: 262,
+        freqTo: 70,
+        delay: 0,
+        duration: 0.24,
+        gain: 0.48,
+      },
       // Il battimento: stessa forma, 6 Hz più su, leggermente in ritardo
       // così l'attacco resta unico e solo la coda stride.
-      { kind: 'tone', wave: 'sawtooth', freqFrom: 268, freqTo: 74, delay: 0.01, duration: 0.24, gain: 0.42 },
-      { kind: 'noise', filterType: 'lowpass', freq: 900, sweepTo: 200, delay: 0, duration: 0.2, gain: 0.35 },
+      {
+        kind: 'tone',
+        wave: 'sawtooth',
+        freqFrom: 268,
+        freqTo: 74,
+        delay: 0.01,
+        duration: 0.24,
+        gain: 0.42,
+      },
+      {
+        kind: 'noise',
+        filterType: 'lowpass',
+        freq: 900,
+        sweepTo: 200,
+        delay: 0,
+        duration: 0.2,
+        gain: 0.35,
+      },
     ],
   },
 };
@@ -185,8 +249,24 @@ export function tierOf(kind: EnemyKind): EnemyTier {
 export const ENEMY_HIT_BODY: VoiceSpec = {
   label: 'colpo al corpo',
   layers: [
-    { kind: 'noise', filterType: 'bandpass', freq: 1300, q: 1.6, delay: 0, duration: 0.07, gain: 0.32 },
-    { kind: 'tone', wave: 'triangle', freqFrom: 500, freqTo: 380, delay: 0, duration: 0.05, gain: 0.12 },
+    {
+      kind: 'noise',
+      filterType: 'bandpass',
+      freq: 1300,
+      q: 1.6,
+      delay: 0,
+      duration: 0.07,
+      gain: 0.32,
+    },
+    {
+      kind: 'tone',
+      wave: 'triangle',
+      freqFrom: 500,
+      freqTo: 380,
+      delay: 0,
+      duration: 0.05,
+      gain: 0.12,
+    },
   ],
 };
 
@@ -194,10 +274,26 @@ export const ENEMY_HIT_WEAK_SPOT: VoiceSpec = {
   label: 'colpo al punto debole',
   layers: [
     { kind: 'noise', filterType: 'highpass', freq: 2800, delay: 0, duration: 0.05, gain: 0.3 },
-    { kind: 'tone', wave: 'triangle', freqFrom: 1700, freqTo: 1700, delay: 0, duration: 0.09, gain: 0.32 },
+    {
+      kind: 'tone',
+      wave: 'triangle',
+      freqFrom: 1700,
+      freqTo: 1700,
+      delay: 0,
+      duration: 0.09,
+      gain: 0.32,
+    },
     // Il secondo tono arriva un attimo dopo e sale: è l'accordo che
     // rende lo squillo riconoscibile invece di un solo bip più acuto.
-    { kind: 'tone', wave: 'triangle', freqFrom: 2500, freqTo: 2500, delay: 0.05, duration: 0.11, gain: 0.28 },
+    {
+      kind: 'tone',
+      wave: 'triangle',
+      freqFrom: 2500,
+      freqTo: 2500,
+      delay: 0.05,
+      duration: 0.11,
+      gain: 0.28,
+    },
   ],
 };
 
@@ -206,7 +302,15 @@ export const PLATE_ABSORBED: VoiceSpec = {
   layers: [
     // Niente sopra i 320 Hz in tutto lo spec: è la garanzia che lo
     // separa da qualunque altro suono di colpo del modulo.
-    { kind: 'tone', wave: 'square', freqFrom: 100, freqTo: 55, delay: 0, duration: 0.16, gain: 0.34 },
+    {
+      kind: 'tone',
+      wave: 'square',
+      freqFrom: 100,
+      freqTo: 55,
+      delay: 0,
+      duration: 0.16,
+      gain: 0.34,
+    },
     { kind: 'noise', filterType: 'lowpass', freq: 320, delay: 0, duration: 0.3, gain: 0.55 },
   ],
 };
@@ -222,15 +326,40 @@ export const PLATE_ABSORBED: VoiceSpec = {
 export const ENEMY_DOWN: VoiceSpec = {
   label: 'nemico abbattuto',
   layers: [
-    { kind: 'noise', filterType: 'lowpass', freq: 850, sweepTo: 160, delay: 0, duration: 0.24, gain: 0.42 },
-    { kind: 'tone', wave: 'sawtooth', freqFrom: 160, freqTo: 42, delay: 0, duration: 0.26, gain: 0.22 },
+    {
+      kind: 'noise',
+      filterType: 'lowpass',
+      freq: 850,
+      sweepTo: 160,
+      delay: 0,
+      duration: 0.24,
+      gain: 0.42,
+    },
+    {
+      kind: 'tone',
+      wave: 'sawtooth',
+      freqFrom: 160,
+      freqTo: 42,
+      delay: 0,
+      duration: 0.26,
+      gain: 0.22,
+    },
   ],
 };
 
 export const ENEMY_REVEALED: VoiceSpec = {
   label: 'nemico si svela',
   layers: [
-    { kind: 'noise', filterType: 'bandpass', freq: 400, sweepTo: 2200, q: 1.4, delay: 0, duration: 0.2, gain: 0.26 },
+    {
+      kind: 'noise',
+      filterType: 'bandpass',
+      freq: 400,
+      sweepTo: 2200,
+      q: 1.4,
+      delay: 0,
+      duration: 0.2,
+      gain: 0.26,
+    },
     { kind: 'tone', wave: 'sine', freqFrom: 220, freqTo: 900, delay: 0, duration: 0.2, gain: 0.16 },
   ],
 };
@@ -247,8 +376,24 @@ export const ENEMY_REVEALED: VoiceSpec = {
 export const PLAYER_DASH: VoiceSpec = {
   label: 'scatto',
   layers: [
-    { kind: 'noise', filterType: 'highpass', freq: 700, sweepTo: 2400, delay: 0, duration: 0.13, gain: 0.34 },
-    { kind: 'tone', wave: 'triangle', freqFrom: 1100, freqTo: 1100, delay: 0.12, duration: 0.04, gain: 0.1 },
+    {
+      kind: 'noise',
+      filterType: 'highpass',
+      freq: 700,
+      sweepTo: 2400,
+      delay: 0,
+      duration: 0.13,
+      gain: 0.34,
+    },
+    {
+      kind: 'tone',
+      wave: 'triangle',
+      freqFrom: 1100,
+      freqTo: 1100,
+      delay: 0.12,
+      duration: 0.04,
+      gain: 0.1,
+    },
   ],
 };
 
@@ -269,15 +414,39 @@ export const BOSS_PHASE_CHANGE_BY_STAGE: Readonly<Record<2 | 3, VoiceSpec>> = {
   2: {
     label: 'boss — cambio di fase (2)',
     layers: [
-      { kind: 'tone', wave: 'sawtooth', freqFrom: 220, freqTo: 75, delay: 0, duration: 0.4, gain: 0.3 },
+      {
+        kind: 'tone',
+        wave: 'sawtooth',
+        freqFrom: 220,
+        freqTo: 75,
+        delay: 0,
+        duration: 0.4,
+        gain: 0.3,
+      },
       { kind: 'noise', filterType: 'lowpass', freq: 550, delay: 0, duration: 0.35, gain: 0.28 },
     ],
   },
   3: {
     label: 'boss — cambio di fase (3)',
     layers: [
-      { kind: 'tone', wave: 'sawtooth', freqFrom: 200, freqTo: 55, delay: 0, duration: 0.55, gain: 0.4 },
-      { kind: 'tone', wave: 'sawtooth', freqFrom: 205, freqTo: 58, delay: 0.02, duration: 0.55, gain: 0.34 },
+      {
+        kind: 'tone',
+        wave: 'sawtooth',
+        freqFrom: 200,
+        freqTo: 55,
+        delay: 0,
+        duration: 0.55,
+        gain: 0.4,
+      },
+      {
+        kind: 'tone',
+        wave: 'sawtooth',
+        freqFrom: 205,
+        freqTo: 58,
+        delay: 0.02,
+        duration: 0.55,
+        gain: 0.34,
+      },
       { kind: 'noise', filterType: 'lowpass', freq: 600, delay: 0, duration: 0.45, gain: 0.36 },
     ],
   },
@@ -286,9 +455,33 @@ export const BOSS_PHASE_CHANGE_BY_STAGE: Readonly<Record<2 | 3, VoiceSpec>> = {
 export const BOSS_VULNERABLE_OPEN: VoiceSpec = {
   label: 'boss — finestra vulnerabile',
   layers: [
-    { kind: 'tone', wave: 'triangle', freqFrom: 700, freqTo: 700, delay: 0, duration: 0.16, gain: 0.2 },
-    { kind: 'tone', wave: 'triangle', freqFrom: 1050, freqTo: 1050, delay: 0.07, duration: 0.16, gain: 0.2 },
-    { kind: 'tone', wave: 'triangle', freqFrom: 1400, freqTo: 1400, delay: 0.14, duration: 0.18, gain: 0.2 },
+    {
+      kind: 'tone',
+      wave: 'triangle',
+      freqFrom: 700,
+      freqTo: 700,
+      delay: 0,
+      duration: 0.16,
+      gain: 0.2,
+    },
+    {
+      kind: 'tone',
+      wave: 'triangle',
+      freqFrom: 1050,
+      freqTo: 1050,
+      delay: 0.07,
+      duration: 0.16,
+      gain: 0.2,
+    },
+    {
+      kind: 'tone',
+      wave: 'triangle',
+      freqFrom: 1400,
+      freqTo: 1400,
+      delay: 0.14,
+      duration: 0.18,
+      gain: 0.2,
+    },
   ],
 };
 
@@ -302,8 +495,24 @@ export const BOSS_VULNERABLE_OPEN: VoiceSpec = {
 export const DOOR_SEAL: VoiceSpec = {
   label: 'porta stagna sigillata',
   layers: [
-    { kind: 'noise', filterType: 'bandpass', freq: 3000, q: 4, delay: 0, duration: 0.05, gain: 0.4 },
-    { kind: 'noise', filterType: 'highpass', freq: 4200, sweepTo: 1200, delay: 0.05, duration: 0.32, gain: 0.22 },
+    {
+      kind: 'noise',
+      filterType: 'bandpass',
+      freq: 3000,
+      q: 4,
+      delay: 0,
+      duration: 0.05,
+      gain: 0.4,
+    },
+    {
+      kind: 'noise',
+      filterType: 'highpass',
+      freq: 4200,
+      sweepTo: 1200,
+      delay: 0.05,
+      duration: 0.32,
+      gain: 0.22,
+    },
   ],
 };
 
@@ -314,7 +523,16 @@ export const DOOR_SEAL: VoiceSpec = {
 export const GAS_HAZARD: VoiceSpec = {
   label: 'gas contaminante',
   layers: [
-    { kind: 'noise', filterType: 'bandpass', freq: 2100, sweepTo: 700, q: 1.1, delay: 0, duration: 0.55, gain: 0.18 },
+    {
+      kind: 'noise',
+      filterType: 'bandpass',
+      freq: 2100,
+      sweepTo: 700,
+      q: 1.1,
+      delay: 0,
+      duration: 0.55,
+      gain: 0.18,
+    },
   ],
 };
 
@@ -328,16 +546,48 @@ export const GAS_HAZARD: VoiceSpec = {
 export const GRAVITY_FLIP_INVERTED: VoiceSpec = {
   label: 'gravità invertita',
   layers: [
-    { kind: 'tone', wave: 'sine', freqFrom: 180, freqTo: 1100, delay: 0, duration: 0.3, gain: 0.22 },
-    { kind: 'tone', wave: 'sine', freqFrom: 1100, freqTo: 180, delay: 0.02, duration: 0.3, gain: 0.22 },
+    {
+      kind: 'tone',
+      wave: 'sine',
+      freqFrom: 180,
+      freqTo: 1100,
+      delay: 0,
+      duration: 0.3,
+      gain: 0.22,
+    },
+    {
+      kind: 'tone',
+      wave: 'sine',
+      freqFrom: 1100,
+      freqTo: 180,
+      delay: 0.02,
+      duration: 0.3,
+      gain: 0.22,
+    },
   ],
 };
 
 export const GRAVITY_FLIP_RESTORED: VoiceSpec = {
   label: 'gravità ripristinata',
   layers: [
-    { kind: 'tone', wave: 'sine', freqFrom: 1100, freqTo: 180, delay: 0, duration: 0.3, gain: 0.22 },
-    { kind: 'tone', wave: 'sine', freqFrom: 180, freqTo: 1100, delay: 0.02, duration: 0.3, gain: 0.22 },
+    {
+      kind: 'tone',
+      wave: 'sine',
+      freqFrom: 1100,
+      freqTo: 180,
+      delay: 0,
+      duration: 0.3,
+      gain: 0.22,
+    },
+    {
+      kind: 'tone',
+      wave: 'sine',
+      freqFrom: 180,
+      freqTo: 1100,
+      delay: 0.02,
+      duration: 0.3,
+      gain: 0.22,
+    },
   ],
 };
 
@@ -350,7 +600,15 @@ export const GRAVITY_FLIP_RESTORED: VoiceSpec = {
 export const BLACKOUT: VoiceSpec = {
   label: 'blackout di settore',
   layers: [
-    { kind: 'tone', wave: 'sawtooth', freqFrom: 260, freqTo: 60, delay: 0, duration: 0.35, gain: 0.22 },
+    {
+      kind: 'tone',
+      wave: 'sawtooth',
+      freqFrom: 260,
+      freqTo: 60,
+      delay: 0,
+      duration: 0.35,
+      gain: 0.22,
+    },
     { kind: 'noise', filterType: 'lowpass', freq: 140, delay: 0, duration: 0.4, gain: 0.14 },
   ],
 };
@@ -365,10 +623,42 @@ export const BLACKOUT: VoiceSpec = {
 export const LEVEL_COMPLETE: VoiceSpec = {
   label: 'livello completato',
   layers: [
-    { kind: 'tone', wave: 'sine', freqFrom: 440, freqTo: 440, delay: 0, duration: 0.22, gain: 0.22 },
-    { kind: 'tone', wave: 'sine', freqFrom: 554, freqTo: 554, delay: 0.1, duration: 0.22, gain: 0.22 },
-    { kind: 'tone', wave: 'sine', freqFrom: 659, freqTo: 659, delay: 0.2, duration: 0.22, gain: 0.22 },
-    { kind: 'tone', wave: 'sine', freqFrom: 880, freqTo: 880, delay: 0.3, duration: 0.28, gain: 0.24 },
+    {
+      kind: 'tone',
+      wave: 'sine',
+      freqFrom: 440,
+      freqTo: 440,
+      delay: 0,
+      duration: 0.22,
+      gain: 0.22,
+    },
+    {
+      kind: 'tone',
+      wave: 'sine',
+      freqFrom: 554,
+      freqTo: 554,
+      delay: 0.1,
+      duration: 0.22,
+      gain: 0.22,
+    },
+    {
+      kind: 'tone',
+      wave: 'sine',
+      freqFrom: 659,
+      freqTo: 659,
+      delay: 0.2,
+      duration: 0.22,
+      gain: 0.22,
+    },
+    {
+      kind: 'tone',
+      wave: 'sine',
+      freqFrom: 880,
+      freqTo: 880,
+      delay: 0.3,
+      duration: 0.28,
+      gain: 0.24,
+    },
   ],
 };
 
@@ -380,8 +670,24 @@ export const LEVEL_COMPLETE: VoiceSpec = {
 export const ACT_RESTART: VoiceSpec = {
   label: 'atto da capo',
   layers: [
-    { kind: 'tone', wave: 'sawtooth', freqFrom: 500, freqTo: 180, delay: 0, duration: 0.22, gain: 0.24 },
-    { kind: 'tone', wave: 'triangle', freqFrom: 260, freqTo: 460, delay: 0.24, duration: 0.14, gain: 0.16 },
+    {
+      kind: 'tone',
+      wave: 'sawtooth',
+      freqFrom: 500,
+      freqTo: 180,
+      delay: 0,
+      duration: 0.22,
+      gain: 0.24,
+    },
+    {
+      kind: 'tone',
+      wave: 'triangle',
+      freqFrom: 260,
+      freqTo: 460,
+      delay: 0.24,
+      duration: 0.14,
+      gain: 0.16,
+    },
   ],
 };
 
@@ -415,8 +721,24 @@ export const BEACON_THROWN: VoiceSpec = {
   layers: [
     // La mano che lo scaglia: breve, discendente, opposto dello
     // scatto (che sale) perché qui non è il giocatore a muoversi.
-    { kind: 'tone', wave: 'triangle', freqFrom: 900, freqTo: 500, delay: 0, duration: 0.08, gain: 0.22 },
-    { kind: 'noise', filterType: 'bandpass', freq: 1600, q: 2, delay: 0, duration: 0.06, gain: 0.18 },
+    {
+      kind: 'tone',
+      wave: 'triangle',
+      freqFrom: 900,
+      freqTo: 500,
+      delay: 0,
+      duration: 0.08,
+      gain: 0.22,
+    },
+    {
+      kind: 'noise',
+      filterType: 'bandpass',
+      freq: 1600,
+      q: 2,
+      delay: 0,
+      duration: 0.06,
+      gain: 0.18,
+    },
     // Il secondo stadio comincia dove finisce il primo (0.08s), non
     // insieme: è l'oggetto che tocca terra dopo il volo, non un
     // secondo strato dello stesso istante.
@@ -427,8 +749,24 @@ export const BEACON_THROWN: VoiceSpec = {
 export const BEACON_PULSE: VoiceSpec = {
   label: 'trasponditore — battito',
   layers: [
-    { kind: 'tone', wave: 'sine', freqFrom: 700, freqTo: 700, delay: 0, duration: 0.05, gain: 0.18 },
-    { kind: 'noise', filterType: 'bandpass', freq: 1800, q: 3, delay: 0, duration: 0.03, gain: 0.08 },
+    {
+      kind: 'tone',
+      wave: 'sine',
+      freqFrom: 700,
+      freqTo: 700,
+      delay: 0,
+      duration: 0.05,
+      gain: 0.18,
+    },
+    {
+      kind: 'noise',
+      filterType: 'bandpass',
+      freq: 1800,
+      q: 3,
+      delay: 0,
+      duration: 0.03,
+      gain: 0.08,
+    },
   ],
 };
 
@@ -438,8 +776,24 @@ export const BEACON_PULSE: VoiceSpec = {
 export const BEACON_EXPIRED: VoiceSpec = {
   label: 'trasponditore — esaurito',
   layers: [
-    { kind: 'tone', wave: 'triangle', freqFrom: 620, freqTo: 180, delay: 0, duration: 0.28, gain: 0.26 },
-    { kind: 'noise', filterType: 'lowpass', freq: 500, sweepTo: 150, delay: 0, duration: 0.32, gain: 0.2 },
+    {
+      kind: 'tone',
+      wave: 'triangle',
+      freqFrom: 620,
+      freqTo: 180,
+      delay: 0,
+      duration: 0.28,
+      gain: 0.26,
+    },
+    {
+      kind: 'noise',
+      filterType: 'lowpass',
+      freq: 500,
+      sweepTo: 150,
+      delay: 0,
+      duration: 0.32,
+      gain: 0.2,
+    },
   ],
 };
 
@@ -448,7 +802,15 @@ export const BEACON_PICKUP: VoiceSpec = {
   layers: [
     // Stessa onda triangolare del lancio, ma la rampa è invertita:
     // sale invece di scendere.
-    { kind: 'tone', wave: 'triangle', freqFrom: 500, freqTo: 1100, delay: 0, duration: 0.1, gain: 0.22 },
+    {
+      kind: 'tone',
+      wave: 'triangle',
+      freqFrom: 500,
+      freqTo: 1100,
+      delay: 0,
+      duration: 0.1,
+      gain: 0.22,
+    },
     { kind: 'noise', filterType: 'highpass', freq: 2500, delay: 0.02, duration: 0.05, gain: 0.14 },
   ],
 };
@@ -464,10 +826,26 @@ export const BEACON_PICKUP: VoiceSpec = {
 // ancora più corta perché non è una ricompensa da assaporare, è
 // un'informazione tattica da cogliere al volo.
 export const ENEMY_LURED: VoiceSpec = {
-  label: 'nemico richiamato dall\'esca',
+  label: "nemico richiamato dall'esca",
   layers: [
-    { kind: 'tone', wave: 'square', freqFrom: 1050, freqTo: 1050, delay: 0, duration: 0.035, gain: 0.2 },
-    { kind: 'tone', wave: 'square', freqFrom: 1550, freqTo: 1550, delay: 0.035, duration: 0.03, gain: 0.16 },
+    {
+      kind: 'tone',
+      wave: 'square',
+      freqFrom: 1050,
+      freqTo: 1050,
+      delay: 0,
+      duration: 0.035,
+      gain: 0.2,
+    },
+    {
+      kind: 'tone',
+      wave: 'square',
+      freqFrom: 1550,
+      freqTo: 1550,
+      delay: 0.035,
+      duration: 0.03,
+      gain: 0.16,
+    },
   ],
 };
 
@@ -494,7 +872,15 @@ export const ENEMY_LURED: VoiceSpec = {
 export const SHIELD_REACTIVE: VoiceSpec = {
   label: 'piastra reattiva',
   layers: [
-    { kind: 'tone', wave: 'square', freqFrom: 1800, freqTo: 900, delay: 0.03, duration: 0.05, gain: 0.26 },
+    {
+      kind: 'tone',
+      wave: 'square',
+      freqFrom: 1800,
+      freqTo: 900,
+      delay: 0.03,
+      duration: 0.05,
+      gain: 0.26,
+    },
     { kind: 'noise', filterType: 'highpass', freq: 3400, delay: 0.03, duration: 0.03, gain: 0.16 },
   ],
 };
@@ -527,10 +913,34 @@ export const SHIELD_REACTIVE: VoiceSpec = {
 export const ITEM_PURCHASED: VoiceSpec = {
   label: 'innesto riuscito',
   layers: [
-    { kind: 'tone', wave: 'square', freqFrom: 760, freqTo: 760, delay: 0, duration: 0.05, gain: 0.24 },
-    { kind: 'noise', filterType: 'bandpass', freq: 1200, q: 3, delay: 0, duration: 0.03, gain: 0.12 },
+    {
+      kind: 'tone',
+      wave: 'square',
+      freqFrom: 760,
+      freqTo: 760,
+      delay: 0,
+      duration: 0.05,
+      gain: 0.24,
+    },
+    {
+      kind: 'noise',
+      filterType: 'bandpass',
+      freq: 1200,
+      q: 3,
+      delay: 0,
+      duration: 0.03,
+      gain: 0.12,
+    },
     // La nota che scende e pesa di più: ciò che l'innesto toglie.
-    { kind: 'tone', wave: 'square', freqFrom: 380, freqTo: 380, delay: 0.06, duration: 0.09, gain: 0.28 },
+    {
+      kind: 'tone',
+      wave: 'square',
+      freqFrom: 380,
+      freqTo: 380,
+      delay: 0.06,
+      duration: 0.09,
+      gain: 0.28,
+    },
   ],
 };
 
@@ -550,8 +960,24 @@ export const ITEM_PURCHASED: VoiceSpec = {
 export const PURCHASE_REFUSED: VoiceSpec = {
   label: 'innesto rifiutato',
   layers: [
-    { kind: 'tone', wave: 'square', freqFrom: 300, freqTo: 300, delay: 0, duration: 0.045, gain: 0.18 },
-    { kind: 'tone', wave: 'square', freqFrom: 300, freqTo: 300, delay: 0.06, duration: 0.045, gain: 0.18 },
+    {
+      kind: 'tone',
+      wave: 'square',
+      freqFrom: 300,
+      freqTo: 300,
+      delay: 0,
+      duration: 0.045,
+      gain: 0.18,
+    },
+    {
+      kind: 'tone',
+      wave: 'square',
+      freqFrom: 300,
+      freqTo: 300,
+      delay: 0.06,
+      duration: 0.045,
+      gain: 0.18,
+    },
   ],
 };
 
@@ -578,8 +1004,7 @@ export class CampaignVoice {
 
     const Ctor =
       window.AudioContext ??
-      (window as unknown as { webkitAudioContext?: typeof AudioContext })
-        .webkitAudioContext;
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return;
 
     try {
@@ -646,8 +1071,12 @@ export class CampaignVoice {
       const legacy = l as unknown as {
         setPosition(x: number, y: number, z: number): void;
         setOrientation(
-          fx: number, fy: number, fz: number,
-          ux: number, uy: number, uz: number,
+          fx: number,
+          fy: number,
+          fz: number,
+          ux: number,
+          uy: number,
+          uz: number,
         ): void;
       };
       legacy.setPosition?.(x / TILE, 0, y / TILE);

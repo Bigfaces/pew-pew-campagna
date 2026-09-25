@@ -353,7 +353,12 @@ export function updateEnemyAi(e: EnemyState, ctx: EnemyAiCtx): EnemyIntent {
       const aimed = Math.abs(angleDelta(e.angle, bearing)) < 0.22;
       const ready = e.reactionTimer <= 0 && e.attackCooldown <= 0 && aimed;
 
-      if (ready && a.chargeSpeed && dist >= CHARGE_MIN_TILES * TILE && dist <= CHARGE_MAX_TILES * TILE) {
+      if (
+        ready &&
+        a.chargeSpeed &&
+        dist >= CHARGE_MIN_TILES * TILE &&
+        dist <= CHARGE_MAX_TILES * TILE
+      ) {
         e.chargeMs = CHARGE_MS;
         e.chargeDirX = Math.cos(bearing);
         e.chargeDirY = Math.sin(bearing);
@@ -395,9 +400,7 @@ export function updateEnemyAi(e: EnemyState, ctx: EnemyAiCtx): EnemyIntent {
       // avrebbe spostato i nemici fuori dalla composizione pensata
       // per la stanza, che è dove sta il level design.
       const goalReached =
-        e.goalX !== null &&
-        e.goalY !== null &&
-        Math.hypot(e.goalX - e.x, e.goalY - e.y) < 14;
+        e.goalX !== null && e.goalY !== null && Math.hypot(e.goalX - e.x, e.goalY - e.y) < 14;
 
       e.patrolTimer -= dt;
       if (goalReached || e.patrolTimer <= 0) {

@@ -166,13 +166,7 @@ export function renderScope(
       ctx.strokeStyle = 'rgba(255,150,110,0.9)';
       ctx.lineWidth = Math.max(2, ring * 0.4);
       ctx.beginPath();
-      ctx.arc(
-        cx,
-        cy,
-        r * 0.88,
-        -Math.PI / 2,
-        -Math.PI / 2 + Math.PI * 2 * progress,
-      );
+      ctx.arc(cx, cy, r * 0.88, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
       ctx.stroke();
     }
   }

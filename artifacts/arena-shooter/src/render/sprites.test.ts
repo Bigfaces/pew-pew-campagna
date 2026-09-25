@@ -87,8 +87,7 @@ describe('sprite — nessuna scatola esce dal fotogramma', () => {
         // Il caso peggiore su tutti gli angoli: il centro può finire a
         // distanza hypot(x, y) dall'asse, e la semi-larghezza
         // proiettata non supera hypot(sx, sy).
-        const reach =
-          Math.hypot(Math.abs(b.x) + off.dx, Math.abs(b.y)) + Math.hypot(b.sx, b.sy);
+        const reach = Math.hypot(Math.abs(b.x) + off.dx, Math.abs(b.y)) + Math.hypot(b.sx, b.sy);
         expect(reach, `${name}: una scatola arriva a ${reach.toFixed(3)}`).toBeLessThanOrEqual(
           HALF_W,
         );
@@ -226,7 +225,7 @@ describe('sprite — colore e posa', () => {
     expect(box.dh / box.dw).toBeCloseTo(FRAME_H / FRAME_W, 6);
   });
 
-  it("un nemico alto il doppio occupa il doppio", () => {
+  it('un nemico alto il doppio occupa il doppio', () => {
     const a = spriteBox(50, 0, 0);
     const b = spriteBox(100, 0, 0);
     expect(b.dh / a.dh).toBeCloseTo(2, 6);

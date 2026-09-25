@@ -35,8 +35,7 @@ export class AudioEngine {
 
     const Ctor =
       window.AudioContext ??
-      (window as unknown as { webkitAudioContext?: typeof AudioContext })
-        .webkitAudioContext;
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return; // No Web Audio: the game stays fully playable.
 
     try {
@@ -97,8 +96,12 @@ export class AudioEngine {
       const legacy = l as unknown as {
         setPosition(x: number, y: number, z: number): void;
         setOrientation(
-          fx: number, fy: number, fz: number,
-          ux: number, uy: number, uz: number,
+          fx: number,
+          fy: number,
+          fz: number,
+          ux: number,
+          uy: number,
+          uz: number,
         ): void;
       };
       legacy.setPosition?.(x / TILE, 0, y / TILE);
@@ -146,10 +149,7 @@ export class AudioEngine {
     bq.type = filter.type;
     bq.frequency.setValueAtTime(filter.freq, start);
     if (sweepTo !== undefined) {
-      bq.frequency.exponentialRampToValueAtTime(
-        Math.max(40, sweepTo),
-        start + duration,
-      );
+      bq.frequency.exponentialRampToValueAtTime(Math.max(40, sweepTo), start + duration);
     }
     if (filter.q !== undefined) bq.Q.value = filter.q;
 
@@ -312,14 +312,7 @@ export class AudioEngine {
     if (!dest) return;
     const t = this.now();
     const mine = x === undefined;
-    this.noise(
-      dest,
-      t,
-      0.07,
-      mine ? 0.09 : 0.13,
-      { type: 'lowpass', freq: mine ? 620 : 460 },
-      220,
-    );
+    this.noise(dest, t, 0.07, mine ? 0.09 : 0.13, { type: 'lowpass', freq: mine ? 620 : 460 }, 220);
   }
 
   /** Victory / defeat stings for the end of a match. */

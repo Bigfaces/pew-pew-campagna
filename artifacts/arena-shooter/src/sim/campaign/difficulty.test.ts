@@ -18,11 +18,7 @@ import { TICK_MS, TILE } from '../constants';
 import { LEVEL_XP_THRESHOLDS, TURRET_REACTION_MS, levelForXp } from './constants';
 import { LEVEL_ATTRACCO } from './levels';
 import { centre, markRoomReached } from './testSupport';
-import {
-  CAMPAIGN_PROFILE_VERSION,
-  type CampaignEvent,
-  type CampaignProfile,
-} from './types';
+import { CAMPAIGN_PROFILE_VERSION, type CampaignEvent, type CampaignProfile } from './types';
 import { CampaignWorld } from './world';
 
 /** Posiziona il giocatore davanti al drone del Magazzino e lo lascia
@@ -92,7 +88,7 @@ describe('CampaignWorld — difficoltà Tutorial (default)', () => {
 });
 
 describe('CampaignWorld — difficoltà Medio', () => {
-  it('riporta allo spawn del livello e resetta anche i nemici di un\'altra stanza', () => {
+  it("riporta allo spawn del livello e resetta anche i nemici di un'altra stanza", () => {
     const world = new CampaignWorld(LEVEL_ATTRACCO, undefined, 'medio');
     const ronzino = world.state.enemies.find((e) => e.id === 'ronzino-corridoio')!;
     ronzino.alive = false;
@@ -130,7 +126,7 @@ describe('CampaignWorld — difficoltà Medio', () => {
 });
 
 describe('CampaignWorld — difficoltà Roguelike', () => {
-  it('segnala il riavvio dell\'atto invece di respawnare sul posto', () => {
+  it("segnala il riavvio dell'atto invece di respawnare sul posto", () => {
     const world = new CampaignWorld(LEVEL_ATTRACCO, undefined, 'roguelike');
 
     const events = killViaDrone(world);
@@ -149,19 +145,22 @@ describe('CampaignWorld — difficoltà Roguelike', () => {
 });
 
 describe('CampaignWorld — la progressione sopravvive alla morte in ogni modalità', () => {
-  it.each(['tutorial', 'medio', 'roguelike'] as const)('%s: xp e nodi restano dopo la morte', (difficulty) => {
-    const world = new CampaignWorld(LEVEL_ATTRACCO, profileWith(difficulty));
-    expect(world.tryUnlockNode('otturatore-rapido')).toBe(true);
-    const xpBefore = world.state.xp;
+  it.each(['tutorial', 'medio', 'roguelike'] as const)(
+    '%s: xp e nodi restano dopo la morte',
+    (difficulty) => {
+      const world = new CampaignWorld(LEVEL_ATTRACCO, profileWith(difficulty));
+      expect(world.tryUnlockNode('otturatore-rapido')).toBe(true);
+      const xpBefore = world.state.xp;
 
-    killViaDrone(world);
+      killViaDrone(world);
 
-    // toProfile() è quello che sopravvive a un cambio di livello (o,
-    // in Roguelike, a un cambio di mondo intero): se la progressione
-    // regge lì, regge dove conta davvero.
-    const after = world.toProfile();
-    expect(after.xp).toBe(xpBefore);
-    expect(after.unlockedNodes).toContain('otturatore-rapido');
-    expect(after.difficulty).toBe(difficulty);
-  });
+      // toProfile() è quello che sopravvive a un cambio di livello (o,
+      // in Roguelike, a un cambio di mondo intero): se la progressione
+      // regge lì, regge dove conta davvero.
+      const after = world.toProfile();
+      expect(after.xp).toBe(xpBefore);
+      expect(after.unlockedNodes).toContain('otturatore-rapido');
+      expect(after.difficulty).toBe(difficulty);
+    },
+  );
 });

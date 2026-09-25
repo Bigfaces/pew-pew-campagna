@@ -308,9 +308,7 @@ export function roomAt(level: LevelDef, tx: number, ty: number): string {
   for (const r of level.rooms) {
     if (roomContains(level, r, tx, ty)) return r.id;
   }
-  return tx < level.rooms[0]!.fromTx
-    ? level.rooms[0]!.id
-    : level.rooms[level.rooms.length - 1]!.id;
+  return tx < level.rooms[0]!.fromTx ? level.rooms[0]!.id : level.rooms[level.rooms.length - 1]!.id;
 }
 
 /** Ordine di avanzamento di una stanza: i checkpoint non tornano mai

@@ -40,10 +40,7 @@ export interface LevelCompletionPlan {
  *  regola che questo modulo deve assumere. Un livello senza livello
  *  dopo (next === null) chiude un atto per definizione: non c'è un
  *  "atto successivo" a cui appartenere. */
-export function planLevelCompletion(
-  completed: LevelDef,
-  next: string | null,
-): LevelCompletionPlan {
+export function planLevelCompletion(completed: LevelDef, next: string | null): LevelCompletionPlan {
   const nextLevel = next === null ? null : levelById(next);
   const actEnded = nextLevel === null || nextLevel.act !== completed.act;
 

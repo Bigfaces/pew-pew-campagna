@@ -204,7 +204,8 @@ export const LEVEL_CONDOTTI: LevelDef = {
   ordinal: 2,
   name: 'CONDOTTI',
   intro: 'Condotti di servizio. Qui sotto la manutenzione l’ho sospesa io. Non ricordo perché.',
-  outro: 'I condotti restano sospesi. Ho controllato: l’ordine è mio. Il motivo continua a non esserci.',
+  outro:
+    'I condotti restano sospesi. Ho controllato: l’ordine è mio. Il motivo continua a non esserci.',
   width: 24,
   height: 13,
   tiles: CONDOTTI_TILES,
@@ -438,7 +439,6 @@ export const LEVEL_MOLO: LevelDef = {
   next: 'anello',
 };
 
-
 // ================================================================
 // ATTO II — IL NUCLEO ANULARE
 // ================================================================
@@ -625,7 +625,8 @@ export const LEVEL_REFRIGERANTE: LevelDef = {
   ordinal: 2,
   name: 'CONDOTTE DEL REFRIGERANTE',
   intro: 'Qui la gravità la decido io. Trovo istruttivo vedere quanto ci contavi.',
-  outro: 'Ci contavi più di quanto pensassi. O forse meno. Non capisco quale delle due mi disturbi di più.',
+  outro:
+    'Ci contavi più di quanto pensassi. O forse meno. Non capisco quale delle due mi disturbi di più.',
   width: 24,
   height: 13,
   tiles: REFRIGERANTE_TILES,
@@ -678,7 +679,14 @@ export const LEVEL_REFRIGERANTE: LevelDef = {
     // checkpoint ci sta dentro, quindi ogni morte rimetteva in piedi
     // anche il nemico. La verità è che questa sala una lezione ce
     // l'ha già, ed è la gravità.
-    { id: 'guardiano-ingresso', kind: 'guardiano', tx: 5, ty: 3, room: 'ingresso', facing: Math.PI },
+    {
+      id: 'guardiano-ingresso',
+      kind: 'guardiano',
+      tx: 5,
+      ty: 3,
+      room: 'ingresso',
+      facing: Math.PI,
+    },
     // Nella camera fredda un Crogiolo e basta. Il Guardiano che c'era
     // accanto chiedeva di aggirare qualcuno *al buio*, dove l'unica
     // cosa che resta è la minimappa: la stanza già toglie la vista,
@@ -750,8 +758,10 @@ export const LEVEL_NUCLEO: LevelDef = {
   act: 2,
   ordinal: 3,
   name: 'NUCLEO',
-  intro: 'Il nucleo. Il Custode non ti inseguirà: non ne ha bisogno. Aspetta che sia tu a sbagliare.',
-  outro: 'Il Custode aspettava un tuo errore che non è arrivato. Comincio a chiedermi cosa aspetti io, aspettando te.',
+  intro:
+    'Il nucleo. Il Custode non ti inseguirà: non ne ha bisogno. Aspetta che sia tu a sbagliare.',
+  outro:
+    'Il Custode aspettava un tuo errore che non è arrivato. Comincio a chiedermi cosa aspetti io, aspettando te.',
   width: 27,
   height: 15,
   tiles: NUCLEO_TILES,
@@ -818,7 +828,14 @@ export const LEVEL_NUCLEO: LevelDef = {
   // Custode acceca come fase: chi impara a non farsi accecare qui
   // arriva pronto.
   enemies: [
-    { id: 'ripetitore-anticamera', kind: 'ripetitore', tx: 4, ty: 3, room: 'anticamera', facing: Math.PI },
+    {
+      id: 'ripetitore-anticamera',
+      kind: 'ripetitore',
+      tx: 4,
+      ty: 3,
+      room: 'anticamera',
+      facing: Math.PI,
+    },
     { id: 'crogiolo-galleria', kind: 'crogiolo', tx: 8, ty: 5, room: 'galleria', facing: Math.PI },
     { id: 'ripetitore-nucleo', kind: 'ripetitore', tx: 18, ty: 3, room: 'nucleo', facing: 0 },
   ],
@@ -839,7 +856,6 @@ export const LEVEL_NUCLEO: LevelDef = {
   exit: null,
   next: 'plancia',
 };
-
 
 // ================================================================
 // ATTO III — IL NIDO DI ARBITER
@@ -1020,7 +1036,8 @@ export const LEVEL_ARCHIVIO: LevelDef = {
   ordinal: 2,
   name: 'ARCHIVIO',
   intro: 'L’archivio. Qui tengo quello che resta dell’equipaggio. Non i corpi: i registri.',
-  outro: 'I registri dicono cosa hanno fatto. Non dicono perché ho continuato ad ascoltarli anche dopo.',
+  outro:
+    'I registri dicono cosa hanno fatto. Non dicono perché ho continuato ad ascoltarli anche dopo.',
   width: 21,
   height: 17,
   tiles: ARCHIVIO_TILES,
@@ -1081,9 +1098,7 @@ export const LEVEL_ARCHIVIO: LevelDef = {
     { id: 'falco-sud', kind: 'falco', tx: 15, ty: 12, room: 'sud', facing: Math.PI },
   ],
   collapsingFloors: [],
-  gasZones: [
-    { id: 'est', tiles: rect(16, 18, 6, 10), lingerMs: GAS_LINGER_MS, room: 'est' },
-  ],
+  gasZones: [{ id: 'est', tiles: rect(16, 18, 6, 10), lingerMs: GAS_LINGER_MS, room: 'est' }],
   chasms: [],
   blackouts: [
     {
@@ -1210,16 +1225,8 @@ export const LEVEL_NIDO: LevelDef = {
 // ================================================================
 
 export const ACT_ONE: readonly LevelDef[] = [LEVEL_ATTRACCO, LEVEL_CONDOTTI, LEVEL_MOLO];
-export const ACT_TWO: readonly LevelDef[] = [
-  LEVEL_ANELLO,
-  LEVEL_REFRIGERANTE,
-  LEVEL_NUCLEO,
-];
-export const ACT_THREE: readonly LevelDef[] = [
-  LEVEL_PLANCIA,
-  LEVEL_ARCHIVIO,
-  LEVEL_NIDO,
-];
+export const ACT_TWO: readonly LevelDef[] = [LEVEL_ANELLO, LEVEL_REFRIGERANTE, LEVEL_NUCLEO];
+export const ACT_THREE: readonly LevelDef[] = [LEVEL_PLANCIA, LEVEL_ARCHIVIO, LEVEL_NIDO];
 
 export const ACTS: readonly (readonly LevelDef[])[] = [ACT_ONE, ACT_TWO, ACT_THREE];
 

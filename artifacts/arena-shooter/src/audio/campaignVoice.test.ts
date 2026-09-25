@@ -196,7 +196,7 @@ function layersAreDistinct(a: VoiceSpec, b: VoiceSpec): boolean {
 }
 
 describe('CampaignVoice — punto debole contro corpo', () => {
-  it('non sono lo stesso spec copiato con un\'altra etichetta', () => {
+  it("non sono lo stesso spec copiato con un'altra etichetta", () => {
     expect(layersAreDistinct(ENEMY_HIT_WEAK_SPOT, ENEMY_HIT_BODY)).toBe(true);
   });
 
@@ -240,13 +240,21 @@ describe('CampaignVoice — piastra contro colpo andato a segno', () => {
 
 describe('CampaignVoice — colpo di un nemico a distanza, per fascia', () => {
   it('le tre fasce non condividono lo stesso spec', () => {
-    expect(layersAreDistinct(ENEMY_RANGED_SHOT_BY_TIER[1], ENEMY_RANGED_SHOT_BY_TIER[2])).toBe(true);
-    expect(layersAreDistinct(ENEMY_RANGED_SHOT_BY_TIER[2], ENEMY_RANGED_SHOT_BY_TIER[3])).toBe(true);
-    expect(layersAreDistinct(ENEMY_RANGED_SHOT_BY_TIER[1], ENEMY_RANGED_SHOT_BY_TIER[3])).toBe(true);
+    expect(layersAreDistinct(ENEMY_RANGED_SHOT_BY_TIER[1], ENEMY_RANGED_SHOT_BY_TIER[2])).toBe(
+      true,
+    );
+    expect(layersAreDistinct(ENEMY_RANGED_SHOT_BY_TIER[2], ENEMY_RANGED_SHOT_BY_TIER[3])).toBe(
+      true,
+    );
+    expect(layersAreDistinct(ENEMY_RANGED_SHOT_BY_TIER[1], ENEMY_RANGED_SHOT_BY_TIER[3])).toBe(
+      true,
+    );
   });
 
   it('la fascia 3 è più cupa (più grave) della fascia 1', () => {
-    expect(peakFrequency(ENEMY_RANGED_SHOT_BY_TIER[3])).toBeLessThan(peakFrequency(ENEMY_RANGED_SHOT_BY_TIER[1]));
+    expect(peakFrequency(ENEMY_RANGED_SHOT_BY_TIER[3])).toBeLessThan(
+      peakFrequency(ENEMY_RANGED_SHOT_BY_TIER[1]),
+    );
   });
 
   it('la cattiveria cresce con la fascia: più lunga e più presente', () => {
@@ -283,10 +291,14 @@ describe('CampaignVoice — nemico abbattuto e nemico che si svela', () => {
 
   it('svelarsi sale di frequenza, abbattere scende', () => {
     const revealRises = ENEMY_REVEALED.layers.some(
-      (l) => (l.kind === 'tone' && l.freqTo > l.freqFrom) || (l.kind === 'noise' && (l.sweepTo ?? l.freq) > l.freq),
+      (l) =>
+        (l.kind === 'tone' && l.freqTo > l.freqFrom) ||
+        (l.kind === 'noise' && (l.sweepTo ?? l.freq) > l.freq),
     );
     const downFalls = ENEMY_DOWN.layers.some(
-      (l) => (l.kind === 'tone' && l.freqTo < l.freqFrom) || (l.kind === 'noise' && (l.sweepTo ?? l.freq) < l.freq),
+      (l) =>
+        (l.kind === 'tone' && l.freqTo < l.freqFrom) ||
+        (l.kind === 'noise' && (l.sweepTo ?? l.freq) < l.freq),
     );
     expect(revealRises).toBe(true);
     expect(downFalls).toBe(true);
@@ -302,8 +314,12 @@ describe('CampaignVoice — scatto del giocatore', () => {
   });
 
   it('è dominato dal rumore, non da un tono (un gesto, non un segnale)', () => {
-    const noiseGain = PLAYER_DASH.layers.filter((l) => l.kind === 'noise').reduce((s, l) => s + l.gain, 0);
-    const toneGain = PLAYER_DASH.layers.filter((l) => l.kind === 'tone').reduce((s, l) => s + l.gain, 0);
+    const noiseGain = PLAYER_DASH.layers
+      .filter((l) => l.kind === 'noise')
+      .reduce((s, l) => s + l.gain, 0);
+    const toneGain = PLAYER_DASH.layers
+      .filter((l) => l.kind === 'tone')
+      .reduce((s, l) => s + l.gain, 0);
     expect(noiseGain).toBeGreaterThan(toneGain);
   });
 });
@@ -318,11 +334,15 @@ describe('CampaignVoice — boss: cambio di fase contro finestra vulnerabile', (
       (l) => l.kind === 'tone' && l.freqTo < l.freqFrom,
     );
     expect(phaseFalls).toBe(true);
-    expect(peakFrequency(BOSS_VULNERABLE_OPEN)).toBeGreaterThan(peakFrequency(BOSS_PHASE_CHANGE_BY_STAGE[2]));
+    expect(peakFrequency(BOSS_VULNERABLE_OPEN)).toBeGreaterThan(
+      peakFrequency(BOSS_PHASE_CHANGE_BY_STAGE[2]),
+    );
   });
 
   it('lo stage 3 pesa più dello stage 2', () => {
-    expect(totalGain(BOSS_PHASE_CHANGE_BY_STAGE[3])).toBeGreaterThan(totalGain(BOSS_PHASE_CHANGE_BY_STAGE[2]));
+    expect(totalGain(BOSS_PHASE_CHANGE_BY_STAGE[3])).toBeGreaterThan(
+      totalGain(BOSS_PHASE_CHANGE_BY_STAGE[2]),
+    );
     expect(totalDuration(BOSS_PHASE_CHANGE_BY_STAGE[3])).toBeGreaterThanOrEqual(
       totalDuration(BOSS_PHASE_CHANGE_BY_STAGE[2]),
     );
@@ -365,21 +385,23 @@ describe('CampaignVoice — ambiente', () => {
   });
 });
 
-describe('CampaignVoice — fine livello e riavvio dell\'atto', () => {
-  it('il completamento del livello non è la fanfara dell\'Arena copiata', () => {
+describe("CampaignVoice — fine livello e riavvio dell'atto", () => {
+  it("il completamento del livello non è la fanfara dell'Arena copiata", () => {
     // matchEnd(true) (engine.ts) è 523-659-784-1047 in triangolo: se la
     // prima nota coincidesse esattamente useremmo lo stesso motivo.
     const firstNote = LEVEL_COMPLETE.layers[0];
     expect(firstNote.kind === 'tone' && firstNote.freqFrom === 523).toBe(false);
   });
 
-  it('il riavvio dell\'atto scende e poi risale: un reset, non una seconda morte', () => {
-    const tones = ACT_RESTART.layers.filter((l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone');
+  it("il riavvio dell'atto scende e poi risale: un reset, non una seconda morte", () => {
+    const tones = ACT_RESTART.layers.filter(
+      (l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone',
+    );
     expect(tones.some((t) => t.freqTo < t.freqFrom)).toBe(true);
     expect(tones.some((t) => t.freqTo > t.freqFrom)).toBe(true);
   });
 
-  it('il completamento del livello e il riavvio dell\'atto sono spec diversi', () => {
+  it("il completamento del livello e il riavvio dell'atto sono spec diversi", () => {
     expect(layersAreDistinct(LEVEL_COMPLETE, ACT_RESTART)).toBe(true);
   });
 });
@@ -438,8 +460,12 @@ describe('CampaignVoice — Trasponditore', () => {
   });
 
   it('il lancio scende (parte dalla mano), la raccolta sale (è un guadagno)', () => {
-    const thrownTone = BEACON_THROWN.layers.find((l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone');
-    const pickupTone = BEACON_PICKUP.layers.find((l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone');
+    const thrownTone = BEACON_THROWN.layers.find(
+      (l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone',
+    );
+    const pickupTone = BEACON_PICKUP.layers.find(
+      (l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone',
+    );
     expect(thrownTone!.freqTo).toBeLessThan(thrownTone!.freqFrom);
     expect(pickupTone!.freqTo).toBeGreaterThan(pickupTone!.freqFrom);
   });
@@ -463,12 +489,12 @@ describe('CampaignVoice — Trasponditore', () => {
     expect(layersAreDistinct(BEACON_EXPIRED, ENEMY_DOWN)).toBe(true);
   });
 
-  it('l\'esaurimento non riusa BEACON_THROWN travestito da altro evento', () => {
+  it("l'esaurimento non riusa BEACON_THROWN travestito da altro evento", () => {
     expect(layersAreDistinct(BEACON_EXPIRED, BEACON_THROWN)).toBe(true);
   });
 });
 
-describe('CampaignVoice — nemico richiamato dall\'esca', () => {
+describe("CampaignVoice — nemico richiamato dall'esca", () => {
   it('è il suono più corto fra gli eventi di combattimento: deve tagliare in una sparatoria', () => {
     expect(totalDuration(ENEMY_LURED)).toBeLessThan(totalDuration(ENEMY_HIT_BODY));
     expect(totalDuration(ENEMY_LURED)).toBeLessThan(totalDuration(ENEMY_REVEALED));
@@ -541,19 +567,24 @@ describe('CampaignVoice — innesto riuscito (itemPurchased)', () => {
     // restano piatti in alto. Un innesto pagato non deve leggersi come
     // uno di loro.
     const rises = ITEM_PURCHASED.layers.some(
-      (l) => l.kind === 'tone' && (l.wave === 'sine' || l.wave === 'triangle') && l.freqTo > l.freqFrom,
+      (l) =>
+        l.kind === 'tone' && (l.wave === 'sine' || l.wave === 'triangle') && l.freqTo > l.freqFrom,
     );
     expect(rises).toBe(false);
   });
 
-  it('è un\'onda quadra meccanica, come lo scatto della piastra reattiva, non un tono morbido', () => {
-    const tones = ITEM_PURCHASED.layers.filter((l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone');
+  it("è un'onda quadra meccanica, come lo scatto della piastra reattiva, non un tono morbido", () => {
+    const tones = ITEM_PURCHASED.layers.filter(
+      (l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone',
+    );
     expect(tones.length).toBeGreaterThanOrEqual(2);
     for (const t of tones) expect(t.wave).toBe('square');
   });
 
   it('la seconda nota è più bassa e pesa di più della prima: si cede qualcosa', () => {
-    const tones = ITEM_PURCHASED.layers.filter((l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone');
+    const tones = ITEM_PURCHASED.layers.filter(
+      (l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone',
+    );
     const [first, second] = [...tones].sort((a, b) => a.delay - b.delay);
     expect(second.freqFrom).toBeLessThan(first.freqFrom);
     expect(second.gain).toBeGreaterThan(first.gain);
@@ -576,7 +607,9 @@ describe('CampaignVoice — innesto rifiutato (purchaseRefused)', () => {
   });
 
   it('ripete la stessa nota piatta due volte: un "no" di interfaccia, non un accordo come ENEMY_LURED', () => {
-    const tones = PURCHASE_REFUSED.layers.filter((l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone');
+    const tones = PURCHASE_REFUSED.layers.filter(
+      (l): l is Extract<typeof l, { kind: 'tone' }> => l.kind === 'tone',
+    );
     expect(tones.length).toBe(2);
     for (const t of tones) {
       expect(t.freqFrom).toBe(t.freqTo);
@@ -590,7 +623,7 @@ describe('CampaignVoice — innesto rifiutato (purchaseRefused)', () => {
     expect(layersAreDistinct(PURCHASE_REFUSED, ENEMY_LURED)).toBe(true);
   });
 
-  it('non è la stessa spec dell\'innesto riuscito', () => {
+  it("non è la stessa spec dell'innesto riuscito", () => {
     expect(layersAreDistinct(PURCHASE_REFUSED, ITEM_PURCHASED)).toBe(true);
   });
 });
@@ -764,9 +797,7 @@ describe('CampaignVoice — distinguibilità globale (tutte le spec esportate)',
           Math.abs(totalGain(a) - totalGain(b)) < 0.06 &&
           Math.abs(totalDuration(a) - totalDuration(b)) < 0.03;
         if (close && !EXEMPT_PAIRS.has(`${a.label}↔${b.label}`)) {
-          offenders.push(
-            `${a.label}↔${b.label}: dominante=${da.toFixed(0)}/${db.toFixed(0)}Hz`,
-          );
+          offenders.push(`${a.label}↔${b.label}: dominante=${da.toFixed(0)}/${db.toFixed(0)}Hz`);
         }
       }
     }
@@ -784,12 +815,14 @@ describe('CampaignVoice — distinguibilità globale (tutte le spec esportate)',
     expect(hi / lo).toBeGreaterThan(4);
   });
 
-  it('la coppia esentata esiste davvero ed è quella attesa (altrimenti l\'eccezione è morta)', () => {
+  it("la coppia esentata esiste davvero ed è quella attesa (altrimenti l'eccezione è morta)", () => {
     // Se questo fallisse, EXEMPT_PAIRS conterrebbe una chiave che non
     // corrisponde più a nulla — per esempio perché un'etichetta è
     // cambiata — e il test sopra tornerebbe silenziosamente più
     // severo di quanto dichiarato.
     expect(tooClose(GRAVITY_FLIP_INVERTED, GRAVITY_FLIP_RESTORED)).toBe(true);
-    expect(EXEMPT_PAIRS.has(`${GRAVITY_FLIP_INVERTED.label}↔${GRAVITY_FLIP_RESTORED.label}`)).toBe(true);
+    expect(EXEMPT_PAIRS.has(`${GRAVITY_FLIP_INVERTED.label}↔${GRAVITY_FLIP_RESTORED.label}`)).toBe(
+      true,
+    );
   });
 });
