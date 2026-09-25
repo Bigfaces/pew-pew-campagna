@@ -51,8 +51,20 @@ export function renderScope(
   vp: Viewport,
   fx: CameraFx,
   weapon: WeaponReadout,
-  ads: number,
+  adsRaw: number,
 ): void {
+  // `adsRaw` è CampaignGame.adsT, che a monte è già tenuto in
+  // [0,1] (vedi il commento in updateFeel) — ma quella era l'unica
+  // guardia, e un frameDt negativo (rAF con un ts anteriore a
+  // performance.now(), osservato nel 30-40% dei casi subito dopo
+  // closeLegend()/resume()) lo aveva fatto salire a ~4. Con
+  // `full * (2.1 - 1.1 * ads)` un ads oltre ~1.9 rende `r` negativo, e
+  // ogni arc()/createRadialGradient qui sotto lancia IndexSizeError —
+  // un'eccezione che in `pnpm dev` copre lo schermo con l'overlay
+  // d'errore di Vite. Si blinda anche qui, non solo alla fonte: due
+  // guardie indipendenti sullo stesso valore, una in chi lo calcola e
+  // una in chi lo consuma.
+  const ads = Math.max(0, Math.min(1, adsRaw));
   if (ads <= 0.005) return;
 
   const ready = weapon.cooldownMs <= 0;
@@ -65,7 +77,12 @@ export function renderScope(
 
   const full = Math.min(vp.width, vp.height) * 0.44;
   // Opens from wide to final aperture, so the mask appears to close in.
-  const r = full * (2.1 - 1.1 * ads);
+  // Con `ads` già in [0,1] questo non scende mai sotto `full`, ma il
+  // pavimento resta: è la seconda guardia di cui parla il commento qui
+  // sopra, quella che tiene fermo anche chi consuma `r` — arc() e
+  // createRadialGradient() più sotto — indipendentemente da qualunque
+  // ipotesi su `ads`.
+  const r = Math.max(0, full * (2.1 - 1.1 * ads));
   const ring = Math.max(2, full * 0.035);
 
   ctx.save();

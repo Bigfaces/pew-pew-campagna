@@ -55,6 +55,7 @@ import {
 } from '../sim/campaign/constants';
 import { ALL_LEVELS, FIRST_LEVEL_ID, levelById } from '../sim/campaign/levels';
 import { roomName } from '../sim/campaign/levelTypes';
+import { clampFrameDt } from './frameClock';
 import { NarrativeQueue, planLevelCompletion } from './campaignNarrative';
 import { paymentFor, shopOffer, type ShopRow } from './campaignShop';
 import {
@@ -1215,7 +1216,17 @@ export class CampaignGame {
     if (!this.running) return;
     this.rafId = requestAnimationFrame(this.loop);
 
-    const frameDt = Math.min(ts - this.lastFrame, 250);
+    // `ts` (il timestamp del rAF) e `this.lastFrame` (scritto
+    // con `performance.now()` da start()/resume()/closeLegend()/
+    // resetProfile()) non condividono lo stesso istante di misura — un
+    // rAF appena richiesto può ricevere un `ts` anteriore a poco prima,
+    // e `ts - lastFrame` usciva negativo nel 30-40% dei casi subito
+    // dopo closeLegend()/resume(). Da lì `Math.max(0, adsT - rate)` con
+    // `rate` negativo *saliva* invece di scendere, portando adsT sopra
+    // 1 e il raggio dell'ottica sotto zero (IndexSizeError). Vedi
+    // game/frameClock.ts per la correzione e il perché è un modulo a
+    // sé — qui non è più un `Math.min` ma un pavimento *e* un tetto.
+    const frameDt = clampFrameDt(ts - this.lastFrame, 250);
     this.lastFrame = ts;
 
     if (this.phase === 'playing') {
@@ -1278,7 +1289,16 @@ export class CampaignGame {
     const wantAds = this.adsHeld && this.phase === 'playing' && !interference;
     const prevAds = this.adsT;
     const rate = frameDt / stats.adsTransitionMs;
-    this.adsT = wantAds ? Math.min(1, this.adsT + rate) : Math.max(0, this.adsT - rate);
+    // Clamp in [0,1] su *entrambi* i rami, non solo sul lato verso cui
+    // il ramo si muove: con frameDt ormai mai negativo (vedi
+    // frameClock.ts) `rate` non può più essere negativo, ma adsT
+    // restava comunque scoperto se per un qualunque altro motivo fosse
+    // uscito da [0,1] — la stessa disciplina che il crash dell'ottica ha insegnato a
+    // non fidarsi di una sola linea di difesa. overlay.ts porta la sua
+    // guardia indipendente sullo stesso valore.
+    this.adsT = wantAds
+      ? Math.max(0, Math.min(1, this.adsT + rate))
+      : Math.max(0, Math.min(1, this.adsT - rate));
 
     // Rebuild the projection only on frames where the zoom moved,
     // including the one it settles on — stopping a frame early would
