@@ -508,10 +508,24 @@ export class CampaignWorld {
 
   /** Seconda fase della Sentinella: derivata dal danno subito, non
    *  memorizzata, così non può restare accesa dopo un reset del boss
-   *  che azzera il danno (vedi killPlayer). */
+   *  che azzera il danno (vedi killPlayer).
+   *
+   *  ARBITER nella fase del nucleo (stage 3) è un'eccezione: quella
+   *  fase riusa le soglie di manipolazione/finestra del Custode (vedi
+   *  updateArbiter), ma non legge mai `enraged` per deciderle — a
+   *  differenza della caccia (stage 2), che riusa la macchina della
+   *  Sentinella *compresa* l'alterazione, e lì non si tocca: resta
+   *  una decisione aperta del proprietario, non un difetto. Nel
+   *  nucleo `damageTaken` è già oltre soglia fin dal primo colpo di
+   *  caccia (BOSS_ENRAGE_AT è la metà di un solo scontro, la caccia da
+   *  sola ne vale la metà) e ci resta per il resto della vita del
+   *  boss, quindi senza questa eccezione la HUD e il render
+   *  mostrerebbero "ALTERATO" anche quando l'etichetta non descrive
+   *  più nessun comportamento — una bugia, non un'informazione. */
   get enraged(): boolean {
     const boss = this.state.boss;
     if (boss === null) return false;
+    if (this.level.boss!.kind === 'arbiter' && boss.stage === 3) return false;
     const at = this.level.boss!.kind === 'custode' ? CUSTODE_ENRAGE_AT : BOSS_ENRAGE_AT;
     return boss.damageTaken >= at;
   }

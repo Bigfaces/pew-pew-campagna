@@ -24,6 +24,7 @@ import {
   ARBITER_HITS_TO_DEFEAT,
   ARBITER_HUNT_HITS,
   BOSS_CHARGE_MS,
+  BOSS_ENRAGE_AT,
   BOSS_REAR_ARC_HALF,
   XP_BOSS_DEFEAT,
   XP_BOSS_HIT_SOLID,
@@ -208,6 +209,44 @@ describe('ARBITER', () => {
     // È questa la posta di un boss finale: non perdere vita, perdere
     // il terreno guadagnato.
     expect(world.state.boss!.stageDamage).toBe(0);
+  });
+
+  it('nel nucleo l’etichetta ALTERATO non è mai vera, anche col danno già oltre soglia dalla caccia', () => {
+    // coreStage() porta damageTaken a ARBITER_HUNT_HITS: la sola caccia
+    // basta a superare BOSS_ENRAGE_AT (metà di un solo scontro), prima
+    // ancora di toccare il nucleo. Nel nucleo l'alterazione non cambia
+    // nessun comportamento (vedi il commento sul getter in world.ts):
+    // la HUD non deve poter dirla vera solo perché damageTaken non
+    // torna mai indietro da sola.
+    const world = coreStage();
+    expect(world.state.boss!.damageTaken).toBeGreaterThanOrEqual(BOSS_ENRAGE_AT);
+    expect(world.enraged).toBe(false);
+
+    const boss = world.state.boss!;
+    boss.phase = 'coreOpen';
+    boss.phaseTimer = ARBITER_CORE_WINDOW_MS;
+    shootBody(world, 180);
+    // Un colpo in più al nucleo alza ulteriormente damageTaken, ma
+    // l'etichetta resta falsa per lo stesso motivo.
+    expect(world.enraged).toBe(false);
+  });
+
+  it('tornati in caccia dopo una finestra mancata, ALTERATO torna a valere come per la Sentinella', () => {
+    // Stage 2 non è toccato da questa correzione — resta una decisione
+    // aperta del proprietario (vedi il commento sul getter) — quindi
+    // qui l'etichetta deve tornare a leggere damageTaken come sempre.
+    const world = coreStage();
+    const boss = world.state.boss!;
+    boss.phase = 'coreOpen';
+    boss.phaseTimer = TICK_MS;
+
+    let sealed = false;
+    for (let i = 0; i < 4; i++) {
+      if (world.step().some((e) => e.type === 'bossCoreSealed')) sealed = true;
+    }
+    expect(sealed).toBe(true);
+    expect(world.state.boss!.stage).toBe(2);
+    expect(world.enraged).toBe(true);
   });
 
   it('il totale e il progresso di fase divergono, e va bene così', () => {
