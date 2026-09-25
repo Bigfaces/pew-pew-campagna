@@ -9,6 +9,18 @@
 // runtime, so the game still ships as pure code with no downloads and
 // no licensing questions. Sounds are positioned in 2D with a
 // PannerNode so a shot to your left arrives on your left.
+//
+// Questa classe è quella che restava dell'Arena (multiplayer, tolta —
+// vedi docs/GDD.md sezione 19): la campagna la riusa per i suoni che
+// condivide con lei, ma non tutti i suoi vecchi metodi hanno un
+// chiamante in campagna. `respawn`, `countdownBeep`, `footstep`,
+// `uiClick`, `setVolume` e il getter `enabled` non erano richiamati da
+// nessun punto del gioco — né dalla campagna né da altro rimasto nel
+// repository — e sono stati tolti: un metodo che nessuno chiama non è
+// testabile per davvero (si prova solo che suona, non che serve), e
+// resta lì a sembrare vivo. `volume` (il campo) resta: `init()` e
+// `setMuted()` lo leggono ancora, anche se ora nessuno può più
+// scriverci sopra un valore diverso dal suo iniziale.
 // ================================================================
 
 import { TILE } from '../sim/constants';
@@ -67,15 +79,6 @@ export class AudioEngine {
   setMuted(muted: boolean): void {
     this.muted = muted;
     if (this.master) this.master.gain.value = muted ? 0 : this.volume;
-  }
-
-  setVolume(v: number): void {
-    this.volume = Math.max(0, Math.min(1, v));
-    if (this.master && !this.muted) this.master.gain.value = this.volume;
-  }
-
-  get enabled(): boolean {
-    return !!this.ctx && !!this.master;
   }
 
   /** Point the listener at the player each frame. */
@@ -259,13 +262,6 @@ export class AudioEngine {
     this.tone(dest, 'triangle', 1800, 700, t, 0.22, 0.16);
   }
 
-  respawn(): void {
-    const dest = this.sink();
-    if (!dest) return;
-    const t = this.now();
-    this.tone(dest, 'sine', 320, 760, t, 0.26, 0.2);
-  }
-
   /** Scope raised / lowered: a short mechanical shift, never panned —
    *  it happens at the player's own shoulder. */
   scope(inward: boolean): void {
@@ -290,31 +286,6 @@ export class AudioEngine {
     });
   }
 
-  /** One tick of the pre-match countdown; `final` is the "go". */
-  countdownBeep(final: boolean): void {
-    const dest = this.sink();
-    if (!dest) return;
-    const t = this.now();
-    if (final) {
-      this.tone(dest, 'triangle', 880, 1320, t, 0.3, 0.2);
-      this.tone(dest, 'sine', 440, 660, t, 0.34, 0.14);
-    } else {
-      this.tone(dest, 'triangle', 620, 620, t, 0.12, 0.14);
-    }
-  }
-
-  /** A footfall. Positioned when it belongs to somebody else, so an
-   *  opponent moving nearby is audible and locatable — the counterpart
-   *  to the minimap no longer simply showing where everyone is.
-   *  Quieter and duller than your own: it has crossed a room. */
-  footstep(x?: number, y?: number): void {
-    const dest = this.sink(x, y);
-    if (!dest) return;
-    const t = this.now();
-    const mine = x === undefined;
-    this.noise(dest, t, 0.07, mine ? 0.09 : 0.13, { type: 'lowpass', freq: mine ? 620 : 460 }, 220);
-  }
-
   /** Victory / defeat stings for the end of a match. */
   matchEnd(won: boolean): void {
     const dest = this.sink();
@@ -324,12 +295,6 @@ export class AudioEngine {
     notes.forEach((f, i) => {
       this.tone(dest, 'triangle', f, f, t + i * 0.13, 0.3, 0.18);
     });
-  }
-
-  uiClick(): void {
-    const dest = this.sink();
-    if (!dest) return;
-    this.tone(dest, 'square', 700, 900, this.now(), 0.04, 0.1);
   }
 
   dispose(): void {

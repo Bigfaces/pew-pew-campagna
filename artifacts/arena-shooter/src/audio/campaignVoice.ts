@@ -366,9 +366,11 @@ export const ENEMY_REVEALED: VoiceSpec = {
 
 // ---- Scatto del giocatore --------------------------------------------
 //
-// Oggi campaignGame.ts riusa `audio.respawn()` — un tono sinusoidale
-// puro, 320→760 Hz — ammettendo nel commento che è un prestito. Il
-// respawn è la cosa sbagliata da riusare proprio per la sua natura:
+// Prima di questa voce, campaignGame.ts riusava `audio.respawn()` — un
+// tono sinusoidale puro, 320→760 Hz — ammettendo nel commento che era
+// un prestito (il metodo, rimasto senza altri chiamanti da quando
+// PLAYER_DASH esiste, è stato tolto da engine.ts). Il respawn era la
+// cosa sbagliata da riusare proprio per la sua natura:
 // è un tono, cioè legge come un segnale, mentre uno scatto è aria
 // spostata dal proprio corpo. Qui il rumore domina e il tono è solo un
 // clic finale che segna dove i piedi si riappoggiano, e l'insieme dura
