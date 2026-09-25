@@ -284,13 +284,29 @@ export function CampaignHud({ snap }: { snap: CampaignHudSnapshot }): React.Reac
         </div>
       )}
 
-      {snap.arbiter && <div className="arbiter-line">ARBITER — {snap.arbiter}</div>}
+      {/* aria-live="polite": queste due righe compaiono e spariscono da
+          sole, guidate dal loop di gioco, non da un'interazione
+          dell'utente — senza annuncio uno screen reader non ha modo di
+          sapere che c'è una nuova battuta o una nuova nota di raccolta
+          finché non va a ricontrollare la HUD da capo. "polite" e non
+          "assertive": sono informazioni di contorno, non devono
+          interrompere quello che lo screen reader sta già leggendo (il
+          punto debole scansionato, il testo di un menu). */}
+      {snap.arbiter && (
+        <div className="arbiter-line" aria-live="polite">
+          ARBITER — {snap.arbiter}
+        </div>
+      )}
 
       {/* Sopra la riga di ARBITER e non al suo posto: le due possono
           capitare insieme — si raccoglie un nucleo mentre lui parla — e
           farle contendere lo stesso posto vorrebbe dire perdere proprio
           quella che spiega cosa è appena successo. */}
-      {snap.pickup && <div className="pickup-line">{snap.pickup}</div>}
+      {snap.pickup && (
+        <div className="pickup-line" aria-live="polite">
+          {snap.pickup}
+        </div>
+      )}
 
       {!snap.pointerLocked && (
         <div className="hud-hint campaign-hud-hint">

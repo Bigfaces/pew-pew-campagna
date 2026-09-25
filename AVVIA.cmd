@@ -83,8 +83,9 @@ if errorlevel 1 (
     if errorlevel 1 (
       echo.
       echo  [X] Non sono riuscito a procurarmi Node.
-      echo      Puoi installarlo a mano da https://nodejs.org ^(versione 20
-      echo      o superiore^), oppure giocare subito senza installare nulla
+      echo      Puoi installarlo a mano da https://nodejs.org ^(versione 22
+      echo      o superiore, consigliata la 24^), oppure giocare subito senza
+      echo      installare nulla
       echo      aprendo:  docs\index.html
       echo.
       pause

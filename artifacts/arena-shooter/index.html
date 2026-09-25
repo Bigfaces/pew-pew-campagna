@@ -2,7 +2,13 @@
 <html lang="it">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <!-- maximum-scale=1 bloccava lo zoom a due dita su tutta la pagina,
+         menu e schermata d'atto compresi — un problema di accessibilità,
+         non una protezione durante il gioco: il canvas (.stage in
+         src/ui/ui.css) ha ora il proprio `touch-action: none` per
+         restare immune a un pizzico mentre si mira, quindi qui basta
+         lasciare il browser libero di zoomare come su ogni altra pagina. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>KESSLER-9</title>
     <meta name="description" content="KESSLER-9 — campagna sparatutto in prima persona: tre atti, nove livelli, fucile a otturatore. Gira interamente nel browser." />
     <meta name="robots" content="index, follow" />

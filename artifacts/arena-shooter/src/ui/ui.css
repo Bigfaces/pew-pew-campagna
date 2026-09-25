@@ -35,6 +35,19 @@
   width: 100%;
   height: 100%;
   cursor: none;
+  /* Il canvas di gioco, non l'intera pagina, deve rifiutare i gesti
+     nativi del browser: senza questo un doppio tocco o un pizzico
+     mentre si mira zoomerebbe la pagina invece di sparare. Il
+     `touch-action: none` di .touch-look-zone (più sotto) copriva già
+     lo stesso schermo durante 'playing', ma solo sui dispositivi che
+     corrispondono a `pointer: coarse` — un touchscreen con un mouse
+     come puntatore primario non fa scattare quella regola e restava
+     scoperto. Qui la protezione sta sull'elemento giusto e vale a
+     prescindere dal puntatore, il che permette di togliere il blocco
+     a livello di intera pagina (vedi index.html): i menu, la schermata
+     d'atto e la legenda restano zoomabili con due dita, e solo il
+     canvas non lo è. */
+  touch-action: none;
 }
 
 .stage.idle {
