@@ -35,6 +35,7 @@ import { updateEnemyAi, type EnemyAiCtx } from './enemyAi';
 import { ACTS, ALL_LEVELS } from './levels';
 import { roomAt, tileAt } from './levelTypes';
 import { campHasLOS } from './raycast';
+import { markRoomReached } from './testSupport';
 import { emptyCampaignInput, type CampaignInput, type EnemyState } from './types';
 import { CampaignWorld, resolveEnemyHit, type EnemyShot } from './world';
 
@@ -351,7 +352,7 @@ describe('nemici — regole particolari, nel mondo', () => {
     // quindi va dichiarato invece che aspettato. Che *dove* si prenda
     // sia giusto lo provano le due prove in campaign.edge-cases.
     w.state.checkpoint = { room: def.room, x: p.x, y: p.y, angle: p.angle };
-    w.state.reachedRoom = def.room;
+    markRoomReached(w, def.room);
 
     // Si fa sparare. Prova anche che un nemico *può* uccidere, che è
     // la metà di questa meccanica che nessun altro test copre.

@@ -363,6 +363,18 @@ export interface CampaignProfile {
    *  `livello/stanza` — due livelli possono avere una stanza con lo
    *  stesso nome, e senza il prefisso la seconda non pagherebbe. */
   roomsAwarded: string[];
+  /** Nemici e torrette già pagati, come `livello/id` — stesso schema di
+   *  roomsAwarded e stessa ragione (un id può ripetersi fra livelli
+   *  diversi). GDD.md sezione 9: "morire non deve poter rifarmare
+   *  esperienza". In Tutorial e Medio un respawn rimette in vita i
+   *  nemici e le torrette della stanza (vedi killPlayer/resetEnemiesIn);
+   *  in Roguelike è il riavvio d'atto a ricostruirli da zero. Senza
+   *  questa lista, in entrambi i casi la stessa uccisione tornerebbe a
+   *  pagare ogni volta che il bersaglio torna in piedi — non filtrata
+   *  contro un elenco di id noti, per lo stesso motivo di
+   *  collectedCoreIds qui sopra: un profilo di una versione precedente
+   *  non deve perdere il resto per una chiave che non riconosciamo più. */
+  killsAwarded: string[];
   /** Scelta fatta prima di iniziare il run, non modificabile a
    *  partita in corso: cambiare regole di morte a metà atto non ha un
    *  significato pulito, quindi il profilo la fissa insieme al resto
@@ -411,6 +423,14 @@ export interface CampaignState {
   /** Chiavi `livello/stanza` già pagate — una volta per profilo, non
    *  una per visita. */
   roomsAwarded: string[];
+  /** Chiavi `livello/id` di nemici e torrette già pagati — vedi
+   *  CampaignProfile.killsAwarded, di cui questo è lo specchio a
+   *  runtime. Guarda solo l'XP (killEnemy, hitEnemy, fireWeapon): non
+   *  decide se un nemico è vivo o morto in questo mondo, quello resta
+   *  `enemies[].alive`/`turrets[].alive`, che un respawn di
+   *  Tutorial/Medio può rimettere a `true` senza toccare questa
+   *  lista. */
+  killsAwarded: string[];
   completedLevels: string[];
   /** Esperienza totale accumulata — non scende mai, nemmeno alla
    *  morte: solo la posizione e i nemici della stanza si resettano,
@@ -441,6 +461,28 @@ export interface CampaignState {
    *  vero anche dentro una stanza battuta da una torretta. Ci pendono
    *  la battuta narrativa, l'XP di stanza e il risveglio del boss. */
   reachedRoom: string;
+  /** Le stanze già viste in QUESTO mondo, per sapere se la prossima
+   *  soglia è una prima volta. Diversa da `reachedRoom`, ed è la
+   *  differenza che risolve i livelli ad anello (ARCHIVIO: nord=0,
+   *  ovest=1, camera=2, est=3, sud=4): chi gira nord -> est -> sud e poi
+   *  rientra da ovest ci arriva con un ordine (1) più basso del massimo
+   *  già toccato (4), ma non ci è mai stato — e la battuta, l'XP di
+   *  stanza (updateCheckpoint) e la ricarica delle piastre
+   *  (refillShieldOnRoomEnter, GDD.md sezione 18) devono scattare lo
+   *  stesso. `reachedRoom` resta "il massimo mai raggiunto in ordine",
+   *  perché è quello che serve al risveglio del boss (updateBoss): un
+   *  boss non deve "riaddormentarsi" perché il giocatore è tornato
+   *  indietro a esplorare.
+   *
+   *  Non serializzata nel profilo (vedi CampaignProfile.toProfile),
+   *  stessa ragione di enemySightedFired qui sotto: inizializzata con
+   *  la sola stanza di spawn a ogni costruzione, così un livello nuovo
+   *  — o un respawn che ricostruisce il mondo — ricomincia a contare le
+   *  prime volte da capo. È esattamente il comportamento che
+   *  `reachedRoom` aveva già sui livelli lineari (non si azzera alla
+   *  morte, quindi ogni stanza ricarica al più una volta per mondo):
+   *  qui si limita a estenderlo a chi non procede in ordine. */
+  visitedRooms: string[];
   /** True dopo il primo `enemySighted` di questo mondo. Non
    *  serializzato nel profilo (vedi CampaignProfile.toProfile): un
    *  livello nuovo, o un respawn che ricostruisce il mondo, deve poter

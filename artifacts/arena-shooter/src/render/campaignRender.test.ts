@@ -20,6 +20,7 @@ import { ALL_LEVELS, levelById } from '../sim/campaign/levels';
 import { archetypeOf } from '../sim/campaign/enemies';
 import { emptyCampaignInput } from '../sim/campaign/types';
 import { CampaignWorld } from '../sim/campaign/world';
+import { markRoomReached } from '../sim/campaign/testSupport';
 import type { LevelDef } from '../sim/campaign/levelTypes';
 import { CameraFx, SLICE_W, computeViewport, projectPoint } from './camera';
 import { SEMI_TILE, margineBillboard, renderCampaignScenery } from './campaignScene';
@@ -171,7 +172,7 @@ describe('scena della campagna', () => {
       p.y = boss.y;
       p.angle = 0;
       world.state.checkpoint.room = level.boss!.room;
-      world.state.reachedRoom = world.state.checkpoint.room;
+      markRoomReached(world, world.state.checkpoint.room);
 
       // ARBITER resta nella prima fase finché i suoi moduli sono in
       // piedi, ed è giusto così: è la regola. Per vederlo cambiare

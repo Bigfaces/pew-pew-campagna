@@ -23,6 +23,34 @@ import type { LevelDef } from './levelTypes';
 import type { CampaignProfile } from './types';
 import { CampaignWorld } from './world';
 
+/** Segna una stanza come già vista in questo mondo, senza dover
+ *  inscenare il cammino che ce la porta: aggiunge `room` a
+ *  `visitedRooms` se non c'è già.
+ *
+ *  Serve a chi teletrasporta il giocatore per saltare un pezzo di
+ *  livello (come `enterBossRoom` qui sotto) e vuole dichiarare "sono
+ *  già stato qui", non "ci sto entrando ora": senza, il prossimo
+ *  `step()` conterebbe quella stanza come prima visita e le
+ *  pagherebbe una battuta, un'XP di stanza e una ricarica scudo che un
+ *  giocatore vero — arrivatoci camminando — avrebbe già incassato
+ *  prima (vedi CampaignWorld.updateCheckpoint). */
+export function markRoomVisited(world: CampaignWorld, room: string): void {
+  if (!world.state.visitedRooms.includes(room)) {
+    world.state.visitedRooms.push(room);
+  }
+}
+
+/** Come `markRoomVisited`, ma segna anche `reachedRoom` — il campo che
+ *  sveglia i boss (CampaignWorld.updateBoss) e di cui `visitedRooms` è
+ *  il completamento sui livelli ad anello (vedi CampaignState). Un
+ *  test che salta a una stanza vuole quasi sempre dire entrambe le
+ *  cose insieme: scriverne una sola lascerebbe l'altra a raccontare
+ *  una bugia che una partita vera non produce mai. */
+export function markRoomReached(world: CampaignWorld, room: string): void {
+  world.state.reachedRoom = room;
+  markRoomVisited(world, room);
+}
+
 /** Toglie di mezzo i nemici mobili e la finestra di grazia iniziale.
  *
  *  Serve ai test che parlano di *un'altra cosa*: una porta stagna, il
@@ -110,14 +138,18 @@ export function enterBossRoom(world: CampaignWorld): void {
     y: home.y,
     angle: 0,
   };
-  // Dire "il giocatore è arrivato" richiede due campi, non più uno.
+  // Dire "il giocatore è arrivato" richiede tre campi, non più uno.
   // Il checkpoint è *dove si rinasce* e da quando pretende un posto
   // sicuro (vedi CampaignWorld.updateCheckpoint) può restare indietro
   // rispetto al giocatore; `reachedRoom` è *fin dove si è arrivati*, ed
-  // è ciò che sveglia il boss. Scriverne uno solo mette il mondo in uno
-  // stato che una partita vera non produce mai: un boss addormentato
-  // con il giocatore in sala, o una sala pagata due volte in XP.
-  world.state.reachedRoom = def.room;
+  // è ciò che sveglia il boss; `visitedRooms` è *dove si è già stati*,
+  // ed è ciò che spegne la battuta, l'XP di stanza e la ricarica delle
+  // piastre alla prossima soglia (vedi CampaignState). Scriverne solo
+  // uno o due mette il mondo in uno stato che una partita vera non
+  // produce mai: un boss addormentato con il giocatore in sala, una
+  // sala pagata due volte in XP, o le piastre ricaricate di sorpresa
+  // al primo tick di un test che le aveva appena tolte.
+  markRoomReached(world, def.room);
   world.state.player.x = home.x - 200;
   world.state.player.y = home.y;
 }

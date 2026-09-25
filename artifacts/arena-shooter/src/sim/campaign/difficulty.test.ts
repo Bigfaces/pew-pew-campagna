@@ -17,7 +17,7 @@ import { describe, expect, it } from 'vitest';
 import { TICK_MS, TILE } from '../constants';
 import { LEVEL_XP_THRESHOLDS, TURRET_REACTION_MS, levelForXp } from './constants';
 import { LEVEL_ATTRACCO } from './levels';
-import { centre } from './testSupport';
+import { centre, markRoomReached } from './testSupport';
 import {
   CAMPAIGN_PROFILE_VERSION,
   type CampaignEvent,
@@ -38,7 +38,7 @@ function killViaDrone(world: CampaignWorld): CampaignEvent[] {
     y: 7 * TILE,
     angle: -Math.PI / 2,
   };
-  world.state.reachedRoom = world.state.checkpoint.room;
+  markRoomReached(world, world.state.checkpoint.room);
   world.state.player.x = 13.5 * TILE;
   world.state.player.y = 7 * TILE;
   // Come quiet(): la finestra di grazia dell'ingresso livello non è
@@ -65,6 +65,7 @@ function profileWith(difficulty: CampaignProfile['difficulty']): CampaignProfile
     completedLevels: [],
     collectedCoreIds: [],
     roomsAwarded: [],
+    killsAwarded: [],
     difficulty,
   };
 }

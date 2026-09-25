@@ -14,7 +14,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { ENTITY_RADIUS, TICK_MS, TILE } from '../constants';
-import { BOSS_CHARGE_MS, RESPAWN_GRACE_MS, TURRET_REACTION_MS } from './constants';
+import { BOSS_CHARGE_MS, RESPAWN_GRACE_MS, TURRET_REACTION_MS, XP_ROOM_ENTER } from './constants';
+import { archetypeOf } from './enemies';
 import { campCircleHitsTile } from './physics';
 import { weaponStatsFor } from './skills';
 import {
@@ -23,6 +24,8 @@ import {
   bossHome,
   doorOf,
   enterBossRoom,
+  markRoomReached,
+  markRoomVisited,
   molo,
   shieldOf,
   turretOf,
@@ -162,7 +165,14 @@ describe('CampaignWorld — un checkpoint è un posto sicuro', () => {
     p.x = 6.5 * TILE;
     p.y = 5.5 * TILE;
     for (let t = 0; t < 12_000 / TICK_MS && !porta().closed; t++) {
-      world.step({ ...emptyCampaignInput(), forward: 1, aimAngle: 0 });
+      // Basta oltrepassare il sensore: proseguire dritti fino in fondo
+      // al livello supererebbe l'uscita prima che la paratia finisca di
+      // chiudersi (il tempo di attraversare CORRIDOIO e MAGAZZINO è
+      // inferiore a DOOR_CLOSE_DELAY_MS), e step() ferma giustamente la
+      // simulazione lì — un livello finito non deve più muoversi. Fermo
+      // dopo il sensore, il timer della paratia scorre lo stesso.
+      const forward = porta().armed ? 0 : 1;
+      world.step({ ...emptyCampaignInput(), forward, aimAngle: 0 });
     }
 
     expect(porta().closed, 'premessa: la paratia deve essersi chiusa').toBe(true);
@@ -329,6 +339,59 @@ describe('CampaignWorld — checkpoint mai regressivo', () => {
 });
 
 // --------------------------------------------------------------------
+// Su un anello di stanze, la prima visita non dipende
+// dall'ordine
+// --------------------------------------------------------------------
+// updateCheckpoint pagava la battuta, l'XP di stanza e la ricarica
+// delle piastre solo se roomOrder(stanza) superava il massimo mai
+// raggiunto. Su un livello lineare coincide con "prima volta qui", ma
+// ARCHIVIO è un anello attorno a un blocco pieno (nord=0, ovest=1,
+// camera=2, est=3, sud=4, vedi levels.ts): chi gira nord -> est -> sud
+// e poi rientra da OVEST per la prima volta ci arriva con un ordine (1)
+// più basso del massimo già toccato (4). Con la sola guardia
+// sull'ordine quella prima visita non contava niente — zero battuta,
+// zero XP, piastre scariche in un livello che GDD.md sezione 18
+// promette di ricaricare "entrando in una stanza nuova", non "entrando
+// in una stanza più avanti".
+
+describe('CampaignWorld — un anello di stanze paga la prima visita in ogni direzione', () => {
+  it('tornare indietro verso OVEST (mai vista) in ARCHIVIO paga XP, evento e piastre', () => {
+    const world = quiet(new CampaignWorld(levelById('archivio')));
+    // Isola la sola variabile in gioco: l'ordine di visita delle
+    // stanze, non il tiro delle torrette.
+    for (const t of world.state.turrets) t.alive = false;
+
+    // NORD (spawn) -> EST -> SUD: in avanti nell'ordine delle stanze,
+    // esattamente come su un livello lineare.
+    world.state.player.x = 19.5 * TILE;
+    world.state.player.y = 7.5 * TILE;
+    world.step();
+    expect(world.state.reachedRoom).toBe('est');
+
+    // (17,14) e non (10,14): quel tile e' l'uscita del livello, e
+    // finirlo per sbaglio fermerebbe la simulazione prima di
+    // arrivare al punto che questa prova vuole misurare.
+    world.state.player.x = 17.5 * TILE;
+    world.state.player.y = 14.5 * TILE;
+    world.step();
+    expect(world.state.reachedRoom).toBe('sud');
+
+    // Si torna indietro: OVEST (ordine 1) non è mai stata vista, anche
+    // se il massimo raggiunto (SUD, ordine 4) è più avanti di lei.
+    world.state.player.shieldCharges = 0;
+    const xpBefore = world.state.xp;
+    world.state.player.x = 1.5 * TILE;
+    world.state.player.y = 7.5 * TILE;
+    const events = world.step();
+
+    expect(events.some((e) => e.type === 'roomEntered' && e.room === 'ovest')).toBe(true);
+    expect(world.state.xp).toBe(xpBefore + XP_ROOM_ENTER);
+    expect(events.some((e) => e.type === 'shieldRefilled')).toBe(true);
+    expect(world.state.player.shieldCharges).toBeGreaterThan(0);
+  });
+});
+
+// --------------------------------------------------------------------
 // Morte e reset: solo il pericolo della stanza del checkpoint cambia
 // --------------------------------------------------------------------
 
@@ -355,7 +418,7 @@ describe('CampaignWorld — morte resetta solo il pericolo della propria stanza'
     // Ci si e' gia' arrivati: la porta alle spalle lo dice. Senza
     // questo, il primo tick conterebbe il MAGAZZINO come stanza nuova
     // e ricaricherebbe le piastre che quiet() ha appena tolto.
-    world.state.reachedRoom = 'magazzino';
+    markRoomReached(world, 'magazzino');
     world.state.player.x = 13.5 * TILE;
     world.state.player.y = 7 * TILE;
 
@@ -417,6 +480,55 @@ describe('CampaignWorld — morte resetta solo il pericolo della propria stanza'
     expect(turretOf(world, 'galleria-a').state.alive).toBe(false);
     expect(world.state.coresCollected).toBe(2);
     expect(world.state.unlockedNodes).toEqual(['otturatore-rapido']);
+  });
+
+  // Lo scope del reset presumeva che il checkpoint venisse
+  // sempre prima, in ordine, della stanza della morte — vero quasi
+  // sempre, falso su un anello. In ARCHIVIO ci si può prendere il
+  // checkpoint in SUD (ordine 4) e poi tornare indietro in EST (ordine
+  // 3): morire lì aveva `da = roomOrder(checkpoint)` fisso a 4, quindi
+  // il range restava [4, max(4,3)] = [4,4] e la stanza della morte —
+  // quella che si sta per rigiocare — restava fuori da ogni reset.
+  it('morire tornando in EST con checkpoint più avanti in SUD resetta anche EST (ARCHIVIO)', () => {
+    const world = new CampaignWorld(levelById('archivio'));
+    for (const t of world.state.turrets) t.alive = false;
+    // Isola la sola minaccia che deve uccidere: le altre non devono
+    // intervenire sul timing dell'attacco.
+    for (const e of world.state.enemies) {
+      if (e.id !== 'martello-est') e.alive = false;
+    }
+    const martello = world.state.enemies.find((e) => e.id === 'martello-est')!;
+    // Già colpito una volta, prima di questo tentativo: è il segno che
+    // il reset deve cancellare se EST rientra davvero nello scope.
+    martello.hp = 1;
+
+    // Checkpoint già preso in SUD (ordine 4) — ci si è già arrivati.
+    world.state.checkpoint = { room: 'sud', x: 10.5 * TILE, y: 14.5 * TILE, angle: 0 };
+    markRoomReached(world, 'sud');
+    // EST è già stata vista (ci si è passati per arrivare a SUD): senza
+    // questo il primo step qui sotto la conterebbe come stanza nuova e
+    // ricaricherebbe le piastre appena azzerate, impedendo la morte.
+    markRoomVisited(world, 'est');
+
+    // Si torna indietro in EST e ci si fa uccidere dal Martello che
+    // vive lì.
+    world.state.player.x = martello.x - TILE;
+    world.state.player.y = martello.y;
+    world.state.player.angle = 0;
+    world.state.player.respawnInvulnerableMs = 0;
+    world.state.player.shieldCharges = 0;
+
+    let died = false;
+    for (let i = 0; i < 600 && !died; i++) {
+      died = world.step(input()).some((e) => e.type === 'playerDied');
+    }
+    expect(died).toBe(true);
+
+    // Il Martello, che vive in EST, deve essere tornato come nuovo: hp
+    // piena e a casa. Con la formula sbagliata restava a hp:1.
+    expect(martello.hp).toBe(archetypeOf('martello').hp);
+    expect(martello.x).toBeCloseTo(17.5 * TILE, 3);
+    expect(martello.y).toBeCloseTo(5.5 * TILE, 3);
   });
 });
 
@@ -571,5 +683,32 @@ describe('CampaignWorld — collisione contro uno spigolo', () => {
     expect(campCircleHitsTile(isSolid, p.x, p.y, ENTITY_RADIUS - 1)).toBe(false);
     // Il giocatore si è comunque mosso verso l'angolo, non è rimasto fermo.
     expect(Math.hypot(p.x - 1.5 * TILE, p.y - 1.5 * TILE)).toBeGreaterThan(0);
+  });
+});
+
+// --------------------------------------------------------------------
+// Un mondo finito non deve più muoversi
+// --------------------------------------------------------------------
+// game/campaignGame.ts continua a chiamare step() a ogni frame finché
+// la sua `phase` resta 'playing', e quel campo cambia solo quando la
+// coda di ARBITER (le ultime parole, poi l'outro) si svuota — anche
+// diversi secondi *dopo* che completeLevel()/killPlayer hanno già
+// portato `outcome` fuori da 'playing' in un tick precedente. Senza una
+// guardia in testa a step(), il giocatore continuava a muoversi,
+// sparare e morire su un livello già chiuso mentre ascoltava il
+// commento di chi lo aveva appena finito.
+
+describe('CampaignWorld — step() dopo la fine non simula più niente', () => {
+  it('un mondo con outcome diverso da "playing" ignora ogni step successivo', () => {
+    const world = quiet(attracco());
+    world.state.outcome = 'levelComplete';
+    const tickBefore = world.state.tick;
+    const xBefore = world.state.player.x;
+
+    const events = world.step(input({ forward: 1, aimAngle: 0 }));
+
+    expect(events).toEqual([]);
+    expect(world.state.tick).toBe(tickBefore);
+    expect(world.state.player.x).toBe(xBefore);
   });
 });

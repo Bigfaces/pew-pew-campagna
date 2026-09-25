@@ -100,6 +100,14 @@ export function loadCampaignProfile(): CampaignProfile | null {
       completedLevels: stringArray(p['completedLevels']).filter((l) => LEVEL_IDS.has(l)),
       collectedCoreIds: stringArray(p['collectedCoreIds']),
       roomsAwarded: stringArray(p['roomsAwarded']).filter((r) => ROOM_KEYS.has(r)),
+      // Non filtrata contro un elenco di id noti, stessa scelta di
+      // collectedCoreIds qui sopra e non quella di roomsAwarded: un
+      // profilo di una versione precedente che non conoscesse ancora
+      // questo campo legge `undefined` — stringArray lo riporta a `[]` —
+      // e non deve perdere il resto del personaggio per questo. Il
+      // campo mancante non forza un bump di CAMPAIGN_PROFILE_VERSION
+      // proprio perché il parser lo tollera da solo.
+      killsAwarded: stringArray(p['killsAwarded']),
       // Una difficoltà illeggibile riparte da Tutorial invece di
       // buttare il resto del personaggio, stessa logica di levelId
       // qui sopra: xp e nodi valgono più di una regola di morte.

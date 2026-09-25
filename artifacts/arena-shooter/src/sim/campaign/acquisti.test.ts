@@ -62,6 +62,7 @@ function profileWith(purchases: string[]): CampaignProfile {
     completedLevels: [],
     collectedCoreIds: [],
     roomsAwarded: [],
+    killsAwarded: [],
     difficulty: 'tutorial',
   };
 }

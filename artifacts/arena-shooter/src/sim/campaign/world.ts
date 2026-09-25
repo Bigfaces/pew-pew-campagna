@@ -487,6 +487,12 @@ export class CampaignWorld {
       outcome: 'playing',
       difficulty: profile?.difficulty ?? difficulty,
       reachedRoom: roomAt(level, level.spawn.tx, level.spawn.ty),
+      // La stanza di spawn è già "vista": altrimenti il primissimo tick
+      // la conterebbe come prima visita e le pagherebbe una battuta,
+      // un'XP di stanza e una ricarica scudo che non le spettano (vedi
+      // updateCheckpoint).
+      visitedRooms: [roomAt(level, level.spawn.tx, level.spawn.ty)],
+      killsAwarded: [...(profile?.killsAwarded ?? [])],
       enemySightedFired: false,
     };
     this.spawnCheckpoint = { ...this.state.checkpoint };
@@ -570,12 +576,32 @@ export class CampaignWorld {
       completedLevels: [...this.state.completedLevels],
       collectedCoreIds: this.state.cores.filter((c) => c.collected).map((c) => c.id),
       roomsAwarded: [...this.state.roomsAwarded],
+      killsAwarded: [...this.state.killsAwarded],
       difficulty: this.state.difficulty,
     };
   }
 
   /** Advance one fixed tick. Returns the events generated. */
   step(input: CampaignInput = emptyCampaignInput()): CampaignEvent[] {
+    // Un mondo con outcome diverso da 'playing' è finito, e non deve
+    // più muoversi. Non è un caso di scuola: game/campaignGame.ts
+    // continua a chiamare step() a ogni frame finché `this.phase`
+    // resta 'playing', e quel campo cambia solo quando la coda di
+    // ARBITER (le ultime parole, poi l'outro) si svuota — che può
+    // durare diversi secondi *dopo* che completeLevel()/killPlayer
+    // hanno già portato `outcome` fuori da 'playing' in un tick
+    // precedente. Senza questa guardia il giocatore continuava a
+    // muoversi, sparare e morire su un livello già chiuso, mentre
+    // ascoltava il commento di chi lo aveva appena finito.
+    //
+    // Diversa dalle guardie locali su `outcome` in updateEnemySighting
+    // e updateExit, che restano: quelle fermano una transizione che
+    // avviene *in questo stesso tick* (es. killPlayer porta a
+    // 'actRestart' e il resto del tick non deve più agire); questa
+    // ferma le chiamate *successive*, quando la transizione è già
+    // avvenuta in un tick passato.
+    if (this.state.outcome !== 'playing') return [];
+
     this.events = [];
     this.state.tick++;
 
@@ -714,6 +740,26 @@ export class CampaignWorld {
       this.state.skillPoints++;
       this.events.push({ type: 'levelUp', level: this.state.level });
     }
+  }
+
+  /** Vero se questo nemico o questa torretta ha già pagato la sua XP in
+   *  questo profilo — GDD.md sezione 9: "morire non deve poter
+   *  rifarmare esperienza". Senza questa guardia un respawn di
+   *  Tutorial/Medio (resetEnemiesIn, in killPlayer) o un riavvio d'atto
+   *  in Roguelike (che ricostruisce i mondi dal profilo, nemici vivi
+   *  compresi) trasformerebbero lo stesso bersaglio in una sorgente di
+   *  XP infinita. La chiave porta il livello per lo stesso motivo di
+   *  roomsAwarded: due livelli possono riusare lo stesso id. */
+  private killAwarded(id: string): boolean {
+    return this.state.killsAwarded.includes(`${this.level.id}/${id}`);
+  }
+
+  /** Segna un nemico o una torretta come pagati. Solo la XP dipende da
+   *  questo — se il bersaglio è vivo o morto *in questo mondo* lo dice
+   *  già `alive`, che un respawn può rimettere a `true` senza toccare
+   *  questa lista. */
+  private awardKill(id: string): void {
+    this.state.killsAwarded.push(`${this.level.id}/${id}`);
   }
 
   private turretDef(id: string): TurretDef {
@@ -866,11 +912,29 @@ export class CampaignWorld {
     const p = this.state.player;
     const room = roomAt(this.level, Math.floor(p.x / TILE), Math.floor(p.y / TILE));
 
+    // reachedRoom resta "il massimo mai raggiunto in ordine di stanza":
+    // ci pende solo il risveglio del boss (updateBoss), che deve restare
+    // monotono anche su un anello — tornare indietro a esplorare non
+    // deve poter "riaddormentare" un boss già svegliato.
+    if (roomOrder(this.level, room) > roomOrder(this.level, this.state.reachedRoom)) {
+      this.state.reachedRoom = room;
+    }
+
     // "Sono entrato nel MAGAZZINO" resta vero anche se li' dentro non
     // c'e' un metro quadro sicuro: la battuta, l'XP di stanza e la
     // ricarica dello scudo pendono da questo, non dal checkpoint.
-    if (roomOrder(this.level, room) > roomOrder(this.level, this.state.reachedRoom)) {
-      this.state.reachedRoom = room;
+    //
+    // La guardia è "prima volta *in questo mondo*", non "più avanti del
+    // massimo raggiunto": su un livello lineare le due coincidono, ma
+    // ARCHIVIO è un anello (nord=0, ovest=1, camera=2, est=3, sud=4) — chi
+    // gira nord -> est -> sud e poi rientra da ovest ci arriva con un
+    // ordine (1) più basso del massimo già toccato (4), ma quella stanza
+    // non l'ha mai vista. Con la sola guardia sull'ordine non riceveva né
+    // evento, né XP, né piastre ricaricate — contro GDD.md sezione 18
+    // ("tornano piene entrando in una stanza nuova"), che di "nuova" non
+    // dice "più avanti".
+    if (!this.state.visitedRooms.includes(room)) {
+      this.state.visitedRooms.push(room);
       this.events.push({ type: 'roomEntered', room });
       // Pagato una volta per profilo, e la chiave porta il livello:
       // altrimenti due livelli con una stanza omonima si
@@ -989,8 +1053,12 @@ export class CampaignWorld {
    *  del punto in cui lo scudo si trova, e renderebbe inutile andarlo
    *  a prendere.
    *
-   *  Non è sfruttabile in loop: i checkpoint avanzano soltanto, quindi
-   *  tornare indietro e rientrare non conta come stanza nuova. */
+   *  Non è sfruttabile in loop: ogni stanza conta una sola volta per
+   *  mondo (vedi CampaignState.visitedRooms) — tornare indietro e
+   *  rientrare non conta come stanza nuova, qualunque sia l'ordine fra
+   *  le due. Su un anello come ARCHIVIO questo vale anche per la stanza
+   *  mai vista raggiunta tornando indietro: quella ricarica *una* volta,
+   *  non a ogni passaggio. */
   private refillShieldOnRoomEnter(): void {
     // Regola base da questo giro, non piu' un nodo: entrare in una
     // stanza nuova rimette le piastre a posto. Prima serviva Riserva
@@ -1381,8 +1449,12 @@ export class CampaignWorld {
     if (res.damage <= 0) return;
 
     // Vedere il colpo giusto pagare *subito*, e non solo alla morte,
-    // è ciò che insegna il punto debole senza scriverlo nella HUD.
-    if (res.weakSpot) this.grantXp(XP_ENEMY_WEAK_HIT);
+    // è ciò che insegna il punto debole senza scriverlo nella HUD. Ma
+    // solo se questo nemico non ha già pagato: altrimenti un nemico
+    // rimesso in vita da un respawn (killAwarded, vedi sopra) resterebbe
+    // una sorgente di XP a ogni colpo al punto debole, non solo alla
+    // morte.
+    if (res.weakSpot && !this.killAwarded(e.id)) this.grantXp(XP_ENEMY_WEAK_HIT);
 
     e.hp -= res.damage;
     if (e.hp > 0) {
@@ -1405,7 +1477,15 @@ export class CampaignWorld {
     e.hp = 0;
     e.chargeMs = 0;
     this.events.push({ type: 'enemyDown', id: e.id, kind: e.kind });
-    this.grantXp(a.xp);
+    // L'evento "è morto" resta sempre — la sprite deve sparire — ma la
+    // XP no: un nemico già pagato che un respawn rimette in vita
+    // (resetEnemiesIn) o che un riavvio d'atto Roguelike ricostruisce
+    // vivo non deve poter ripagare uccidendolo di nuovo (killAwarded,
+    // vedi sopra).
+    if (!this.killAwarded(e.id)) {
+      this.awardKill(e.id);
+      this.grantXp(a.xp);
+    }
 
     if (!a.gasOnDeath) return;
     // La nube del Crogiolo non è una zona nuova: è la stessa cecità
@@ -1967,7 +2047,12 @@ export class CampaignWorld {
       const t = this.state.turrets.find((x) => x.id === best!.turretId)!;
       t.alive = false;
       this.events.push({ type: 'turretDown', id: t.id, kind: this.turretDef(t.id).kind });
-      this.grantXp(XP_TURRET_DOWN);
+      // Stessa guardia di killEnemy: una torretta già pagata, rimessa in
+      // piedi da un respawn o da un riavvio d'atto, non deve ripagare.
+      if (!this.killAwarded(t.id)) {
+        this.awardKill(t.id);
+        this.grantXp(XP_TURRET_DOWN);
+      }
       return;
     }
 
@@ -2157,8 +2242,22 @@ export class CampaignWorld {
     //
     // La regola giusta si legge da sola: se lo devi rigiocare, deve
     // tornare com'era.
-    const daOrdine = roomOrder(this.level, cp.room);
-    const aOrdine = Math.max(daOrdine, roomOrder(this.level, stanzaMorte));
+    //
+    // "Dal checkpoint alla morte" presume che il checkpoint venga prima
+    // in ordine, ed è quasi sempre vero — ma non su un anello. In
+    // ARCHIVIO ci si può prendere il checkpoint in SUD (ordine 4) e poi
+    // tornare indietro in EST (ordine 3) per ripassare da una stanza già
+    // esplorata: morire lì aveva `daOrdine = roomOrder(cp.room)` fisso a
+    // 4, quindi il range restava [4, max(4,3)] = [4,4] e la stanza della
+    // morte — quella che si sta per rigiocare — restava fuori da ogni
+    // reset, esattamente il vicolo cieco descritto sopra. `da` e `a`
+    // vanno presi come minimo e massimo dei due ordini, non come
+    // checkpoint-e-poi-il-massimo: il tratto da rigiocare è quello *fra*
+    // le due stanze, a prescindere da quale delle due sia più avanti.
+    const ordineCp = roomOrder(this.level, cp.room);
+    const ordineMorte = roomOrder(this.level, stanzaMorte);
+    const daOrdine = Math.min(ordineCp, ordineMorte);
+    const aOrdine = Math.max(ordineCp, ordineMorte);
     const inScope = (room: string): boolean => {
       if (this.state.difficulty === 'medio') return true;
       const o = roomOrder(this.level, room);

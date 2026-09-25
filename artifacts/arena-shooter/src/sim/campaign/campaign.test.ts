@@ -20,6 +20,7 @@ import {
   TURRET_REACTION_MS,
   LEVEL_XP_THRESHOLDS,
   NODE_OTTURATORE_COOLDOWN_MS,
+  PLAYER_EYE_Z,
   ALL_SKILL_NODES,
   SKILL_TREE,
   XP_BOSS_DEFEAT,
@@ -46,12 +47,14 @@ import {
   centre,
   doorOf,
   enterBossRoom,
+  markRoomReached,
+  markRoomVisited,
   molo,
   shieldOf,
   turretOf,
   quiet,
 } from './testSupport';
-import { archetypeOf } from './enemies';
+import { archetypeOf, CORE_BAND_CENTRE } from './enemies';
 import { ACT_ONE, ALL_LEVELS, LEVEL_ATTRACCO } from './levels';
 import { roomAt } from './levelTypes';
 import { CampaignWorld } from './world';
@@ -271,6 +274,7 @@ describe('CampaignWorld — profilo salvato', () => {
       completedLevels: [],
       collectedCoreIds: [],
       roomsAwarded: [],
+      killsAwarded: [],
       difficulty: 'tutorial',
     });
     expect(world.state.level).toBe(3);
@@ -293,6 +297,125 @@ describe('CampaignWorld — profilo salvato', () => {
     second.state.player.y = 5.5 * TILE;
     second.step();
     expect(second.state.xp).toBe(earned);
+  });
+});
+
+// --------------------------------------------------------------------
+// Morire non deve poter rifarmare XP da nemici e torrette
+// --------------------------------------------------------------------
+// GDD.md sezione 9 lo dichiara per i core e le stanze ("morire non deve
+// poter rifarmare esperienza"), ma la stessa regola valeva solo per
+// quei due: killEnemy pagava sempre archetype.xp, e un respawn di
+// Tutorial/Medio (resetEnemiesIn, in killPlayer) o un riavvio d'atto in
+// Roguelike (che ricostruisce i mondi dal profilo — i nemici non ci
+// sono, tornano vivi) rimettevano in piedi lo stesso bersaglio da
+// riuccidere per XP infinita. Stesso discorso per le torrette
+// (XP_TURRET_DOWN) e per il colpo al punto debole (XP_ENEMY_WEAK_HIT)
+// su un nemico già pagato.
+//
+// Il round-trip attraverso toProfile()/il costruttore è lo stesso
+// usato sopra per "does not pay room XP twice": è esattamente cosa fa
+// il riavvio d'atto in Roguelike, e la cosa più vicina a un vero
+// respawn che non richieda orchestrare una morte reale.
+describe('CampaignWorld — morire non rifarma XP da nemici e torrette già pagati', () => {
+  it('un nemico già pagato non ripaga XP in un mondo ricostruito dallo stesso profilo', () => {
+    const first = attracco();
+    // Isola la sola variabile: l'XP del nemico, non quella della
+    // stanza in cui vive (già coperta dal test sopra).
+    markRoomVisited(first, 'corridoio');
+    const ronzino = first.state.enemies.find((e) => e.id === 'ronzino-corridoio')!;
+    first.state.player.x = ronzino.x - TILE;
+    first.state.player.y = ronzino.y;
+    first.state.player.angle = 0;
+    ronzino.hp = 0.5;
+
+    const before = first.state.xp;
+    const events1 = first.step(input({ fire: true, aimAngle: 0 }));
+    expect(events1.some((e) => e.type === 'enemyDown')).toBe(true);
+    expect(first.state.xp).toBeGreaterThan(before);
+
+    // Il riavvio d'atto in Roguelike ricostruisce il mondo dal profilo
+    // (game/campaignGame.ts restartAct): i nemici non ci sono, tornano
+    // vivi — ma la loro XP deve restare pagata.
+    const second = attracco(first.toProfile());
+    markRoomVisited(second, 'corridoio');
+    const ronzino2 = second.state.enemies.find((e) => e.id === 'ronzino-corridoio')!;
+    expect(ronzino2.alive).toBe(true);
+    second.state.player.x = ronzino2.x - TILE;
+    second.state.player.y = ronzino2.y;
+    second.state.player.angle = 0;
+    ronzino2.hp = 0.5;
+
+    const xpBefore2 = second.state.xp;
+    const events2 = second.step(input({ fire: true, aimAngle: 0 }));
+    expect(events2.some((e) => e.type === 'enemyDown')).toBe(true);
+    expect(events2.some((e) => e.type === 'xpGained')).toBe(false);
+    expect(second.state.xp).toBe(xpBefore2);
+  });
+
+  it('un colpo al punto debole di un nemico già pagato non paga XP_ENEMY_WEAK_HIT', () => {
+    const first = attracco();
+    markRoomVisited(first, 'corridoio');
+    const ronzino = first.state.enemies.find((e) => e.id === 'ronzino-corridoio')!;
+    first.state.player.x = ronzino.x - TILE;
+    first.state.player.y = ronzino.y;
+    first.state.player.angle = 0;
+    ronzino.hp = 0.5;
+    first.step(input({ fire: true, aimAngle: 0 }));
+    expect(ronzino.alive).toBe(false);
+
+    const second = attracco(first.toProfile());
+    markRoomVisited(second, 'corridoio');
+    const ronzino2 = second.state.enemies.find((e) => e.id === 'ronzino-corridoio')!;
+    expect(ronzino2.alive).toBe(true);
+    second.state.player.x = ronzino2.x - TILE;
+    second.state.player.y = ronzino2.y;
+    second.state.player.angle = 0;
+    second.state.player.weaponCooldown = 0;
+
+    // Pendenza che porta il mirino esattamente al centro della banda
+    // del nucleo, come in enemies.test.ts "alzare il tiro trova la
+    // testa del Saldatore" — stessa tecnica, punto debole diverso.
+    const a = archetypeOf('ronzino');
+    const dist = TILE;
+    const targetZ = a.floatZ! * TILE + CORE_BAND_CENTRE * a.height * TILE;
+    const events = second.step(
+      input({ fire: true, aimAngle: 0, aimSlope: (targetZ - PLAYER_EYE_Z) / dist }),
+    );
+
+    const hit = events.find((e) => e.type === 'enemyHit');
+    expect(hit?.weakSpot).toBe('core');
+    expect(events.some((e) => e.type === 'xpGained')).toBe(false);
+  });
+
+  it('una torretta già pagata non ripaga XP in un mondo ricostruito dallo stesso profilo', () => {
+    const first = attracco();
+    markRoomVisited(first, 'magazzino');
+    const turret = turretOf(first);
+    first.state.player.x = turret.x - TILE;
+    first.state.player.y = turret.y;
+    first.state.player.angle = 0;
+
+    const before = first.state.xp;
+    const events1 = first.step(input({ fire: true, aimAngle: 0 }));
+    expect(events1.some((e) => e.type === 'turretDown')).toBe(true);
+    expect(first.state.xp).toBe(before + XP_TURRET_DOWN);
+
+    const second = attracco(first.toProfile());
+    markRoomVisited(second, 'magazzino');
+    const turret2 = turretOf(second);
+    // Le torrette non sono nel profilo, solo l'XP che pagano: tornano
+    // vive quanto i nemici.
+    expect(turret2.state.alive).toBe(true);
+    second.state.player.x = turret2.x - TILE;
+    second.state.player.y = turret2.y;
+    second.state.player.angle = 0;
+
+    const xpBefore2 = second.state.xp;
+    const events2 = second.step(input({ fire: true, aimAngle: 0 }));
+    expect(events2.some((e) => e.type === 'turretDown')).toBe(true);
+    expect(events2.some((e) => e.type === 'xpGained')).toBe(false);
+    expect(second.state.xp).toBe(xpBefore2);
   });
 });
 
@@ -368,7 +491,7 @@ describe('CampaignWorld — drone del Magazzino', () => {
       y: 7 * TILE,
       angle: -Math.PI / 2,
     };
-    world.state.reachedRoom = world.state.checkpoint.room;
+    markRoomReached(world, world.state.checkpoint.room);
     world.state.player.x = 13.5 * TILE;
     world.state.player.y = 7 * TILE;
 
@@ -395,7 +518,7 @@ describe('CampaignWorld — scudo tattico', () => {
       y: 7 * TILE,
       angle: -Math.PI / 2,
     };
-    world.state.reachedRoom = world.state.checkpoint.room;
+    markRoomReached(world, world.state.checkpoint.room);
     world.state.player.x = SHIELD.x;
     world.state.player.y = SHIELD.y;
 
@@ -443,7 +566,7 @@ describe('CampaignWorld — scudo tattico', () => {
       y: 7 * TILE,
       angle: -Math.PI / 2,
     };
-    world.state.reachedRoom = world.state.checkpoint.room;
+    markRoomReached(world, world.state.checkpoint.room);
     // Already spent (or never picked up) before this attempt.
     shieldOf(world).collected = true;
     world.state.player.x = 13.5 * TILE;

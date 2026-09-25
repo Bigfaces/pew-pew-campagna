@@ -36,7 +36,8 @@ import {
   shieldCapacity,
 } from './skills';
 import { LEVEL_ATTRACCO } from './levels';
-import { attracco, bossHome, centre, molo, nudo, shieldOf } from './testSupport';
+import { roomAt } from './levelTypes';
+import { attracco, bossHome, centre, markRoomReached, markRoomVisited, molo, nudo, shieldOf } from './testSupport';
 import { emptyCampaignInput, type CampaignInput } from './types';
 import { CampaignWorld } from './world';
 
@@ -71,7 +72,7 @@ function bossWorldWith(nodes: string[]): CampaignWorld {
   world.state.unlockedNodes = nodes;
   const home = bossHome(world.level);
   world.state.checkpoint = { room: 'molo', x: home.x - 200, y: home.y, angle: 0 };
-  world.state.reachedRoom = world.state.checkpoint.room;
+  markRoomReached(world, world.state.checkpoint.room);
   world.state.player.x = home.x - 200;
   world.state.player.y = home.y;
   world.state.player.angle = 0;
@@ -290,6 +291,19 @@ describe('Mobilità — Passo Lungo e Scatto Evasivo', () => {
       world.state.player.y = boss.y;
       world.state.player.angle = Math.PI;
       world.state.player.respawnInvulnerableMs = 0;
+      // Questo punto (a un soffio dal boss, non nel suo home — vedi
+      // sopra) sta nella stanza prima di MOLO. Dichiararlo già visto
+      // evita che il primo step() qui sotto lo conti come stanza nuova
+      // e ricarichi le piastre che nudo() sta per togliere: la prova
+      // vuole misurare la carica, non una ricarica di passaggio.
+      markRoomVisited(
+        world,
+        roomAt(
+          world.level,
+          Math.floor(world.state.player.x / TILE),
+          Math.floor(world.state.player.y / TILE),
+        ),
+      );
       // Il nodo promette di non *morire* attraversando la carica: con
       // le piastre addosso non morirebbe nessuno dei due, e la prova
       // non distinguerebbe piu' niente.
@@ -332,7 +346,7 @@ describe('Sopravvivenza', () => {
   function shieldWorld(nodes: string[]): CampaignWorld {
     const world = worldWith(nodes, SHIELD.x, SHIELD.y);
     world.state.checkpoint = { room: 'magazzino', x: SHIELD.x, y: SHIELD.y, angle: 0 };
-    world.state.reachedRoom = world.state.checkpoint.room;
+    markRoomReached(world, world.state.checkpoint.room);
     return world;
   }
 
@@ -367,7 +381,7 @@ describe('Sopravvivenza', () => {
     world.state.player.x = 13.5 * TILE;
     world.state.player.y = 7 * TILE;
     world.state.checkpoint = { room: 'magazzino', x: 13.5 * TILE, y: 7 * TILE, angle: 0 };
-    world.state.reachedRoom = world.state.checkpoint.room;
+    markRoomReached(world, world.state.checkpoint.room);
 
     let breaks = 0;
     let deaths = 0;
