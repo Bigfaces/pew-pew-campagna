@@ -883,7 +883,6 @@ export class CampaignGame {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('mousemove', this.onMouseMove);
-    window.addEventListener('resize', this.onResize);
     window.addEventListener('blur', this.onBlur);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     document.addEventListener('visibilitychange', this.onVisibility);
@@ -893,9 +892,24 @@ export class CampaignGame {
     // cursor has left the element must still lower the scope.
     window.addEventListener('mouseup', this.onMouseUp);
 
+    // Un solo ascoltatore per il ridimensionamento, non due. Il
+    // ResizeObserver sul canvas è la fonte giusta: resize() legge
+    // `canvas.getBoundingClientRect()`, cioè la taglia del canvas *sul
+    // layout*, non quella della finestra — le due divergono ogni volta
+    // che un pannello della HUD, una barra degli strumenti o un
+    // cambiamento di layout ridimensiona il canvas senza che la
+    // finestra cambi. Il listener su 'resize' della finestra
+    // richiamava lo stesso resize() un secondo giro ad ogni evento che
+    // ResizeObserver copriva già (ogni resize di finestra sposta anche
+    // il riquadro del canvas), il doppio lavoro per lo stesso risultato.
+    // Resta come solo ripiego per i browser senza ResizeObserver — non
+    // ce ne sono di rilevanti oggi, ma costa un `typeof` in meno che un
+    // crash silenzioso.
     if (typeof ResizeObserver !== 'undefined') {
       this.ro = new ResizeObserver(() => this.resize());
       this.ro.observe(this.canvas);
+    } else {
+      window.addEventListener('resize', this.onResize);
     }
   }
 
