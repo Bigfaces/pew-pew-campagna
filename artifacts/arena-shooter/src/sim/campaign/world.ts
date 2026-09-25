@@ -496,6 +496,7 @@ export class CampaignWorld {
       // updateCheckpoint).
       visitedRooms: [roomAt(level, level.spawn.tx, level.spawn.ty)],
       killsAwarded: [...(profile?.killsAwarded ?? [])],
+      bossDamagePaid: { ...(profile?.bossDamagePaid ?? {}) },
       enemySightedFired: false,
     };
     this.spawnCheckpoint = { ...this.state.checkpoint };
@@ -577,6 +578,7 @@ export class CampaignWorld {
       collectedCoreIds: this.state.cores.filter((c) => c.collected).map((c) => c.id),
       roomsAwarded: [...this.state.roomsAwarded],
       killsAwarded: [...this.state.killsAwarded],
+      bossDamagePaid: { ...this.state.bossDamagePaid },
       difficulty: this.state.difficulty,
     };
   }
@@ -2087,7 +2089,26 @@ export class CampaignWorld {
     boss.stageDamage += dmg;
     this.events.push({ type: 'bossHit', damage: dmg, phase: boss.phase });
     if (!wasEnraged && this.enraged) this.events.push({ type: 'bossEnraged' });
-    this.grantXp(dmg >= 1 ? XP_BOSS_HIT_SOLID : XP_BOSS_HIT_GRAZE);
+
+    // La XP dei singoli colpi si paga una volta sola in tutta la vita
+    // del profilo, non a ogni tentativo: senza un tetto, morire e
+    // ricolpire (Tutorial/Medio riportano il boss a damageTaken:0 a
+    // ogni morte, vedi killPlayer) o mancare la finestra del nucleo di
+    // ARBITER (che lo riporta alla caccia da capo, vedi updateArbiter)
+    // sarebbero due modi di rifarmare la stessa esperienza, contro
+    // GDD.md sezione 9 ("morire non deve poter rifarmare esperienza").
+    // Il tetto è lo stesso numero di colpi che un unico scontro pulito
+    // richiederebbe (bossHitsToDefeat): il registro persiste nel
+    // profilo (bossDamagePaid) esattamente come killsAwarded per
+    // nemici e torrette, ma come importo invece che come lista di id,
+    // perché un colpo può valere mezzo punto (Danno di Striscio) e qui
+    // conta il totale incassato, non quale singolo colpo l'ha portato.
+    const bossKeyXp = this.level.id;
+    const bossDamagePaidSoFar = this.state.bossDamagePaid[bossKeyXp] ?? 0;
+    if (bossDamagePaidSoFar + dmg <= this.bossHitsToDefeat) {
+      this.state.bossDamagePaid[bossKeyXp] = bossDamagePaidSoFar + dmg;
+      this.grantXp(dmg >= 1 ? XP_BOSS_HIT_SOLID : XP_BOSS_HIT_GRAZE);
+    }
 
     // ARBITER passa alla terza fase quando la caccia è finita, non
     // quando il totale arriva a una soglia: i due conteggi divergono

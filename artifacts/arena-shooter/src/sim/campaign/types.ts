@@ -375,6 +375,20 @@ export interface CampaignProfile {
    *  collectedCoreIds qui sopra: un profilo di una versione precedente
    *  non deve perdere il resto per una chiave che non riconosciamo più. */
   killsAwarded: string[];
+  /** Danno già pagato in XP contro il boss di ciascun livello, come
+   *  `livello -> quanto`. Stessa ragione di killsAwarded qui sopra
+   *  (GDD.md sezione 9: "morire non deve poter rifarmare esperienza"),
+   *  ma un boss non è un nemico che torna in piedi intero o resta
+   *  giù: Tutorial e Medio lo riportano a damageTaken:0 a ogni morte
+   *  (killPlayer) e ARBITER torna alla caccia ogni volta che manca la
+   *  finestra del nucleo (updateArbiter), quindi un colpo può tornare
+   *  colpibile più volte nella vita dello stesso profilo. Un numero
+   *  per livello, non una lista di id come killsAwarded: quello che
+   *  decide se un colpo paga non è "l'ho già colpito" ma "quanto ho
+   *  già incassato in tutto", fino al tetto di uno scontro pulito
+   *  (CampaignWorld.hitBoss) — e un colpo può valere mezzo punto
+   *  (Danno di Striscio), quindi serve un importo, non una spunta. */
+  bossDamagePaid: Record<string, number>;
   /** Scelta fatta prima di iniziare il run, non modificabile a
    *  partita in corso: cambiare regole di morte a metà atto non ha un
    *  significato pulito, quindi il profilo la fissa insieme al resto
@@ -431,6 +445,13 @@ export interface CampaignState {
    *  Tutorial/Medio può rimettere a `true` senza toccare questa
    *  lista. */
   killsAwarded: string[];
+  /** Specchio a runtime di CampaignProfile.bossDamagePaid qui sopra,
+   *  stesso schema di killsAwarded due righe sopra: guarda solo l'XP
+   *  (hitBoss), non decide se il boss è vivo, in quale fase o quanto
+   *  gli manca in questo mondo — quello resta `boss.damageTaken` e
+   *  `boss.phase`, che una morte o una finestra del nucleo mancata
+   *  possono riportare indietro senza che questa mappa se ne accorga. */
+  bossDamagePaid: Record<string, number>;
   completedLevels: string[];
   /** Esperienza totale accumulata — non scende mai, nemmeno alla
    *  morte: solo la posizione e i nemici della stanza si resettano,

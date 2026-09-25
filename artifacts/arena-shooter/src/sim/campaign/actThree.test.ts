@@ -25,6 +25,8 @@ import {
   ARBITER_HUNT_HITS,
   BOSS_CHARGE_MS,
   BOSS_REAR_ARC_HALF,
+  XP_BOSS_DEFEAT,
+  XP_BOSS_HIT_SOLID,
 } from './constants';
 import { LEVEL_ARCHIVIO, LEVEL_NIDO, LEVEL_PLANCIA, levelById } from './levels';
 import { roomAt } from './levelTypes';
@@ -242,6 +244,50 @@ describe('ARBITER', () => {
     }
     expect(defeated).toBe(true);
     expect(world.state.outcome).toBe('victory');
+  });
+
+  it('mancare la finestra e tornare a colpire in caccia non supera il tetto della XP', () => {
+    // GDD.md sezione 9: "morire non deve poter rifarmare esperienza".
+    // Qui non è la morte a riportare indietro il boss, ma la finestra
+    // del nucleo mancata (vedi "mancare la finestra riporta alla
+    // caccia" qui sopra): i colpi della caccia rifatta da capo restano
+    // comunque colpi già pagati altrove, quindi non devono ripagare
+    // oltre lo stesso tetto di uno scontro pulito
+    // (ARBITER_HITS_TO_DEFEAT). Si simula "già pagati altrove" seminando
+    // il registro a un colpo dal tetto, invece di rigiocare due cacce
+    // intere solo per arrivarci: è lo stesso registro che una sequenza
+    // vera di morti e finestre mancate riempirebbe, un colpo alla volta.
+    const world = hunting();
+    world.state.bossDamagePaid[world.level.id] = ARBITER_HITS_TO_DEFEAT - 1;
+    // hunting() ha già fatto entrare il giocatore nel Nido (XP_ROOM_ENTER):
+    // il tetto riguarda solo la XP dei colpi al boss, quindi si misura da
+    // qui invece di assumere uno xp assoluto di partenza.
+    const xpBeforeHits = world.state.xp;
+
+    // Il primo colpo sta ancora sotto il tetto: paga.
+    shootBody(world, 0);
+    expect(world.state.xp).toBe(xpBeforeHits + XP_BOSS_HIT_SOLID);
+
+    // Da qui in poi il tetto è pieno: né gli altri due colpi della
+    // caccia né i tre del nucleo aggiungono altra XP dei singoli
+    // colpi — solo il bonus di sconfitta, che non è mai stato toccato.
+    let defeated = false;
+    for (let i = 0; i < ARBITER_HUNT_HITS - 1; i++) {
+      const boss = world.state.boss!;
+      boss.phase = 'charge';
+      boss.phaseTimer = BOSS_CHARGE_MS;
+      boss.angle = 0;
+      shootBody(world);
+    }
+    expect(world.state.boss!.stage).toBe(3);
+    for (let i = 0; i < ARBITER_CORE_HITS; i++) {
+      world.state.boss!.phase = 'coreOpen';
+      world.state.boss!.phaseTimer = ARBITER_CORE_WINDOW_MS;
+      shootBody(world, 180);
+      if (world.state.boss!.phase === 'defeated') defeated = true;
+    }
+    expect(defeated).toBe(true);
+    expect(world.state.xp).toBe(xpBeforeHits + XP_BOSS_HIT_SOLID + XP_BOSS_DEFEAT);
   });
 
   it('morire lo riporta dietro i moduli, dalla prima fase', () => {

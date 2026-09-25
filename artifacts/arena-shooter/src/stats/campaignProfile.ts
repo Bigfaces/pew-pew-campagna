@@ -63,6 +63,20 @@ function stringArray(value: unknown): string[] {
   return value.filter((v): v is string => typeof v === 'string');
 }
 
+/** Come stringArray qui sopra, ma per CampaignProfile.bossDamagePaid:
+ *  una mappa livello -> importo, non una lista. Una chiave con un
+ *  valore che non è un numero finito e non negativo viene scartata
+ *  invece di far cadere l'intero profilo — stessa clemenza di
+ *  stringArray verso un salvataggio scritto a mano o corrotto. */
+function nonNegativeNumberRecord(value: unknown): Record<string, number> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) out[k] = v;
+  }
+  return out;
+}
+
 /** null quando non c'è niente di salvato, quando il salvataggio è di
  *  una versione che non conosciamo, o quando è illeggibile. In tutti e
  *  tre i casi la risposta giusta è la stessa: si riparte puliti. */
@@ -108,6 +122,13 @@ export function loadCampaignProfile(): CampaignProfile | null {
       // campo mancante non forza un bump di CAMPAIGN_PROFILE_VERSION
       // proprio perché il parser lo tollera da solo.
       killsAwarded: stringArray(p['killsAwarded']),
+      // Stessa non-lettura di killsAwarded qui sopra e per lo stesso
+      // motivo: un profilo di una versione precedente che non conosce
+      // ancora questo campo legge `undefined`, nonNegativeNumberRecord
+      // lo riporta a `{}`, e il resto del personaggio non si perde per
+      // una chiave che non riconosciamo più. Nessun bump di
+      // CAMPAIGN_PROFILE_VERSION richiesto per lo stesso motivo.
+      bossDamagePaid: nonNegativeNumberRecord(p['bossDamagePaid']),
       // Una difficoltà illeggibile riparte da Tutorial invece di
       // buttare il resto del personaggio, stessa logica di levelId
       // qui sopra: xp e nodi valgono più di una regola di morte.

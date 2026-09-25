@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import { TICK_MS, TILE } from '../constants';
 import {
+  BOSS_CHARGE_MS,
   BOSS_ENRAGED_CHARGES,
   BOSS_ENRAGE_AT,
   ARBITER_HITS_TO_DEFEAT,
@@ -42,12 +43,13 @@ import {
   markRoomReached,
   markRoomVisited,
   molo,
+  nudo,
   shieldOf,
   turretOf,
   quiet,
 } from './testSupport';
 import { archetypeOf, CORE_BAND_CENTRE } from './enemies';
-import { ACT_ONE, ALL_LEVELS, LEVEL_ATTRACCO } from './levels';
+import { ACT_ONE, ALL_LEVELS, LEVEL_ATTRACCO, LEVEL_MOLO } from './levels';
 import { roomAt } from './levelTypes';
 import { CampaignWorld } from './world';
 
@@ -621,6 +623,127 @@ describe('CampaignWorld — Sentinella del Molo', () => {
     // Three solid rear hits plus the defeat bonus, no other XP source
     // touched since the checkpoint was set directly rather than walked.
     expect(world.state.xp).toBe(BOSS_HITS_TO_DEFEAT * XP_BOSS_HIT_SOLID + XP_BOSS_DEFEAT);
+  });
+
+  it('morire e tornare a colpire il boss non ripaga la stessa XP due volte', () => {
+    // GDD.md sezione 9: "morire non deve poter rifarmare esperienza".
+    // killPlayer riporta il boss a damageTaken:0 (vedi "morire nel Molo
+    // resetta il boss" in campaign.edge-cases.test.ts): senza un tetto
+    // persistito nel profilo, colpirlo di nuovo dopo una morte pagherebbe
+    // gli stessi colpi una seconda volta.
+    const world = nudo(molo());
+    enterBossRoom(world);
+
+    /** Un colpo pieno al retro, stesso schema del test qui sopra:
+     *  forza un telegraph -> charge deterministico e spara da dietro. */
+    const rearHit = (): void => {
+      world.state.player.x = 17.5 * TILE;
+      world.state.player.y = 5.5 * TILE;
+      world.state.player.respawnInvulnerableMs = 1000;
+      world.state.boss!.phase = 'telegraph';
+      world.state.boss!.phaseTimer = 1;
+      world.step();
+      const boss = world.state.boss!;
+      const dodgeX = boss.x - boss.chargeDirX * 40;
+      const dodgeY = boss.y - boss.chargeDirY * 40;
+      world.state.player.x = dodgeX;
+      world.state.player.y = dodgeY;
+      world.state.player.weaponCooldown = 0;
+      const aimAngle = Math.atan2(boss.y - dodgeY, boss.x - dodgeX);
+      world.step(input({ aimAngle, fire: true }));
+    };
+
+    // Due colpi su tre: pagati, come un tentativo pulito qualunque.
+    rearHit();
+    rearHit();
+    expect(world.state.xp).toBe(2 * XP_BOSS_HIT_SOLID);
+
+    // Una carica non schivata uccide (dotazione nuda, vedi nudo()) e
+    // riporta il boss vergine — stesso schema della morte indotta in
+    // campaign.edge-cases.test.ts.
+    const boss = world.state.boss!;
+    boss.phase = 'charge';
+    boss.phaseTimer = BOSS_CHARGE_MS;
+    boss.chargeDirX = -1;
+    boss.chargeDirY = 0;
+    boss.x = world.state.player.x + 10;
+    boss.y = world.state.player.y;
+    world.state.player.respawnInvulnerableMs = 0;
+    const died = world.step(input()).some((e) => e.type === 'playerDied');
+    expect(died).toBe(true);
+    expect(world.state.boss!.damageTaken).toBe(0);
+
+    // Altri tre colpi, come se il boss non fosse mai morto la prima
+    // volta: senza il tetto pagherebbero altri 3 * XP_BOSS_HIT_SOLID,
+    // per un totale di cinque colpi pagati su uno scontro che ne
+    // richiede solo tre.
+    rearHit();
+    rearHit();
+    rearHit();
+
+    expect(world.state.boss!.phase).toBe('defeated');
+    // Un solo colpo pagato in più (il terzo, quello che completa uno
+    // scontro pulito) più il bonus di sconfitta — non i cinque colpi
+    // realmente sparati in tutto.
+    expect(world.state.xp).toBe(BOSS_HITS_TO_DEFEAT * XP_BOSS_HIT_SOLID + XP_BOSS_DEFEAT);
+  });
+
+  it('un riavvio d’atto Roguelike non fa dimenticare i colpi già pagati al boss', () => {
+    // In Roguelike killPlayer non respawna: segnala 'actRestart' e basta,
+    // perché questo mondo simula un livello solo e sta per essere buttato
+    // via dal controller, che ne ricostruisce uno nuovo dal primo livello
+    // dell'atto con lo stesso profilo (vedi killPlayer e
+    // difficulty.test.ts). Qui si rifà a mano quella ricostruzione, dal
+    // Molo stesso per restare nello stesso scontro: bossDamagePaid deve
+    // sopravvivere al giro toProfile() -> new CampaignWorld(profile) come
+    // xp e nodi già fanno.
+    const world = nudo(new CampaignWorld(LEVEL_MOLO, undefined, 'roguelike'));
+    enterBossRoom(world);
+
+    const rearHit = (w: CampaignWorld): void => {
+      w.state.player.x = 17.5 * TILE;
+      w.state.player.y = 5.5 * TILE;
+      w.state.player.respawnInvulnerableMs = 1000;
+      w.state.boss!.phase = 'telegraph';
+      w.state.boss!.phaseTimer = 1;
+      w.step();
+      const boss = w.state.boss!;
+      const dodgeX = boss.x - boss.chargeDirX * 40;
+      const dodgeY = boss.y - boss.chargeDirY * 40;
+      w.state.player.x = dodgeX;
+      w.state.player.y = dodgeY;
+      w.state.player.weaponCooldown = 0;
+      const aimAngle = Math.atan2(boss.y - dodgeY, boss.x - dodgeX);
+      w.step(input({ aimAngle, fire: true }));
+    };
+
+    rearHit(world);
+    rearHit(world);
+    expect(world.state.xp).toBe(2 * XP_BOSS_HIT_SOLID);
+
+    const boss = world.state.boss!;
+    boss.phase = 'charge';
+    boss.phaseTimer = BOSS_CHARGE_MS;
+    boss.chargeDirX = -1;
+    boss.chargeDirY = 0;
+    boss.x = world.state.player.x + 10;
+    boss.y = world.state.player.y;
+    world.state.player.respawnInvulnerableMs = 0;
+    const events = world.step(input());
+    expect(events.some((e) => e.type === 'actRestart')).toBe(true);
+
+    const reborn = nudo(new CampaignWorld(LEVEL_MOLO, world.toProfile()));
+    enterBossRoom(reborn);
+
+    rearHit(reborn);
+    rearHit(reborn);
+    rearHit(reborn);
+
+    expect(reborn.state.boss!.phase).toBe('defeated');
+    // Cinque colpi sparati in tutto fra i due mondi, ma non più di uno
+    // scontro pulito pagato: stesso tetto della morte Tutorial/Medio qui
+    // sopra, solo attraversando un riavvio d'atto invece di un respawn.
+    expect(reborn.state.xp).toBe(BOSS_HITS_TO_DEFEAT * XP_BOSS_HIT_SOLID + XP_BOSS_DEFEAT);
   });
 
   /** Un tempo il bersaglio veniva scelto in base alla stanza del
