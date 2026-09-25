@@ -1261,7 +1261,23 @@ export class CampaignGame {
     this.prevY = this.world.state.player.y;
 
     const input = this.buildInput(TICK_MS);
+    // Lo sparo del giocatore non ha un evento suo nella sim —
+    // fireWeapon() (world.ts) non ne emette uno, a differenza di quasi
+    // tutto il resto — quindi il solo modo di sapere "è partito
+    // davvero un colpo" è guardare il cooldown attorno allo step: era
+    // <= 0 prima (l'arma era pronta) ed è ripartito dopo (fireWeapon lo
+    // ha appena impostato). Leggerlo solo da `input.fire` suonerebbe
+    // anche a vuoto — tasto premuto ma arma ancora in cooldown, o sim
+    // ferma — e leggerlo solo da "il cooldown è > 0 dopo" suonerebbe a
+    // ogni tick dei tanti in cui il cooldown sta solo scendendo verso
+    // zero, non ripartendo da cima.
+    const readyBeforeStep = this.world.state.player.weaponCooldown <= 0;
     const events = this.world.step(input);
+    if (input.fire && readyBeforeStep && this.world.state.player.weaponCooldown > 0) {
+      // Non posizionato, come boltCycle()/scope()/death() qui sotto:
+      // è la propria arma, non un suono del mondo da localizzare.
+      this.audio.rifle();
+    }
     this.handleEvents(events);
 
     const line = this.arbiterVoice.lineFor(events, performance.now());
